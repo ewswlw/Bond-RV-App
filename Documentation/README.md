@@ -26,14 +26,19 @@ This folder contains all documentation for the Bond RV App data pipeline, organi
 
 **Step-by-step guides for common tasks.**
 
-### [Dropbox-Workflow.md](Workflows/Dropbox-Workflow.md) ⭐ PRIMARY WORKFLOW
-- Complete setup instructions for Dropbox + GitHub workflow
-- Computer 1 initial setup
-- Computer 2+ setup instructions
+### [Local-Workflow.md](Workflows/Local-Workflow.md) ⭐ PRIMARY WORKFLOW
+- Simple drag-and-drop workflow using local Raw Data folder
+- One-time setup instructions
 - Daily workflow for adding new data
+- Setting up on multiple computers
 - Pulling code updates
 - Troubleshooting guide
-- Quick reference commands (Mac/Linux/Windows)
+- Quick reference commands
+
+### [Dropbox-Workflow.md](Workflows/Dropbox-Workflow.md) (Optional)
+- Automatic file syncing across computers using Dropbox
+- Complete setup instructions for Dropbox + GitHub workflow
+- Best for teams with frequent updates
 
 ---
 
@@ -79,8 +84,10 @@ This folder contains all documentation for the Bond RV App data pipeline, organi
 
 | Task | Document |
 |------|----------|
-| Set up the pipeline for the first time | [Setup/QUICKSTART.md](Setup/QUICKSTART.md) |
-| Use Dropbox to share data across computers | [Workflows/Dropbox-Workflow.md](Workflows/Dropbox-Workflow.md) |
+| Set up the pipeline for the first time | [Workflows/Local-Workflow.md](Workflows/Local-Workflow.md) ⭐ |
+| Drag and drop Excel files workflow | [Workflows/Local-Workflow.md](Workflows/Local-Workflow.md) ⭐ |
+| Use Dropbox to sync data across computers | [Workflows/Dropbox-Workflow.md](Workflows/Dropbox-Workflow.md) |
+| Quick 5-minute setup | [Setup/QUICKSTART.md](Setup/QUICKSTART.md) |
 | Understand how the pipeline works | [Architecture/bond_pipeline_documentation.md](Architecture/bond_pipeline_documentation.md) |
 | See what was delivered | [Reference/DELIVERABLES.txt](Reference/DELIVERABLES.txt) |
 | Compare data distribution options | [Reference/Data-Distribution-Options.md](Reference/Data-Distribution-Options.md) |
@@ -97,7 +104,8 @@ Documentation/
 │   └── QUICKSTART.md                   # 5-minute setup guide
 │
 ├── Workflows/                          # Step-by-step procedures
-│   └── Dropbox-Workflow.md             # Dropbox + GitHub workflow
+│   ├── Local-Workflow.md               # ⭐ Drag & drop workflow (PRIMARY)
+│   └── Dropbox-Workflow.md             # Dropbox sync workflow (optional)
 │
 ├── Architecture/                       # Technical design docs
 │   └── bond_pipeline_documentation.md  # Complete technical docs
@@ -112,8 +120,8 @@ Documentation/
 ## 🎯 Recommended Reading Order
 
 ### For New Users:
-1. **[Setup/QUICKSTART.md](Setup/QUICKSTART.md)** - Get up and running
-2. **[Workflows/Dropbox-Workflow.md](Workflows/Dropbox-Workflow.md)** - Learn the daily workflow
+1. **[Workflows/Local-Workflow.md](Workflows/Local-Workflow.md)** - Get up and running with drag & drop ⭐
+2. **[Setup/QUICKSTART.md](Setup/QUICKSTART.md)** - Quick reference
 3. **[Reference/DELIVERABLES.txt](Reference/DELIVERABLES.txt)** - Understand what's included
 
 ### For Developers:

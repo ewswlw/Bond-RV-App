@@ -10,20 +10,26 @@
 ## 🚀 Quick Start
 
 ```bash
-# Install dependencies
+# 1. Clone repository
+git clone https://github.com/ewswlw/Bond-RV-App.git
+cd Bond-RV-App
+
+# 2. Install dependencies
 pip install pandas pyarrow openpyxl
 
-# Run pipeline (first time)
-cd bond_pipeline
-python pipeline.py -i "~/Dropbox/Bond-RV-App-Data/Universe Historical/" -m override
+# 3. Drag Excel files into Raw Data/ folder
 
-# Daily updates
-python pipeline.py -i "~/Dropbox/Bond-RV-App-Data/Universe Historical/" -m append
+# 4. Run pipeline (first time)
+cd bond_pipeline
+python pipeline.py -i "../Raw Data/" -m override
+
+# 5. Daily updates (when new files added)
+python pipeline.py -i "../Raw Data/" -m append
 ```
 
-**📖 For detailed setup instructions, see [Documentation/Setup/QUICKSTART.md](Documentation/Setup/QUICKSTART.md)**
+**📖 For detailed setup instructions, see [Documentation/Workflows/Local-Workflow.md](Documentation/Workflows/Local-Workflow.md)** ⭐ PRIMARY
 
-**🔄 For Dropbox workflow, see [Documentation/Workflows/Dropbox-Workflow.md](Documentation/Workflows/Dropbox-Workflow.md)**
+**🔄 For Dropbox sync workflow, see [Documentation/Workflows/Dropbox-Workflow.md](Documentation/Workflows/Dropbox-Workflow.md)**
 
 ---
 
@@ -51,6 +57,12 @@ This pipeline processes Excel files containing bond data and creates two optimiz
 
 ```
 bond-rv-app/
+├── Raw Data/                   # ⭐ Drag & drop Excel files here
+│   ├── README.md               # Instructions for this folder
+│   ├── API 08.04.23.xlsx       # Example files (not in Git)
+│   ├── API 09.22.25.xlsx
+│   └── ... (more files)
+│
 ├── bond_pipeline/              # Pipeline code
 │   ├── config.py               # Configuration and constants
 │   ├── utils.py                # Helper functions
@@ -74,6 +86,8 @@ bond-rv-app/
 │   ├── README.md               # Documentation index
 │   ├── Setup/                  # Getting started guides
 │   ├── Workflows/              # Step-by-step procedures
+│   │   ├── Local-Workflow.md   # ⭐ PRIMARY workflow
+│   │   └── Dropbox-Workflow.md # Optional sync workflow
 │   ├── Architecture/           # Technical design docs
 │   └── Reference/              # Reference materials
 │
@@ -161,29 +175,34 @@ Documentation/
 
 ---
 
-## 🔄 Workflow: Dropbox + GitHub
+## 🔄 Workflow: Local Drag & Drop
 
-This project uses **Dropbox for data** and **GitHub for code**:
+This project uses a **simple drag-and-drop workflow**:
 
-1. **Raw Excel files** → Stored in `~/Dropbox/Bond-RV-App-Data/Universe Historical/`
+1. **Raw Excel files** → Drag into `Raw Data/` folder
 2. **Code** → Version controlled in GitHub
-3. **Parquet files** → Generated locally (not committed)
+3. **Parquet files** → Generated locally in `bond_data/parquet/`
 
-### On Each Computer:
+### Basic Workflow:
 
 ```bash
 # 1. Clone repo
 git clone https://github.com/ewswlw/Bond-RV-App.git
+cd Bond-RV-App
 
-# 2. Ensure Dropbox is synced
-ls ~/Dropbox/Bond-RV-App-Data/Universe\ Historical/
+# 2. Drag Excel files into Raw Data/ folder
 
 # 3. Run pipeline
-cd Bond-RV-App/bond_pipeline
-python pipeline.py -i ~/Dropbox/Bond-RV-App-Data/Universe\ Historical/ -m override
+cd bond_pipeline
+python pipeline.py -i "../Raw Data/" -m override
+
+# 4. When adding new files, use append mode
+python pipeline.py -i "../Raw Data/" -m append
 ```
 
-**📖 For complete workflow instructions, see [Documentation/Workflows/Dropbox-Workflow.md](Documentation/Workflows/Dropbox-Workflow.md)**
+**📖 For complete workflow instructions, see [Documentation/Workflows/Local-Workflow.md](Documentation/Workflows/Local-Workflow.md)** ⭐ PRIMARY
+
+**🔄 For automatic sync across computers, see [Documentation/Workflows/Dropbox-Workflow.md](Documentation/Workflows/Dropbox-Workflow.md)**
 
 ---
 

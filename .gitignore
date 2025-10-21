@@ -16,6 +16,11 @@ ENV/
 bond_data/parquet/*.parquet
 !bond_data/parquet/.gitkeep
 
+# Raw Data folder - exclude Excel files but keep folder
+Raw Data/*.xlsx
+Raw Data/*.xls
+!Raw Data/.gitkeep
+
 # Logs
 *.log
 bond_data/logs/*.log

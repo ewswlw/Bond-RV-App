@@ -1,0 +1,152 @@
+================================================================================
+DOCUMENTATION ORGANIZATION - COMPLETE
+================================================================================
+
+Repository: https://github.com/ewswlw/Bond-RV-App
+Last Updated: October 21, 2025
+
+================================================================================
+FOLDER STRUCTURE
+================================================================================
+
+Documentation/
+├── README.md                                    # Documentation index
+│
+├── Setup/                                       # Getting started
+│   └── QUICKSTART.md                            # 5-minute setup guide
+│
+├── Workflows/                                   # Step-by-step procedures
+│   └── Dropbox-Workflow.md                      # ⭐ PRIMARY WORKFLOW
+│
+├── Architecture/                                # Technical design
+│   └── bond_pipeline_documentation.md           # Complete technical docs
+│
+└── Reference/                                   # Reference materials
+    ├── DELIVERABLES.txt                         # Project deliverables
+    └── Data-Distribution-Options.md             # Data strategy analysis
+
+================================================================================
+DOCUMENT DESCRIPTIONS
+================================================================================
+
+📖 Documentation/README.md
+   - Complete documentation index
+   - Quick navigation table
+   - Recommended reading order by role
+   - Document maintenance guidelines
+
+🚀 Documentation/Setup/QUICKSTART.md
+   - 5-minute quick start guide
+   - Installation instructions
+   - Basic usage examples
+   - First-time setup checklist
+
+🔄 Documentation/Workflows/Dropbox-Workflow.md ⭐ PRIMARY
+   - Complete Dropbox + GitHub workflow
+   - One-time setup (Dropbox folder structure)
+   - Computer 1 initial setup
+   - Computer 2+ setup instructions
+   - Daily workflow for adding new data
+   - Pulling code updates
+   - Comprehensive troubleshooting guide
+   - Quick reference commands (Mac/Linux/Windows)
+   - Best practices checklist
+
+🏗️ Documentation/Architecture/bond_pipeline_documentation.md
+   - Data discovery & analysis
+   - Q&A session documenting requirements
+   - Business logic decisions
+   - Implementation details
+   - Test results and validation
+   - Performance metrics
+   - Known data quality issues
+   - Production recommendations
+
+📋 Documentation/Reference/DELIVERABLES.txt
+   - Project deliverables summary
+   - Module descriptions
+   - Test results
+   - Performance metrics
+   - Next steps for production
+
+🔍 Documentation/Reference/Data-Distribution-Options.md
+   - Analysis of 5 data distribution strategies:
+     1. Git LFS only
+     2. Separate data repository
+     3. Cloud storage (Dropbox/S3/Drive) ⭐ SELECTED
+     4. Hybrid (Git LFS + cloud)
+     5. Network share/NAS
+   - Pros/cons of each approach
+   - Decision matrix by scenario
+   - Cost analysis
+   - Rationale for selecting Dropbox approach
+
+================================================================================
+WORKFLOW SUMMARY (DROPBOX + GITHUB)
+================================================================================
+
+Data Storage:
+  - Raw Excel files → ~/Dropbox/Bond-RV-App-Data/Universe Historical/
+  - Code → GitHub (version controlled)
+  - Parquet files → Generated locally (not committed)
+
+Setup on New Computer:
+  1. Install Dropbox and ensure sync
+  2. git clone https://github.com/ewswlw/Bond-RV-App.git
+  3. pip install pandas pyarrow openpyxl
+  4. python pipeline.py -i ~/Dropbox/Bond-RV-App-Data/Universe\ Historical/ -m override
+
+Daily Workflow:
+  - Add new Excel file to Dropbox folder
+  - Wait for Dropbox to sync
+  - Run: python pipeline.py -i ~/Dropbox/... -m append
+
+After Code Updates:
+  - git pull origin main
+  - Run: python pipeline.py -i ~/Dropbox/... -m override
+
+================================================================================
+QUICK REFERENCE
+================================================================================
+
+Primary Workflow Guide:
+  Documentation/Workflows/Dropbox-Workflow.md
+
+Quick Start:
+  Documentation/Setup/QUICKSTART.md
+
+Technical Details:
+  Documentation/Architecture/bond_pipeline_documentation.md
+
+Documentation Index:
+  Documentation/README.md
+
+Main README:
+  README.md
+
+================================================================================
+KEY FEATURES
+================================================================================
+
+✓ Organized by topic (Setup, Workflows, Architecture, Reference)
+✓ Clear navigation with Documentation/README.md index
+✓ Comprehensive Dropbox workflow with troubleshooting
+✓ Platform-specific commands (Mac/Linux/Windows)
+✓ Step-by-step procedures for all scenarios
+✓ Complete technical documentation preserved
+✓ Data distribution strategy analysis documented
+✓ Maintenance guidelines for future updates
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Clone repo on your computers
+2. Follow Documentation/Workflows/Dropbox-Workflow.md
+3. Set up Dropbox folder structure
+4. Run pipeline on each computer
+5. Refer to Documentation/README.md for all other needs
+
+================================================================================
+END OF SUMMARY
+================================================================================
