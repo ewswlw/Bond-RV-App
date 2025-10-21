@@ -15,13 +15,15 @@ pip install pandas pyarrow openpyxl
 
 # Run pipeline (first time)
 cd bond_pipeline
-python pipeline.py -i "/path/to/Universe Historical/" -m override
+python pipeline.py -i "~/Dropbox/Bond-RV-App-Data/Universe Historical/" -m override
 
 # Daily updates
-python pipeline.py -i "/path/to/Universe Historical/" -m append
+python pipeline.py -i "~/Dropbox/Bond-RV-App-Data/Universe Historical/" -m append
 ```
 
-See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
+**📖 For detailed setup instructions, see [Documentation/Setup/QUICKSTART.md](Documentation/Setup/QUICKSTART.md)**
+
+**🔄 For Dropbox workflow, see [Documentation/Workflows/Dropbox-Workflow.md](Documentation/Workflows/Dropbox-Workflow.md)**
 
 ---
 
@@ -58,7 +60,7 @@ bond-rv-app/
 │   ├── pipeline.py             # Main orchestration script
 │   └── README.md               # Module documentation
 │
-├── bond_data/                  # Data directory
+├── bond_data/                  # Data directory (local only)
 │   ├── parquet/                # Output parquet files
 │   │   ├── historical_bond_details.parquet
 │   │   └── universe.parquet
@@ -68,10 +70,14 @@ bond-rv-app/
 │       ├── validation.log
 │       └── summary.log
 │
-├── bond_pipeline_documentation.md  # Complete technical documentation
-├── QUICKSTART.md                   # Quick start guide
-├── DELIVERABLES.txt                # Project deliverables summary
-└── README.md                       # This file
+├── Documentation/              # Complete documentation
+│   ├── README.md               # Documentation index
+│   ├── Setup/                  # Getting started guides
+│   ├── Workflows/              # Step-by-step procedures
+│   ├── Architecture/           # Technical design docs
+│   └── Reference/              # Reference materials
+│
+└── README.md                   # This file
 ```
 
 ---
@@ -83,6 +89,7 @@ bond-rv-app/
 - pandas
 - pyarrow
 - openpyxl
+- Dropbox account (for data storage)
 
 ### Install Dependencies
 ```bash
@@ -97,10 +104,10 @@ pip install pandas pyarrow openpyxl
 
 ```bash
 # Override mode - rebuild everything from scratch
-python pipeline.py -i "/path/to/Universe Historical/" -m override
+python pipeline.py -i "~/Dropbox/Bond-RV-App-Data/Universe Historical/" -m override
 
 # Append mode - add only new dates
-python pipeline.py -i "/path/to/Universe Historical/" -m append
+python pipeline.py -i "~/Dropbox/Bond-RV-App-Data/Universe Historical/" -m append
 ```
 
 ### Python API
@@ -120,6 +127,63 @@ cusip_ts = df_hist[df_hist['CUSIP'] == '037833DX5'].sort_values('Date')
 # Example: Filter by date range
 recent = df_hist[df_hist['Date'] >= '2025-09-01']
 ```
+
+---
+
+## 📚 Documentation
+
+### Quick Links
+
+| Document | Purpose |
+|----------|---------|
+| **[Documentation/README.md](Documentation/README.md)** | Documentation index and navigation |
+| **[Documentation/Setup/QUICKSTART.md](Documentation/Setup/QUICKSTART.md)** | 5-minute setup guide |
+| **[Documentation/Workflows/Dropbox-Workflow.md](Documentation/Workflows/Dropbox-Workflow.md)** | Complete Dropbox workflow (⭐ PRIMARY) |
+| **[Documentation/Architecture/bond_pipeline_documentation.md](Documentation/Architecture/bond_pipeline_documentation.md)** | Technical documentation |
+| **[Documentation/Reference/DELIVERABLES.txt](Documentation/Reference/DELIVERABLES.txt)** | Project deliverables |
+| **[Documentation/Reference/Data-Distribution-Options.md](Documentation/Reference/Data-Distribution-Options.md)** | Data strategy analysis |
+
+### Documentation Structure
+
+```
+Documentation/
+├── README.md                           # Documentation index
+├── Setup/                              # Getting started
+│   └── QUICKSTART.md
+├── Workflows/                          # Procedures
+│   └── Dropbox-Workflow.md             # ⭐ PRIMARY WORKFLOW
+├── Architecture/                       # Technical docs
+│   └── bond_pipeline_documentation.md
+└── Reference/                          # Reference materials
+    ├── DELIVERABLES.txt
+    └── Data-Distribution-Options.md
+```
+
+---
+
+## 🔄 Workflow: Dropbox + GitHub
+
+This project uses **Dropbox for data** and **GitHub for code**:
+
+1. **Raw Excel files** → Stored in `~/Dropbox/Bond-RV-App-Data/Universe Historical/`
+2. **Code** → Version controlled in GitHub
+3. **Parquet files** → Generated locally (not committed)
+
+### On Each Computer:
+
+```bash
+# 1. Clone repo
+git clone https://github.com/ewswlw/Bond-RV-App.git
+
+# 2. Ensure Dropbox is synced
+ls ~/Dropbox/Bond-RV-App-Data/Universe\ Historical/
+
+# 3. Run pipeline
+cd Bond-RV-App/bond_pipeline
+python pipeline.py -i ~/Dropbox/Bond-RV-App-Data/Universe\ Historical/ -m override
+```
+
+**📖 For complete workflow instructions, see [Documentation/Workflows/Dropbox-Workflow.md](Documentation/Workflows/Dropbox-Workflow.md)**
 
 ---
 
@@ -172,20 +236,6 @@ The pipeline includes comprehensive data validation:
 
 ---
 
-## 📝 Documentation
-
-- **[QUICKSTART.md](QUICKSTART.md)** - Get started in 5 minutes
-- **[bond_pipeline_documentation.md](bond_pipeline_documentation.md)** - Complete technical documentation
-  - Data discovery & analysis
-  - Q&A with requirements
-  - Implementation details
-  - Test results
-  - Production recommendations
-- **[DELIVERABLES.txt](DELIVERABLES.txt)** - Project deliverables summary
-- **[bond_pipeline/README.md](bond_pipeline/README.md)** - Module-level documentation
-
----
-
 ## 🧪 Testing
 
 The pipeline has been tested with:
@@ -196,7 +246,7 @@ The pipeline has been tested with:
 - Duplicate handling (~500 duplicates)
 - Invalid CUSIP detection (~100 invalid)
 
-All tests passed successfully. See [bond_pipeline_documentation.md](bond_pipeline_documentation.md) for detailed test results.
+All tests passed successfully. See [Documentation/Architecture/bond_pipeline_documentation.md](Documentation/Architecture/bond_pipeline_documentation.md) for detailed test results.
 
 ---
 
@@ -233,6 +283,21 @@ Future enhancements:
 
 ---
 
+## 🛟 Troubleshooting
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| No files found | Check Dropbox path and sync status |
+| Pipeline fails | Check logs in `bond_data/logs/` |
+| Different results on computers | Run in override mode to rebuild |
+| Dropbox not synced | Wait for sync, check Dropbox icon |
+
+**📖 For detailed troubleshooting, see [Documentation/Workflows/Dropbox-Workflow.md](Documentation/Workflows/Dropbox-Workflow.md#-troubleshooting)**
+
+---
+
 ## 📄 License
 
 MIT License - See LICENSE file for details
@@ -248,11 +313,14 @@ This is a private project for professional bond trading. For questions or issues
 ## 📞 Support
 
 For technical support or questions:
-- Review the [documentation](bond_pipeline_documentation.md)
+- Review the [Documentation](Documentation/README.md)
+- Check the [Dropbox Workflow Guide](Documentation/Workflows/Dropbox-Workflow.md)
 - Check the [logs](bond_data/logs/) for detailed error messages
-- Refer to the [quick start guide](QUICKSTART.md)
+- Refer to the [quick start guide](Documentation/Setup/QUICKSTART.md)
 
 ---
 
 **Built with ❤️ for professional bond traders**
+
+**Repository**: https://github.com/ewswlw/Bond-RV-App
 
