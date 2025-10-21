@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+
+# Data files (large)
+*.xlsx
+*.xls
+*.parquet
+bond_data/parquet/*.parquet
+!bond_data/parquet/.gitkeep
+
+# Logs
+*.log
+bond_data/logs/*.log
+!bond_data/logs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+*.tmp
+
+# Test files
+test_*.py
+diagnose_*.py
+inspect_*.py
+check_*.py
+validate_*.py
+
