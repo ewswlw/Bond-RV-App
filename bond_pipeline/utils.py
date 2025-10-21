@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 import pandas as pd
 
-from config import FILE_PATTERN, CUSIP_LENGTH, NA_VALUES
+from .config import FILE_PATTERN, CUSIP_LENGTH, NA_VALUES
 
 
 def setup_logging(log_file: Path, name: str = None) -> logging.Logger:

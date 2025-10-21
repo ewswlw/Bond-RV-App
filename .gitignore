@@ -47,3 +47,6 @@ inspect_*.py
 check_*.py
 validate_*.py
 
+.coverage
+.pytest_cache/
+htmlcov/

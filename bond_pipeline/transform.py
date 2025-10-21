@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Optional
 import logging
 
-from config import DATE_COLUMN, UNIVERSE_COLUMNS
-from utils import (
+from .config import DATE_COLUMN, UNIVERSE_COLUMNS
+from .utils import (
     setup_logging, 
     validate_cusip, 
     clean_na_values, 

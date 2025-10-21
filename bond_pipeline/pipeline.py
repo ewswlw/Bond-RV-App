@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-from config import (
+from .config import (
     LOG_FILE_PROCESSING,
     LOG_FILE_DUPLICATES,
     LOG_FILE_VALIDATION,
@@ -16,10 +16,10 @@ from config import (
     HISTORICAL_PARQUET,
     UNIVERSE_PARQUET
 )
-from utils import setup_logging, get_file_list, format_date_string
-from extract import ExcelExtractor
-from transform import DataTransformer
-from load import ParquetLoader
+from .utils import setup_logging, get_file_list, format_date_string
+from .extract import ExcelExtractor
+from .transform import DataTransformer
+from .load import ParquetLoader
 
 
 class BondDataPipeline:

@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Optional, Set
 import logging
 
-from config import (
+from .config import (
     HISTORICAL_PARQUET, 
     UNIVERSE_PARQUET,
     DATE_COLUMN
 )
-from utils import setup_logging, format_date_string
+from .utils import setup_logging, format_date_string
 
 
 class ParquetLoader:

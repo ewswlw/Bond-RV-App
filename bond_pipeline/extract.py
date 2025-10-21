@@ -9,8 +9,8 @@ from typing import Optional, Tuple
 from datetime import datetime
 import logging
 
-from config import HEADER_ROW, DATE_COLUMN
-from utils import extract_date_from_filename, setup_logging, format_date_string
+from .config import HEADER_ROW, DATE_COLUMN
+from .utils import extract_date_from_filename, setup_logging, format_date_string
 
 
 class ExcelExtractor:
