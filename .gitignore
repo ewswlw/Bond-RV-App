@@ -40,6 +40,7 @@ Thumbs.db
 # Temporary files
 tmp/
 *.tmp
+nul
 
 # Test files
 test_*.py
@@ -51,3 +52,10 @@ validate_*.py
 .coverage
 .pytest_cache/
 htmlcov/
+
+# Test output directories
+tests/test_output/
+test_archive/
+test_csv_archive/
+test_2day_lookback/
+test_days_filter/
