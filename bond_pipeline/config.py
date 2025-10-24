@@ -65,7 +65,14 @@ LOG_FILE_DUPLICATES = LOGS_DIR / "duplicates.log"
 LOG_FILE_VALIDATION = LOGS_DIR / "validation.log"
 LOG_FILE_SUMMARY = LOGS_DIR / "summary.log"
 
+# Enhanced logging configuration
+LOG_ROTATION_RUNS = 10  # Keep last N runs in active log files
+LOG_ARCHIVE_DIR = LOGS_DIR / "archive"
+LOG_METADATA_FILE = LOGS_DIR / ".run_metadata.json"
+BOND_NAME_COLUMN = "Security"  # Column to use for bond names in logs
+
 # Ensure directories exist
 PARQUET_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
+LOG_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
 

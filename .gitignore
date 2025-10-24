@@ -9,12 +9,13 @@ venv/
 ENV/
 *.egg-info/
 
+# Virtual environment (project-specific)
+Bond-RV-App/
+
 # Data files (large)
 *.xlsx
 *.xls
-*.parquet
-bond_data/parquet/*.parquet
-!bond_data/parquet/.gitkeep
+# Note: parquet files in bond_data/parquet/ ARE tracked in git
 
 # Raw Data folder - exclude Excel files but keep folder
 Raw Data/*.xlsx

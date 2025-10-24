@@ -1,10 +1,30 @@
 # Bond Data Pipeline - Quick Start Guide
 
+**Last Updated**: October 24, 2025 12:00 PM
+
 ## 🚀 Getting Started in 5 Minutes
 
-### Prerequisites
+### Step 1: Set Up Virtual Environment ⭐ REQUIRED
+
+**This project requires a virtual environment named `Bond-RV-App`.**
+
 ```bash
-pip install pandas pyarrow openpyxl
+# Create virtual environment
+python -m venv Bond-RV-App
+
+# Activate it
+Bond-RV-App\Scripts\activate       # Windows
+source Bond-RV-App/bin/activate    # Mac/Linux
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+For detailed virtual environment instructions, see [VENV_SETUP.md](VENV_SETUP.md).
+
+### Step 2: Verify Installation
+```bash
+python -c "import pandas; import pyarrow; import openpyxl; print('All dependencies installed!')"
 ```
 
 ### Directory Structure
@@ -25,21 +45,53 @@ bond_data/
 └── logs/               # Processing logs
 ```
 
+## 📂 Input Data
+
+The pipeline can read Excel files from two locations:
+- **Raw Data/** folder (recommended - simple drag & drop)
+- Dropbox folder (optional - for automatic syncing)
+
+See [Local-Workflow.md](../Workflows/Local-Workflow.md) for the recommended workflow.
+
 ## 📝 Usage
+
+**IMPORTANT**: Always activate the virtual environment before running commands!
+
+```bash
+Bond-RV-App\Scripts\activate       # Windows
+source Bond-RV-App/bin/activate    # Mac/Linux
+```
+
+### Automated Pipeline Runner (Recommended)
+```bash
+python run_pipeline.py
+# Select: 1=override (first run), 2=append (daily updates)
+```
 
 ### First Time Setup (Override Mode)
 Processes all files and creates new parquet tables:
 
 ```bash
+# From project root
+python run_pipeline.py
+# Select option 1 (OVERRIDE)
+
+# OR from bond_pipeline directory
 cd bond_pipeline
-python pipeline.py -i "/path/to/Universe Historical/" -m override
+python pipeline.py -i "../Raw Data/" -m override
 ```
 
 ### Daily Updates (Append Mode)
 Adds only new dates to existing parquet tables:
 
 ```bash
-python pipeline.py -i "/path/to/Universe Historical/" -m append
+# From project root
+python run_pipeline.py
+# Select option 2 (APPEND)
+
+# OR from bond_pipeline directory
+cd bond_pipeline
+python pipeline.py -i "../Raw Data/" -m append
 ```
 
 ## 📊 Output Tables
@@ -73,12 +125,11 @@ recent = df_hist[df_hist['Date'] >= '2025-09-01']
 cusip_ts = df_hist[df_hist['CUSIP'] == '037833DX5'].sort_values('Date')
 ```
 
-## 📈 Current Dataset Stats
+## 📈 Dataset Stats
 
-- **Total Rows**: 25,741
-- **Unique Dates**: 11 (2023-08-04 to 2025-10-20)
-- **Unique CUSIPs**: 3,231
-- **Processing Time**: ~15-20 seconds
+Stats depend on the Excel files you have in `Raw Data/` folder:
+- Processing time is typically 15-20 seconds for 12 files
+- Use `cat bond_data/logs/summary.log` to see your dataset stats
 
 ## 🔍 Checking Logs
 

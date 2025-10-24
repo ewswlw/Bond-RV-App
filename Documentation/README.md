@@ -1,6 +1,6 @@
 # Bond RV App - Documentation Index
 
-**Last Updated**: October 21, 2025
+**Last Updated**: October 24, 2025 12:00 PM
 
 ---
 
@@ -13,6 +13,12 @@ This folder contains all documentation for the Bond RV App data pipeline, organi
 ## 🚀 Setup
 
 **Start here if you're setting up the pipeline for the first time.**
+
+### [VENV_SETUP.md](Setup/VENV_SETUP.md) ⭐ START HERE
+- Virtual environment setup guide
+- Required for proper dependency isolation
+- Daily activation instructions
+- Troubleshooting virtual environment issues
 
 ### [QUICKSTART.md](Setup/QUICKSTART.md)
 - 5-minute quick start guide
@@ -69,6 +75,12 @@ This folder contains all documentation for the Bond RV App data pipeline, organi
 - Performance metrics
 - Next steps
 
+### [Unit-Testing-Plan.md](Reference/Unit-Testing-Plan.md)
+- Comprehensive unit testing strategy
+- Test coverage for all modules
+- Testing fixtures and patterns
+- Test execution instructions
+
 ### [Data-Distribution-Options.md](Reference/Data-Distribution-Options.md)
 - Analysis of 5 different data distribution strategies
 - Pros/cons of each approach
@@ -84,10 +96,12 @@ This folder contains all documentation for the Bond RV App data pipeline, organi
 
 | Task | Document |
 |------|----------|
-| Set up the pipeline for the first time | [Workflows/Local-Workflow.md](Workflows/Local-Workflow.md) ⭐ |
-| Drag and drop Excel files workflow | [Workflows/Local-Workflow.md](Workflows/Local-Workflow.md) ⭐ |
+| Set up virtual environment | [Setup/VENV_SETUP.md](Setup/VENV_SETUP.md) ⭐ START HERE |
+| Set up the pipeline for the first time | [Workflows/Local-Workflow.md](Workflows/Local-Workflow.md) |
+| Drag and drop Excel files workflow | [Workflows/Local-Workflow.md](Workflows/Local-Workflow.md) |
 | Use Dropbox to sync data across computers | [Workflows/Dropbox-Workflow.md](Workflows/Dropbox-Workflow.md) |
 | Quick 5-minute setup | [Setup/QUICKSTART.md](Setup/QUICKSTART.md) |
+| Run tests | [Reference/Unit-Testing-Plan.md](Reference/Unit-Testing-Plan.md) |
 | Understand how the pipeline works | [Architecture/bond_pipeline_documentation.md](Architecture/bond_pipeline_documentation.md) |
 | See what was delivered | [Reference/DELIVERABLES.txt](Reference/DELIVERABLES.txt) |
 | Compare data distribution options | [Reference/Data-Distribution-Options.md](Reference/Data-Distribution-Options.md) |
@@ -101,10 +115,11 @@ Documentation/
 ├── README.md                           # This file
 │
 ├── Setup/                              # Getting started guides
+│   ├── VENV_SETUP.md                   # ⭐ Virtual environment setup (START HERE)
 │   └── QUICKSTART.md                   # 5-minute setup guide
 │
 ├── Workflows/                          # Step-by-step procedures
-│   ├── Local-Workflow.md               # ⭐ Drag & drop workflow (PRIMARY)
+│   ├── Local-Workflow.md               # Drag & drop workflow (PRIMARY)
 │   └── Dropbox-Workflow.md             # Dropbox sync workflow (optional)
 │
 ├── Architecture/                       # Technical design docs
@@ -112,6 +127,7 @@ Documentation/
 │
 └── Reference/                          # Reference materials
     ├── DELIVERABLES.txt                # Project summary
+    ├── Unit-Testing-Plan.md            # Testing strategy
     └── Data-Distribution-Options.md    # Data strategy analysis
 ```
 
@@ -120,9 +136,10 @@ Documentation/
 ## 🎯 Recommended Reading Order
 
 ### For New Users:
-1. **[Workflows/Local-Workflow.md](Workflows/Local-Workflow.md)** - Get up and running with drag & drop ⭐
-2. **[Setup/QUICKSTART.md](Setup/QUICKSTART.md)** - Quick reference
-3. **[Reference/DELIVERABLES.txt](Reference/DELIVERABLES.txt)** - Understand what's included
+1. **[Setup/VENV_SETUP.md](Setup/VENV_SETUP.md)** - Set up virtual environment first ⭐
+2. **[Workflows/Local-Workflow.md](Workflows/Local-Workflow.md)** - Get up and running with drag & drop
+3. **[Setup/QUICKSTART.md](Setup/QUICKSTART.md)** - Quick reference
+4. **[Reference/DELIVERABLES.txt](Reference/DELIVERABLES.txt)** - Understand what's included
 
 ### For Developers:
 1. **[Architecture/bond_pipeline_documentation.md](Architecture/bond_pipeline_documentation.md)** - Understand the design

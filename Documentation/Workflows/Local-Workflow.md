@@ -1,7 +1,7 @@
 # Local Workflow - Drag & Drop Excel Files
 
-**Document Version**: 2.0  
-**Date**: October 21, 2025  
+**Document Version**: 2.2
+**Date**: October 24, 2025 12:00 PM
 **Purpose**: Simple drag-and-drop workflow using local Raw Data folder
 
 ---
@@ -26,11 +26,23 @@ git clone https://github.com/ewswlw/Bond-RV-App.git
 cd Bond-RV-App
 ```
 
-### Step 2: Install Dependencies
+### Step 2: Set Up Virtual Environment ⭐ REQUIRED
+
+**This project requires a virtual environment named `Bond-RV-App`.**
 
 ```bash
-pip install pandas pyarrow openpyxl
+# Create virtual environment
+python -m venv Bond-RV-App
+
+# Activate it
+Bond-RV-App\Scripts\activate       # Windows
+source Bond-RV-App/bin/activate    # Mac/Linux
+
+# Install dependencies
+pip install -r requirements.txt
 ```
+
+See [../Setup/VENV_SETUP.md](../Setup/VENV_SETUP.md) for detailed virtual environment instructions.
 
 ### Step 3: Add Your Excel Files
 
@@ -49,7 +61,18 @@ Bond-RV-App/
 
 ### Step 4: Run Pipeline (First Time)
 
+**IMPORTANT**: Always activate the virtual environment before running commands!
+
 ```bash
+# Activate virtual environment
+Bond-RV-App\Scripts\activate       # Windows
+source Bond-RV-App/bin/activate    # Mac/Linux
+
+# Run pipeline (from project root - recommended)
+python run_pipeline.py
+# Select option 1 (OVERRIDE)
+
+# OR from bond_pipeline directory
 cd bond_pipeline
 python pipeline.py -i "../Raw Data/" -m override
 ```
@@ -85,8 +108,17 @@ EOF
    └── API 10.21.25.xlsx    ← New file
    ```
 
-2. **Run pipeline in APPEND mode**
+2. **Activate virtual environment and run pipeline in APPEND mode**
    ```bash
+   # Activate virtual environment
+   Bond-RV-App\Scripts\activate       # Windows
+   source Bond-RV-App/bin/activate    # Mac/Linux
+
+   # Run pipeline (recommended)
+   python run_pipeline.py
+   # Select option 2 (APPEND)
+
+   # OR from bond_pipeline directory
    cd bond_pipeline
    python pipeline.py -i "../Raw Data/" -m append
    ```
@@ -147,14 +179,19 @@ EOF
 git clone https://github.com/ewswlw/Bond-RV-App.git
 cd Bond-RV-App
 
-# 2. Install dependencies
-pip install pandas pyarrow openpyxl
+# 2. Set up virtual environment
+python -m venv Bond-RV-App
+Bond-RV-App\Scripts\activate       # Windows
+source Bond-RV-App/bin/activate    # Mac/Linux
 
-# 3. Add Excel files to Raw Data/ folder (drag & drop)
+# 3. Install dependencies
+pip install -r requirements.txt
 
-# 4. Run pipeline
-cd bond_pipeline
-python pipeline.py -i "../Raw Data/" -m override
+# 4. Add Excel files to Raw Data/ folder (drag & drop)
+
+# 5. Run pipeline
+python run_pipeline.py
+# Select option 1 (OVERRIDE)
 ```
 
 ### Computer 2 (or any additional computer)
@@ -164,18 +201,23 @@ python pipeline.py -i "../Raw Data/" -m override
 git clone https://github.com/ewswlw/Bond-RV-App.git
 cd Bond-RV-App
 
-# 2. Install dependencies
-pip install pandas pyarrow openpyxl
+# 2. Set up virtual environment
+python -m venv Bond-RV-App
+Bond-RV-App\Scripts\activate       # Windows
+source Bond-RV-App/bin/activate    # Mac/Linux
 
-# 3. Copy Excel files to Raw Data/ folder
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Copy Excel files to Raw Data/ folder
 #    Options:
 #    - Copy from Computer 1 via USB drive
 #    - Download from shared location (email, Dropbox, etc.)
 #    - Drag & drop into Raw Data/ folder
 
-# 4. Run pipeline
-cd bond_pipeline
-python pipeline.py -i "../Raw Data/" -m override
+# 5. Run pipeline
+python run_pipeline.py
+# Select option 1 (OVERRIDE)
 ```
 
 ### Keeping Excel Files in Sync
@@ -245,25 +287,26 @@ python pipeline.py -i "../Raw Data/" -m override
 ```bash
 git clone https://github.com/ewswlw/Bond-RV-App.git
 cd Bond-RV-App
-pip install pandas pyarrow openpyxl
+python -m venv Bond-RV-App
+Bond-RV-App\Scripts\activate       # Windows
+pip install -r requirements.txt
 # Drag Excel files into Raw Data/ folder
-cd bond_pipeline
-python pipeline.py -i "../Raw Data/" -m override
+python run_pipeline.py             # Select option 1 (OVERRIDE)
 ```
 
 ### Add New Data
 ```bash
 # 1. Drag new Excel file into Raw Data/ folder
-# 2. Run append mode
-cd bond_pipeline
-python pipeline.py -i "../Raw Data/" -m append
+# 2. Activate virtual environment and run append mode
+Bond-RV-App\Scripts\activate       # Windows
+python run_pipeline.py             # Select option 2 (APPEND)
 ```
 
 ### Pull Code Updates
 ```bash
 git pull origin main
-cd bond_pipeline
-python pipeline.py -i "../Raw Data/" -m override
+Bond-RV-App\Scripts\activate       # Windows
+python run_pipeline.py             # Select option 1 (OVERRIDE)
 ```
 
 ### Check Output
@@ -282,19 +325,26 @@ python -c "import pandas as pd; df = pd.read_parquet('bond_data/parquet/historic
 
 ## 📝 Best Practices
 
-### 1. Use Append Mode for New Data
+### 1. Always Activate Virtual Environment
+```bash
+# Before running ANY commands
+Bond-RV-App\Scripts\activate       # Windows
+source Bond-RV-App/bin/activate    # Mac/Linux
+```
+
+### 2. Use Append Mode for New Data
 ```bash
 # When adding new Excel file
-python pipeline.py -i "../Raw Data/" -m append
+python run_pipeline.py             # Select option 2 (APPEND)
 ```
 
-### 2. Use Override Mode After Code Updates
+### 3. Use Override Mode After Code Updates
 ```bash
 # After git pull
-python pipeline.py -i "../Raw Data/" -m override
+python run_pipeline.py             # Select option 1 (OVERRIDE)
 ```
 
-### 3. Keep Excel Files Organized
+### 4. Keep Excel Files Organized
 ```
 Raw Data/
 ├── API 08.04.23.xlsx
@@ -313,7 +363,7 @@ Raw Data/
 # Keep consistent naming: API MM.DD.YY.xlsx
 ```
 
-### 4. Check Logs After Each Run
+### 5. Check Logs After Each Run
 ```bash
 # Quick check
 tail -20 bond_data/logs/summary.log
@@ -322,7 +372,7 @@ tail -20 bond_data/logs/summary.log
 grep "ERROR\|WARNING" bond_data/logs/validation.log
 ```
 
-### 5. Backup Raw Data
+### 6. Backup Raw Data
 - Keep a backup copy of Excel files in a safe location
 - Excel files are not in Git, so you need to back them up separately
 
@@ -352,10 +402,12 @@ If you encounter issues:
 - [ ] Git installed
 - [ ] Python 3.11+ installed
 - [ ] Clone repository: `git clone https://github.com/ewswlw/Bond-RV-App.git`
-- [ ] Install dependencies: `pip install pandas pyarrow openpyxl`
+- [ ] Create virtual environment: `python -m venv Bond-RV-App`
+- [ ] Activate virtual environment: `Bond-RV-App\Scripts\activate` (Windows)
+- [ ] Install dependencies: `pip install -r requirements.txt`
 - [ ] Copy Excel files to `Raw Data/` folder
 - [ ] Verify files match pattern: `API MM.DD.YY.xlsx`
-- [ ] Run pipeline: `python pipeline.py -i "../Raw Data/" -m override`
+- [ ] Run pipeline: `python run_pipeline.py` (select option 1 - OVERRIDE)
 - [ ] Verify output: Check `bond_data/parquet/` for 2 parquet files
 - [ ] Test data: Load parquet files in Python and verify row counts
 
@@ -375,6 +427,6 @@ If you encounter issues:
 
 ---
 
-**Document maintained by**: Bond RV App Team  
-**Last updated**: October 21, 2025
+**Document maintained by**: Bond RV App Team
+**Last updated**: October 24, 2025 12:00 PM
 

@@ -8,13 +8,14 @@ from pathlib import Path
 from typing import Optional
 import logging
 
-from .config import DATE_COLUMN, UNIVERSE_COLUMNS
+from .config import DATE_COLUMN, UNIVERSE_COLUMNS, BOND_NAME_COLUMN
 from .utils import (
-    setup_logging, 
-    validate_cusip, 
-    clean_na_values, 
+    setup_logging,
+    validate_cusip,
+    clean_na_values,
     align_to_master_schema,
-    format_date_string
+    format_date_string,
+    format_section_header
 )
 
 
@@ -24,13 +25,14 @@ class DataTransformer:
     def __init__(self, log_file_duplicates: Path, log_file_validation: Path):
         """
         Initialize transformer with logging.
-        
+
         Args:
             log_file_duplicates: Path to duplicates log file
             log_file_validation: Path to validation log file
         """
-        self.logger_dupes = setup_logging(log_file_duplicates, 'duplicates')
-        self.logger_valid = setup_logging(log_file_validation, 'validation')
+        # Suppress console output - only write to files
+        self.logger_dupes = setup_logging(log_file_duplicates, 'duplicates', console_level=logging.CRITICAL)
+        self.logger_valid = setup_logging(log_file_validation, 'validation', console_level=logging.CRITICAL)
         self.master_schema = None
     
     def set_master_schema(self, columns: list):
@@ -51,42 +53,51 @@ class DataTransformer:
     def validate_and_normalize_cusips(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Validate and normalize CUSIPs in DataFrame.
-        
+
         Args:
             df: DataFrame with CUSIP column
-        
+
         Returns:
             DataFrame with normalized CUSIPs and validation flag
         """
         if 'CUSIP' not in df.columns:
             self.logger_valid.error("CUSIP column not found in DataFrame")
             return df
-        
+
         # Add validation columns
         df['CUSIP_ORIGINAL'] = df['CUSIP'].copy()
         df['CUSIP_VALID'] = True
         df['CUSIP_ERROR'] = ''
-        
+
         invalid_count = 0
-        
+        has_bond_name = BOND_NAME_COLUMN in df.columns
+
         for idx, cusip in df['CUSIP'].items():
             normalized, is_valid, error_msg = validate_cusip(cusip)
-            
+
             df.at[idx, 'CUSIP'] = normalized
             df.at[idx, 'CUSIP_VALID'] = is_valid
             df.at[idx, 'CUSIP_ERROR'] = error_msg
-            
+
             if not is_valid:
                 invalid_count += 1
+
+                # Get bond name if available
+                bond_name = ""
+                if has_bond_name and idx in df.index:
+                    name_value = df.at[idx, BOND_NAME_COLUMN]
+                    if pd.notna(name_value) and str(name_value) not in ['nan', '<NA>', 'None', '']:
+                        bond_name = f" ({name_value})"
+
                 self.logger_valid.warning(
-                    f"Invalid CUSIP: '{cusip}' -> '{normalized}' | Error: {error_msg}"
+                    f"Invalid CUSIP: {cusip}{bond_name} -> {normalized} | Error: {error_msg}"
                 )
-        
+
         if invalid_count > 0:
             self.logger_valid.warning(f"Total invalid CUSIPs: {invalid_count} out of {len(df)}")
         else:
             self.logger_valid.info(f"All {len(df)} CUSIPs are valid")
-        
+
         return df
     
     def remove_duplicates(self, df: pd.DataFrame, keep: str = 'last') -> pd.DataFrame:
@@ -108,19 +119,34 @@ class DataTransformer:
         
         # Find duplicates
         duplicates = df[df.duplicated(subset=[DATE_COLUMN, 'CUSIP'], keep=False)]
-        
+
         if len(duplicates) > 0:
             date_str = format_date_string(df[DATE_COLUMN].iloc[0])
             unique_dupes = duplicates['CUSIP'].nunique()
-            
+
             self.logger_dupes.warning(
                 f"Date {date_str}: Found {len(duplicates)} duplicate rows "
                 f"({unique_dupes} unique CUSIPs)"
             )
-            
-            # Log sample duplicates
+
+            # Log sample duplicates with bond names if available
             sample_dupes = duplicates.groupby('CUSIP').size().head(10)
-            self.logger_dupes.info(f"Sample duplicate CUSIPs:\n{sample_dupes}")
+
+            if BOND_NAME_COLUMN in df.columns:
+                # Add bond names to duplicate report
+                self.logger_dupes.info("Sample duplicate CUSIPs with bond names:")
+                for cusip in sample_dupes.index[:10]:
+                    count = sample_dupes[cusip]
+                    # Get first bond name for this CUSIP
+                    bond_rows = df[df['CUSIP'] == cusip]
+                    if len(bond_rows) > 0:
+                        bond_name = bond_rows[BOND_NAME_COLUMN].iloc[0]
+                        if pd.notna(bond_name) and str(bond_name) not in ['nan', '<NA>', 'None', '']:
+                            self.logger_dupes.info(f"  {cusip} ({bond_name}): {count} occurrences")
+                        else:
+                            self.logger_dupes.info(f"  {cusip}: {count} occurrences")
+            else:
+                self.logger_dupes.info(f"Sample duplicate CUSIPs:\n{sample_dupes}")
         
         # Remove duplicates, keeping last occurrence
         df_deduped = df.drop_duplicates(subset=[DATE_COLUMN, 'CUSIP'], keep=keep)

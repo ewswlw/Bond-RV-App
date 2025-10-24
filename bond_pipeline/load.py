@@ -9,11 +9,11 @@ from typing import Optional, Set
 import logging
 
 from .config import (
-    HISTORICAL_PARQUET, 
+    HISTORICAL_PARQUET,
     UNIVERSE_PARQUET,
     DATE_COLUMN
 )
-from .utils import setup_logging, format_date_string
+from .utils import setup_logging, format_date_string, format_section_header
 
 
 class ParquetLoader:
@@ -22,11 +22,12 @@ class ParquetLoader:
     def __init__(self, log_file: Path):
         """
         Initialize loader with logging.
-        
+
         Args:
             log_file: Path to log file
         """
-        self.logger = setup_logging(log_file, 'load')
+        # Suppress console output - only write to file
+        self.logger = setup_logging(log_file, 'load', console_level=logging.CRITICAL)
     
     def get_existing_dates(self) -> Set:
         """
@@ -88,7 +89,12 @@ class ParquetLoader:
         
         # Combine new data
         new_df = pd.concat(dates_to_add.values(), ignore_index=True)
-        
+
+        # Convert all object columns to string to avoid type inference issues
+        for col in new_df.columns:
+            if new_df[col].dtype == 'object':
+                new_df[col] = new_df[col].astype(str).replace(['nan', '<NA>', 'None'], pd.NA)
+
         self.logger.info(
             f"Appending {len(dates_to_add)} new dates with {len(new_df)} total rows"
         )

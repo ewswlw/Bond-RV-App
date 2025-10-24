@@ -16,45 +16,39 @@ from bond_pipeline.config import DEFAULT_INPUT_DIR, HISTORICAL_PARQUET, UNIVERSE
 def main():
     """Run the pipeline with default settings."""
 
-    print("=" * 80)
-    print("BOND DATA PIPELINE - AUTOMATED RUN")
-    print("=" * 80)
-    print(f"\nInput Directory: {DEFAULT_INPUT_DIR}")
-    print(f"Output Directory: {HISTORICAL_PARQUET.parent}")
+    print("\n" + "=" * 70)
+    print("  BOND DATA PIPELINE")
+    print("=" * 70)
 
     # Ask user for mode
     print("\nSelect processing mode:")
-    print("  1. OVERRIDE - Rebuild everything from scratch (recommended for first run)")
-    print("  2. APPEND   - Add only new dates (for daily updates)")
+    print("  [1] Override - Rebuild everything from scratch")
+    print("  [2] Append   - Add only new dates (default)")
 
-    choice = input("\nEnter choice (1 or 2) [default: 2]: ").strip()
+    choice = input("\nChoice (1 or 2): ").strip()
 
     if choice == '1':
         mode = 'override'
+        mode_display = 'OVERRIDE'
     else:
         mode = 'append'
+        mode_display = 'APPEND'
 
-    print(f"\nRunning pipeline in {mode.upper()} mode...")
-    print("=" * 80)
+    print(f"\n>> Starting pipeline in {mode_display} mode...")
 
     # Run pipeline
     pipeline = BondDataPipeline(DEFAULT_INPUT_DIR, mode)
     success = pipeline.run()
 
     if success:
-        print("\n" + "=" * 80)
-        print("PIPELINE COMPLETED SUCCESSFULLY!")
-        print("=" * 80)
-        print(f"\nOutput files:")
-        print(f"  Historical: {HISTORICAL_PARQUET}")
-        print(f"  Universe:   {UNIVERSE_PARQUET}")
-        print(f"\nLogs: {HISTORICAL_PARQUET.parent.parent / 'logs'}")
+        print("\n" + "-" * 70)
+        print(f"   Output: {HISTORICAL_PARQUET.parent}")
+        print("-" * 70)
         return 0
     else:
-        print("\n" + "=" * 80)
-        print("PIPELINE FAILED!")
-        print("=" * 80)
-        print(f"\nCheck logs for details: {HISTORICAL_PARQUET.parent.parent / 'logs'}")
+        print("\n" + "-" * 70)
+        print(f"   Logs: {HISTORICAL_PARQUET.parent.parent / 'logs'}")
+        print("-" * 70)
         return 1
 
 

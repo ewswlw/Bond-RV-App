@@ -10,7 +10,12 @@ from datetime import datetime
 import logging
 
 from .config import HEADER_ROW, DATE_COLUMN
-from .utils import extract_date_from_filename, setup_logging, format_date_string
+from .utils import (
+    extract_date_from_filename,
+    setup_logging,
+    format_date_string,
+    format_dataframe_info
+)
 
 
 class ExcelExtractor:
@@ -19,11 +24,12 @@ class ExcelExtractor:
     def __init__(self, log_file: Path):
         """
         Initialize extractor with logging.
-        
+
         Args:
             log_file: Path to log file
         """
-        self.logger = setup_logging(log_file, 'extract')
+        # Suppress console output - only write to file
+        self.logger = setup_logging(log_file, 'extract', console_level=logging.CRITICAL)
     
     def read_excel_file(self, file_path: Path) -> Optional[Tuple[pd.DataFrame, datetime]]:
         """
@@ -50,12 +56,16 @@ class ExcelExtractor:
         try:
             df = pd.read_excel(file_path, header=HEADER_ROW)
             self.logger.info(f"  Read {len(df)} rows, {len(df.columns)} columns")
-            
+
+            # Log DataFrame info
+            df_info = format_dataframe_info(df, filename, format_date_string(date_obj))
+            self.logger.info(df_info)
+
             # Add Date column as first column
             df.insert(0, DATE_COLUMN, date_obj)
-            
+
             return (df, date_obj)
-            
+
         except Exception as e:
             self.logger.error(f"  Error reading file: {str(e)}")
             return None
