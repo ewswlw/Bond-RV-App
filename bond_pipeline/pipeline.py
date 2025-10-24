@@ -14,7 +14,8 @@ from .config import (
     LOG_FILE_VALIDATION,
     LOG_FILE_SUMMARY,
     HISTORICAL_PARQUET,
-    UNIVERSE_PARQUET
+    UNIVERSE_PARQUET,
+    DEFAULT_INPUT_DIR
 )
 from .utils import setup_logging, get_file_list, format_date_string
 from .extract import ExcelExtractor
@@ -183,8 +184,9 @@ Examples:
     parser.add_argument(
         '-i', '--input',
         type=str,
-        required=True,
-        help='Input directory containing Excel files'
+        required=False,
+        default=None,
+        help='Input directory containing Excel files (default: Dropbox API Historical folder)'
     )
     
     parser.add_argument(
@@ -196,9 +198,15 @@ Examples:
     )
     
     args = parser.parse_args()
-    
+
+    # Use default input directory if not specified
+    if args.input is None:
+        input_dir = DEFAULT_INPUT_DIR
+        print(f"Using default input directory: {input_dir}")
+    else:
+        input_dir = Path(args.input)
+
     # Validate input directory
-    input_dir = Path(args.input)
     if not input_dir.exists():
         print(f"Error: Input directory does not exist: {input_dir}")
         sys.exit(1)

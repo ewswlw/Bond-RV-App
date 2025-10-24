@@ -12,6 +12,9 @@ DATA_DIR = PROJECT_ROOT / "bond_data"
 PARQUET_DIR = DATA_DIR / "parquet"
 LOGS_DIR = DATA_DIR / "logs"
 
+# Default input directory for Excel files (Dropbox)
+DEFAULT_INPUT_DIR = Path(r"C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Trading\COF\Models\Unfinished Models\Support Files\API Historical")
+
 # Parquet file names
 HISTORICAL_PARQUET = PARQUET_DIR / "historical_bond_details.parquet"
 UNIVERSE_PARQUET = PARQUET_DIR / "universe.parquet"
