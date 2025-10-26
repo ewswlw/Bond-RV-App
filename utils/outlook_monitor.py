@@ -5,6 +5,7 @@ Monitors the "RUNS" folder in Outlook inbox for emails.
 Uses pywin32 COM automation to interact with Windows desktop Outlook.
 
 Created: October 24, 2025 12:30 PM
+Updated: October 26, 2025 - Added comprehensive logging
 """
 
 import win32com.client
@@ -16,6 +17,7 @@ import os
 from pathlib import Path
 import re
 from collections import defaultdict
+import logging
 
 
 class OutlookMonitor:
@@ -28,18 +30,20 @@ class OutlookMonitor:
     - pywin32 package
     """
 
-    def __init__(self, email_address: str = "eddy.winiarz@ytmcapital.com"):
+    def __init__(self, email_address: str = "eddy.winiarz@ytmcapital.com", logger: Optional[logging.Logger] = None):
         """
         Initialize connection to Outlook.
 
         Args:
             email_address: Email account to monitor (default: eddy.winiarz@ytmcapital.com)
+            logger: Optional logger instance for detailed logging
         """
         self.email_address = email_address
         self.outlook = None
         self.namespace = None
         self.inbox = None
         self.runs_folder = None
+        self.logger = logger or logging.getLogger(__name__)
 
     def connect(self):
         """Establish connection to Outlook application."""
@@ -320,6 +324,69 @@ class OutlookMonitor:
         except Exception as e:
             print(f"Warning: Could not update index: {e}")
 
+    def _clear_all_data(self, output_dir: str, log_dir: str = None):
+        """
+        Clear all CSV files, sync index, and log files (full rebuild mode).
+
+        Args:
+            output_dir: Directory containing Outlook Data CSV files and sync index
+            log_dir: Optional directory containing log files to clear
+        """
+        output_path = Path(output_dir)
+        deleted_csvs = 0
+        deleted_index = False
+        deleted_logs = 0
+
+        self.logger.info("=" * 80)
+        self.logger.info("CLEARING ALL DATA (FULL REBUILD MODE)")
+        self.logger.info("=" * 80)
+
+        # Delete all Outlook Data CSV files
+        if output_path.exists():
+            for csv_file in output_path.glob("Outlook Data *.csv"):
+                try:
+                    csv_file.unlink()
+                    deleted_csvs += 1
+                    self.logger.info(f"Deleted: {csv_file.name}")
+                except Exception as e:
+                    self.logger.error(f"Failed to delete {csv_file.name}: {e}")
+
+            # Delete sync index
+            index_path = output_path / 'sync_index.csv'
+            if index_path.exists():
+                try:
+                    index_path.unlink()
+                    deleted_index = True
+                    self.logger.info(f"Deleted: sync_index.csv")
+                except Exception as e:
+                    self.logger.error(f"Failed to delete sync_index.csv: {e}")
+
+        # Delete log files if log_dir specified
+        if log_dir:
+            log_path = Path(log_dir)
+            if log_path.exists():
+                log_file = log_path / 'outlook_monitor.log'
+                if log_file.exists():
+                    try:
+                        # Close existing handlers to release file lock
+                        for handler in self.logger.handlers[:]:
+                            if isinstance(handler, logging.FileHandler):
+                                handler.close()
+                                self.logger.removeHandler(handler)
+
+                        log_file.unlink()
+                        deleted_logs += 1
+                        self.logger.info(f"Deleted: outlook_monitor.log")
+                    except Exception as e:
+                        self.logger.error(f"Failed to delete outlook_monitor.log: {e}")
+
+        self.logger.info("")
+        self.logger.info(f"Summary: Deleted {deleted_csvs} CSV files, "
+                        f"{'sync index' if deleted_index else 'no sync index'}, "
+                        f"{deleted_logs} log files")
+        self.logger.info("=" * 80)
+        self.logger.info("")
+
     def sync_emails_to_csv(self, output_dir: str,
                             progress_callback=None,
                             days_back: int = None) -> Dict[str, int]:
@@ -336,6 +403,8 @@ class OutlookMonitor:
         Returns:
             Dictionary with sync statistics: {'total', 'new', 'skipped', 'errors', 'files_created'}
         """
+        start_time = datetime.now()
+
         if not self.runs_folder:
             print("RUNS folder not connected. Call get_runs_folder() first.")
             return {'total': 0, 'new': 0, 'skipped': 0, 'errors': 0, 'files_created': 0}
@@ -346,8 +415,18 @@ class OutlookMonitor:
 
         index_path = output_path / 'sync_index.csv'
 
+        # Log sync start
+        self.logger.info("=" * 80)
+        self.logger.info(f"OUTLOOK EMAIL ARCHIVING - {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self.logger.info("=" * 80)
+        self.logger.info(f"Mode: {'Last ' + str(days_back) + ' days' if days_back else 'Incremental sync'}")
+        self.logger.info(f"Input: Outlook RUNS folder ({self.email_address})")
+        self.logger.info(f"Output: {output_dir}")
+        self.logger.info("")
+
         # Load already-synced email IDs
         synced_ids = self._load_synced_emails(index_path)
+        self.logger.info(f"--- SCAN PHASE ---")
         print(f"Found {len(synced_ids)} already-synced emails in index")
 
         # Calculate date range if days_back is specified
@@ -376,11 +455,17 @@ class OutlookMonitor:
 
         total_items = items.Count
 
-        stats = {'total': total_items, 'new': 0, 'skipped': 0, 'errors': 0, 'files_created': 0}
+        stats = {'total': total_items, 'new': 0, 'skipped': 0, 'errors': 0, 'files_created': 0, 'files_updated': 0}
+
+        # Log scan results
+        self.logger.info(f"Total emails in folder: {total_items:,}")
+        self.logger.info(f"Already synced: {len(synced_ids):,}")
+        self.logger.info("")
 
         # Group emails by date
         emails_by_date = defaultdict(list)
 
+        self.logger.info(f"--- PROCESSING PHASE ---")
         print(f"Processing {total_items} emails from RUNS folder...")
 
         # Collect all new emails grouped by date
@@ -434,12 +519,23 @@ class OutlookMonitor:
             except Exception as e:
                 stats['errors'] += 1
                 if stats['errors'] <= 10:
-                    print(f"\nError processing email at index {i}: {e}")
+                    error_msg = f"Error processing email at index {i}: {e}"
+                    print(f"\n{error_msg}")
+                    self.logger.error(error_msg)
                 elif stats['errors'] == 11:
                     print(f"\n... suppressing further error messages")
                 continue
 
+        # Log per-date summary
+        if emails_by_date:
+            self.logger.info("")
+            for date_key in sorted(emails_by_date.keys()):
+                count = len(emails_by_date[date_key])
+                self.logger.info(f"Date: {date_key} | {count} emails")
+
         # Write CSV files per date
+        self.logger.info("")
+        self.logger.info(f"--- WRITING FILES ---")
         print(f"\n\nWriting {len(emails_by_date)} CSV files...")
 
         csv_fieldnames = ['EntryID', 'ReceivedDate', 'ReceivedTime', 'ReceivedDateTime',
@@ -462,6 +558,8 @@ class OutlookMonitor:
                     if not file_exists:
                         writer.writeheader()
                         stats['files_created'] += 1
+                    else:
+                        stats['files_updated'] += 1
 
                     writer.writerows(emails)
 
@@ -475,11 +573,30 @@ class OutlookMonitor:
                         f"Outlook Data {formatted_date}.csv"
                     )
 
-                print(f"  Wrote {len(emails)} emails to {csv_filename.name}")
+                msg = f"  Wrote {len(emails)} emails to {csv_filename.name}"
+                print(msg)
+                self.logger.info(f"{csv_filename.name}: {len(emails)} emails {'(new file)' if not file_exists else '(updated)'}")
 
             except Exception as e:
-                print(f"\nError writing CSV for {date_key}: {e}")
+                error_msg = f"Error writing CSV for {date_key}: {e}"
+                print(f"\n{error_msg}")
+                self.logger.error(error_msg)
                 stats['errors'] += len(emails)
+
+        # Final summary log
+        duration = (datetime.now() - start_time).total_seconds()
+        emails_per_sec = stats['new'] / duration if duration > 0 else 0
+
+        self.logger.info("")
+        self.logger.info(f"--- RESULTS ---")
+        self.logger.info(f"Files created: {stats['files_created']}")
+        self.logger.info(f"Files updated: {stats['files_updated']}")
+        self.logger.info(f"Total emails archived: {stats['new']:,}")
+        self.logger.info(f"Errors: {stats['errors']}")
+        self.logger.info("")
+        self.logger.info(f"Performance: {stats['new']} emails in {duration:.1f}s ({emails_per_sec:.1f} emails/sec)")
+        self.logger.info("=" * 80)
+        self.logger.info("")
 
         return stats
 

@@ -123,21 +123,27 @@ echo 2 | python run_pipeline.py  # Runs in append mode
 # Incremental sync - archive new emails only (recommended for daily use)
 python monitor_outlook.py
 
-# Archive ALL emails - rebuild from scratch (first run or data reset)
-python monitor_outlook.py --all
+# Full rebuild - delete all data and re-archive everything (first run or data reset)
+python monitor_outlook.py --rebuild
 
 # Archive last N days to today (e.g., last 2 days)
 python monitor_outlook.py --days 2
 ```
 
 **Output**: CSV files in `C:\Users\Eddy\YTM Capital Dropbox\...\Support Files\Outlook Runs\`
-- One CSV per date: `Outlook Data 2025-10-26.csv`
+- One CSV per date: `Outlook Data 10.26.2025.csv`
 - Sync index: `sync_index.csv` (tracks processed emails)
+- **Log file**: `bond_data/logs/outlook_monitor.log` (detailed execution log)
 
 **Requirements**:
 - Outlook must be installed and configured
 - RUNS folder must exist in Outlook Inbox
 - Email address: `eddy.winiarz@ytmcapital.com`
+
+**Logging**: All operations are logged to `bond_data/logs/outlook_monitor.log` with:
+- Summary statistics (emails processed, files created, performance metrics)
+- Error details (when processing fails, includes email subject/ID)
+- Performance metrics (emails/sec, total duration)
 
 ### Step 2: Parse Emails into Clean Parquet
 
@@ -253,19 +259,19 @@ OUTPUT_FILENAME = "bond_timeseries_clean.parquet"
 bond_data/
 ├── parquet/
 │   ├── historical_bond_details.parquet  # Excel pipeline output (Date + CUSIP)
-│   └── universe.parquet                  # Excel pipeline output (CUSIP only, 13 cols)
+│   ├── universe.parquet                  # Excel pipeline output (CUSIP only, 13 cols)
+│   └── bond_timeseries_clean.parquet     # Outlook pipeline output (runs_miner.py)
 └── logs/
-    ├── processing.log   # Main pipeline operations
-    ├── duplicates.log   # Duplicate detection details
-    ├── validation.log   # CUSIP validation warnings
-    └── summary.log      # High-level pipeline summary
-
-bond_timeseries_clean.parquet              # Outlook pipeline output (at project root)
+    ├── processing.log       # Excel pipeline: Main operations
+    ├── duplicates.log       # Excel pipeline: Duplicate detection
+    ├── validation.log       # Excel pipeline: CUSIP validation
+    ├── summary.log          # Excel pipeline: High-level summary
+    └── outlook_monitor.log  # Outlook pipeline: Email archiving log
 
 C:\...\Support Files\Outlook Runs\         # Outlook email archives
-├── Outlook Data 2025-10-20.csv
-├── Outlook Data 2025-10-21.csv
-├── Outlook Data 2025-10-26.csv
+├── Outlook Data 10.20.2025.csv
+├── Outlook Data 10.21.2025.csv
+├── Outlook Data 10.26.2025.csv
 └── sync_index.csv                         # Tracks processed emails
 ```
 
@@ -379,10 +385,20 @@ Edit `pipeline.py` → `main()` function → Add argparse arguments
 - Check that RUNS folder exists in Outlook Inbox (not a subfolder)
 - Windows only: Requires `pywin32` for COM automation
 
+**Multiple CSV files for the same date**:
+- This should NOT happen - each date should have ONE CSV file
+- If you see duplicates, run `python monitor_outlook.py --rebuild` to clear and rebuild
+- Check `bond_data/logs/outlook_monitor.log` for errors during file writing
+
 **runs_miner.py finds no CSV files**:
 - Run `monitor_outlook.py` first to archive emails
-- Verify INPUT_DIR path in `runs_miner.py` (line 23) matches OUTPUT_DIR in `monitor_outlook.py` (line 26)
+- Verify INPUT_DIR path in `runs_miner.py` (line 28) matches OUTPUT_DIR in `monitor_outlook.py` (line 28)
 - Check that CSV files exist and match pattern: `Outlook Data *.csv`
+
+**Data looks corrupted or incomplete**:
+- Run full rebuild: `python monitor_outlook.py --rebuild`
+- This deletes all CSV files, sync index, and logs, then re-archives everything
+- Check `bond_data/logs/outlook_monitor.log` for detailed error information
 
 **High column misalignment warnings**:
 - This is expected for some email formats
