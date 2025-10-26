@@ -1,13 +1,8 @@
 {
-  "last_run_id": 11,
-  "last_run_time": "2025-10-24T13:28:42.122232",
+  "last_run_id": 12,
+  "last_run_time": "2025-10-26T12:01:29.395567",
   "last_run_mode": "override",
   "run_history": [
-    {
-      "run_id": 2,
-      "timestamp": "2025-10-24T13:02:27.077121",
-      "mode": "override"
-    },
     {
       "run_id": 3,
       "timestamp": "2025-10-24T13:04:49.045263",
@@ -51,6 +46,11 @@
     {
       "run_id": 11,
       "timestamp": "2025-10-24T13:28:42.122232",
+      "mode": "override"
+    },
+    {
+      "run_id": 12,
+      "timestamp": "2025-10-26T12:01:29.395567",
       "mode": "override"
     }
   ]

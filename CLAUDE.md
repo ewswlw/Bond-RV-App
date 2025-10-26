@@ -1,25 +1,38 @@
 # CLAUDE.md
 
-**Last Updated**: October 24, 2025 12:00 PM
+**Last Updated**: October 26, 2025 3:45 PM
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-Bond RV App is a modular ETL pipeline that processes Excel files containing bond market data and transforms them into optimized Parquet tables for relative value trading analysis. The pipeline handles schema evolution (59-75 columns across different file vintages), CUSIP validation, deduplication, and produces two core outputs: a historical time series table and a universe table of unique bonds.
+Bond RV App is a modular ETL pipeline that processes bond market data from two sources:
+
+1. **Excel Pipeline** - Processes Excel files containing historical bond market data and transforms them into optimized Parquet tables for relative value trading analysis. Handles schema evolution (59-75 columns across different file vintages), CUSIP validation, deduplication, and produces two core outputs: a historical time series table and a universe table of unique bonds.
+
+2. **Outlook Email Pipeline** - Archives and parses bond trading emails from Outlook RUNS folder, extracting dealer quotes (bid/ask spreads, sizes, benchmarks) into a clean time series Parquet file.
 
 ## Architecture
 
-### Pipeline Flow (ETL Pattern)
+### Excel Pipeline Flow (ETL Pattern)
 1. **Extract** (`extract.py`) - Reads Excel files with regex pattern matching on filenames to extract dates
 2. **Transform** (`transform.py`) - Validates CUSIPs, removes duplicates, normalizes data, aligns schemas
 3. **Load** (`load.py`) - Writes to Parquet with append/override modes
 
-### Key Components
+### Excel Pipeline Components
 - **config.py** - Central configuration with hardcoded Dropbox paths, schema definitions, NA value mappings
 - **utils.py** - Date parsing, CUSIP validation, logging setup
 - **pipeline.py** - Main orchestrator that coordinates E-T-L flow
 - **run_pipeline.py** - Simple CLI wrapper at project root
+
+### Outlook Email Pipeline Flow
+1. **Archive** (`monitor_outlook.py`) - Archives Outlook RUNS folder emails to CSV files (one CSV per date)
+2. **Parse** (`runs_miner.py`) - Parses email bodies from CSVs, extracts bond quotes, writes to Parquet
+
+### Outlook Pipeline Components
+- **monitor_outlook.py** - CLI wrapper for OutlookMonitor class
+- **utils/outlook_monitor.py** - Outlook COM automation, email archiving, incremental sync
+- **runs_miner.py** - Standalone parser with dynamic column detection, CUSIP validation, data cleaning
 
 ### Critical Design Patterns
 - **Schema Evolution**: Master schema is dynamically set from the latest file, older files are padded with missing columns
@@ -94,6 +107,90 @@ python pipeline.py -i "path/to/excel/files" -m append
 echo 2 | python run_pipeline.py  # Runs in append mode
 ```
 
+## Running the Outlook Email Pipeline
+
+**Purpose**: Archive and parse bond trading emails from Outlook RUNS folder into a clean time series dataset.
+
+**Two-Step Workflow**:
+1. **Step 1**: Archive emails from Outlook to CSV files (one CSV per date)
+2. **Step 2**: Parse email bodies from CSVs into clean Parquet format
+
+### Step 1: Archive Emails from Outlook
+
+```bash
+# From project root (virtual environment activated)
+
+# Incremental sync - archive new emails only (recommended for daily use)
+python monitor_outlook.py
+
+# Archive ALL emails - rebuild from scratch (first run or data reset)
+python monitor_outlook.py --all
+
+# Archive last N days to today (e.g., last 2 days)
+python monitor_outlook.py --days 2
+```
+
+**Output**: CSV files in `C:\Users\Eddy\YTM Capital Dropbox\...\Support Files\Outlook Runs\`
+- One CSV per date: `Outlook Data 2025-10-26.csv`
+- Sync index: `sync_index.csv` (tracks processed emails)
+
+**Requirements**:
+- Outlook must be installed and configured
+- RUNS folder must exist in Outlook Inbox
+- Email address: `eddy.winiarz@ytmcapital.com`
+
+### Step 2: Parse Emails into Clean Parquet
+
+```bash
+# From project root (virtual environment activated)
+python runs_miner.py
+```
+
+**Input**: CSV files from Step 1 (`Outlook Data *.csv`)
+**Output**: `bond_timeseries_clean.parquet` (at project root)
+
+**What it does**:
+- Parses email bodies with dynamic column detection (handles 48+ different email formats)
+- Validates CUSIPs (9-character alphanumeric)
+- Extracts bid/ask spreads, sizes, benchmarks
+- Deduplicates by Date + CUSIP + Dealer (keeps most recent)
+- Normalizes security names, converts Unicode fractions (¼→0.25)
+- Splits dealer names into Bank + Sender
+- Extracts ticker, coupon, maturity from security names
+- Comprehensive validation (misalignment, inverted spreads, etc.)
+
+**Output Schema** (16 columns):
+- **Date**, **Time** - When email was received (datetime objects)
+- **CUSIP** - 9-character bond identifier
+- **Security** - Normalized security name
+- **Ticker**, **Coupon**, **Maturity_Date** - Extracted from security name
+- **Bid_Spread**, **Ask_Spread** - Spread over benchmark in basis points
+- **Bid_Size**, **Ask_Size** - Size in millions
+- **Bench** - Benchmark (e.g., "CAN 1.5 06/01/26")
+- **Dealer** - Bank code (BMO, NBF, RBC)
+- **Sender** - Trader name
+- **ReceivedDateTime** - Full timestamp
+- **Subject** - Email subject line
+
+**Configuration** (edit at top of `runs_miner.py`):
+```python
+INPUT_DIR = r"C:\...\Support Files\Outlook Runs"  # Where monitor_outlook.py saves CSVs
+OUTPUT_DIR = r"."  # Project root (current directory)
+OUTPUT_FILENAME = "bond_timeseries_clean.parquet"
+```
+
+### Daily Workflow Example
+
+```bash
+# 1. Archive new emails from today
+python monitor_outlook.py
+
+# 2. Parse all emails (including today's new ones)
+python runs_miner.py
+```
+
+This creates/updates `bond_timeseries_clean.parquet` with the latest bond quotes.
+
 ## Testing
 
 ### Run All Tests
@@ -118,7 +215,7 @@ pytest --cov=bond_pipeline --cov-report=html
 
 ## Configuration & Paths
 
-### Critical Path Configuration
+### Excel Pipeline Paths
 The DEFAULT_INPUT_DIR in `config.py` is hardcoded to a Dropbox path:
 ```python
 DEFAULT_INPUT_DIR = Path(r"C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Trading\COF\Models\Unfinished Models\Support Files\API Historical")
@@ -126,43 +223,105 @@ DEFAULT_INPUT_DIR = Path(r"C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Tradin
 
 This path is machine-specific and assumes Dropbox sync. When working on different machines, this path must be updated.
 
-### File Naming Convention
-Excel files must match pattern: `API MM.DD.YY.xlsx`
+**File Naming Convention**: Excel files must match pattern `API MM.DD.YY.xlsx`
 - Example: `API 10.20.25.xlsx` (October 20, 2025)
 - Regex: `r'API\s+(\d{2})\.(\d{2})\.(\d{2})\.xlsx$'`
 - Years 00-49 → 2000-2049, years 50-99 → 1950-1999
+
+### Outlook Pipeline Paths
+Configured in `monitor_outlook.py` and `runs_miner.py`:
+
+**monitor_outlook.py** (line 26):
+```python
+OUTPUT_DIR = r"C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Trading\COF\Models\Unfinished Models\Support Files\Outlook Runs"
+```
+
+**runs_miner.py** (lines 23-25):
+```python
+INPUT_DIR = r"C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Trading\COF\Models\Unfinished Models\Support Files\Outlook Runs"
+OUTPUT_DIR = r"."  # Project root
+OUTPUT_FILENAME = "bond_timeseries_clean.parquet"
+```
+
+**File Naming Convention**: CSV files created by monitor_outlook.py
+- Pattern: `Outlook Data YYYY-MM-DD.csv`
+- Example: `Outlook Data 2025-10-26.csv`
+- Sync index: `sync_index.csv` (tracks processed email IDs)
 
 ### Output Structure
 ```
 bond_data/
 ├── parquet/
-│   ├── historical_bond_details.parquet  # Primary key: Date + CUSIP
-│   └── universe.parquet                  # Primary key: CUSIP (13 columns)
+│   ├── historical_bond_details.parquet  # Excel pipeline output (Date + CUSIP)
+│   └── universe.parquet                  # Excel pipeline output (CUSIP only, 13 cols)
 └── logs/
     ├── processing.log   # Main pipeline operations
     ├── duplicates.log   # Duplicate detection details
     ├── validation.log   # CUSIP validation warnings
     └── summary.log      # High-level pipeline summary
+
+bond_timeseries_clean.parquet              # Outlook pipeline output (at project root)
+
+C:\...\Support Files\Outlook Runs\         # Outlook email archives
+├── Outlook Data 2025-10-20.csv
+├── Outlook Data 2025-10-21.csv
+├── Outlook Data 2025-10-26.csv
+└── sync_index.csv                         # Tracks processed emails
 ```
 
 ## Data Quality Rules
 
-### CUSIP Validation
+### Excel Pipeline Data Quality
+
+**CUSIP Validation**:
 - Must be exactly 9 alphanumeric characters
 - Automatically uppercased
 - Invalid CUSIPs are logged but NOT removed (kept in dataset with validation warnings)
 - Common issues: wrong length (8, 10, 12 chars), special characters, Bloomberg IDs
 
-### Duplicate Handling
+**Duplicate Handling**:
 - Duplicates defined as: same Date + CUSIP combination within a single file
 - Strategy: Keep LAST occurrence (not first)
 - Logged to `duplicates.log` with sample CUSIPs
 
-### NA Value Normalization
+**NA Value Normalization**:
 These strings are converted to pandas NA:
 - `#N/A Field Not Applicable`
 - `#N/A Invalid Security`
 - `#N/A`, `N/A`, empty strings
+
+### Outlook Pipeline Data Quality (runs_miner.py)
+
+**Dynamic Column Detection**:
+- Handles 48+ different email header formats
+- Uses separator anchoring (`/` for spreads, `x` for sizes)
+- CUSIP position detected by validation (search backwards from end)
+- Prevents column misalignment errors
+
+**CUSIP Validation**:
+- Must be exactly 9 alphanumeric characters
+- Automatically uppercased
+- Invalid CUSIPs logged to console with line numbers
+- Rows with invalid CUSIPs are kept but flagged
+
+**Duplicate Handling**:
+- Duplicates defined as: same Date + CUSIP + Dealer combination
+- Strategy: Keep most recent by ReceivedDateTime (intraday updates)
+- Allows same bond quotes from different dealers on same date
+
+**Data Cleaning**:
+- Security names normalized (extra whitespace removed)
+- CUSIP-Security name conflicts resolved (canonical name = shortest among most common)
+- Unicode fraction conversion: ¼→0.25, ½→0.5, ¾→0.75
+- Size field cleaning: "2MM" → 2.0
+- Dealer code mapping: "BMO CAPITAL MARKETS"→"BMO", "NATIONAL BANK FINANC"→"NBF", etc.
+
+**Validation Checks** (logged to console):
+- Column misalignment detection (compares parsed vs expected column count)
+- Invalid CUSIP detection (length, character validation)
+- Inverted spreads (bid_spread < ask_spread, should be opposite)
+- Non-numeric spreads and sizes
+- Unicode fraction detection in benchmarks
 
 ## Coding Standards
 
@@ -196,25 +355,67 @@ Edit `pipeline.py` → `main()` function → Add argparse arguments
 
 ## Troubleshooting
 
-### Pipeline Fails with "No files found"
+### Excel Pipeline Issues
+
+**Pipeline Fails with "No files found"**:
 - Check Dropbox sync status (must be fully synced)
 - Verify DEFAULT_INPUT_DIR path in `config.py` matches your machine
 - Confirm Excel files match naming pattern `API MM.DD.YY.xlsx`
 
-### "Could not convert with type str" Error
+**"Could not convert with type str" Error**:
 - Object columns must be converted to strings before Parquet write
 - Fix is in `load.py` lines 92-95 (already implemented for append mode)
 
-### Different Results on Different Computers
+**Different Results on Different Computers**:
 - Run in override mode to rebuild from scratch
 - Ensure same Excel files are present
 - Check Dropbox sync completion
 
-### Missing Dependencies
+### Outlook Pipeline Issues
+
+**monitor_outlook.py fails to connect**:
+- Ensure Outlook is installed and running
+- Verify email is configured: `eddy.winiarz@ytmcapital.com`
+- Check that RUNS folder exists in Outlook Inbox (not a subfolder)
+- Windows only: Requires `pywin32` for COM automation
+
+**runs_miner.py finds no CSV files**:
+- Run `monitor_outlook.py` first to archive emails
+- Verify INPUT_DIR path in `runs_miner.py` (line 23) matches OUTPUT_DIR in `monitor_outlook.py` (line 26)
+- Check that CSV files exist and match pattern: `Outlook Data *.csv`
+
+**High column misalignment warnings**:
+- This is expected for some email formats
+- Check validation output for specific issues
+- If >30% misaligned, verify email format hasn't changed significantly
+
+**Invalid CUSIP warnings**:
+- Some emails may contain non-bond identifiers
+- Review logged line numbers to identify problematic emails
+- CUSIPs must be exactly 9 alphanumeric characters
+
+**Unicode fraction display issues (�)**:
+- Ensure CSV files are UTF-8 encoded
+- Check console encoding supports Unicode
+- Fractions are automatically converted to decimals in output
+
+**Empty output Parquet file**:
+- Check that input CSVs have "Body of Email" column
+- Verify email bodies contain bond data (not just text)
+- Look for parsing errors in console output
+
+### General Issues
+
+**Missing Dependencies**:
 ```bash
 # All dependencies are in requirements.txt
 pip install -r requirements.txt
 ```
+
+**Permission denied when saving Parquet**:
+- Close any programs that might have the file open (Excel, Power BI, etc.)
+- Check file permissions in output directory
+- For runs_miner.py, ensure project root is writable
 
 ## Documentation Structure
 
