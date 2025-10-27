@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-**Last Updated**: October 26, 2025 3:45 PM
+**Last Updated**: October 26, 2025 6:30 PM
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -123,7 +123,7 @@ echo 2 | python run_pipeline.py  # Runs in append mode
 # Incremental sync - archive new emails only (recommended for daily use)
 python monitor_outlook.py
 
-# Full rebuild - delete all data and re-archive everything (first run or data reset)
+# Full rebuild - delete all CSV files, sync index, and logs, then re-archive everything
 python monitor_outlook.py --rebuild
 
 # Archive last N days to today (e.g., last 2 days)
@@ -149,11 +149,28 @@ python monitor_outlook.py --days 2
 
 ```bash
 # From project root (virtual environment activated)
+
+# Incremental mode - process new CSV files only (recommended for daily use)
 python runs_miner.py
+
+# Full rebuild - delete output and reprocess all CSVs from scratch
+python runs_miner.py --rebuild
 ```
 
 **Input**: CSV files from Step 1 (`Outlook Data *.csv`)
-**Output**: `bond_timeseries_clean.parquet` (at project root)
+**Output**: `bond_timeseries_clean.parquet` (in `bond_data/parquet/`)
+**Processing Index**: `runs_processing_index.csv` (tracks which CSVs have been processed)
+
+**Incremental Mode** (default):
+- Only processes CSV files not yet in the processing index
+- Appends new data to existing Parquet file
+- Deduplicates combined data (Date + CUSIP + Dealer)
+- Fast for daily updates
+
+**Rebuild Mode** (`--rebuild`):
+- Deletes existing Parquet output and processing index
+- Reprocesses ALL CSV files from scratch
+- Use for first run or when data needs to be rebuilt
 
 **What it does**:
 - Parses email bodies with dynamic column detection (handles 48+ different email formats)
@@ -165,18 +182,22 @@ python runs_miner.py
 - Extracts ticker, coupon, maturity from security names
 - Comprehensive validation (misalignment, inverted spreads, etc.)
 
-**Output Schema** (16 columns):
-- **Date**, **Time** - When email was received (datetime objects)
-- **CUSIP** - 9-character bond identifier
-- **Security** - Normalized security name
-- **Ticker**, **Coupon**, **Maturity_Date** - Extracted from security name
-- **Bid_Spread**, **Ask_Spread** - Spread over benchmark in basis points
-- **Bid_Size**, **Ask_Size** - Size in millions
-- **Bench** - Benchmark (e.g., "CAN 1.5 06/01/26")
+**Output Schema** (15 columns):
+- **Date** - When email was received (mm/dd/yyyy string format)
+- **Time** - Time email was received (hh:mm string format, no seconds)
 - **Dealer** - Bank code (BMO, NBF, RBC)
 - **Sender** - Trader name
-- **ReceivedDateTime** - Full timestamp
-- **Subject** - Email subject line
+- **Ticker** - Issuer symbol extracted from security name
+- **Security** - Normalized security name
+- **CUSIP** - 9-character bond identifier
+- **Coupon** - Coupon rate extracted from security name
+- **Maturity Date** - Maturity date (mm/dd/yyyy string format)
+- **B_Spd** - Bid spread over benchmark in basis points
+- **A_Spd** - Ask spread over benchmark in basis points
+- **B_Sz_MM** - Bid size in millions (standardized: NBF thousands converted to millions)
+- **A_Sz_MM** - Ask size in millions (standardized: NBF thousands converted to millions)
+- **Bench** - Benchmark bond (e.g., "CAN 1.5 06/01/26", fractions converted to decimals)
+- **B_GSpd** - Bid G-spread (validated: within ±10 bps of B_Spd, else NA)
 
 **Configuration** (edit at top of `runs_miner.py`):
 ```python
@@ -191,11 +212,26 @@ OUTPUT_FILENAME = "bond_timeseries_clean.parquet"
 # 1. Archive new emails from today
 python monitor_outlook.py
 
-# 2. Parse all emails (including today's new ones)
+# 2. Parse new CSV files (incremental - only processes new files)
 python runs_miner.py
 ```
 
-This creates/updates `bond_timeseries_clean.parquet` with the latest bond quotes.
+This workflow:
+- Step 1 creates new CSV files for today's emails (or updates existing ones)
+- Step 2 processes only the new CSV files and appends to the Parquet file
+- Total time: ~1-2 seconds for typical daily volume
+
+### First-Time Setup / Full Rebuild
+
+```bash
+# When setting up for the first time or need to rebuild everything:
+
+# 1. Archive all emails from Outlook
+python monitor_outlook.py --rebuild
+
+# 2. Process all CSVs from scratch
+python runs_miner.py --rebuild
+```
 
 ## Testing
 
@@ -272,7 +308,8 @@ C:\...\Support Files\Outlook Runs\         # Outlook email archives
 ├── Outlook Data 10.20.2025.csv
 ├── Outlook Data 10.21.2025.csv
 ├── Outlook Data 10.26.2025.csv
-└── sync_index.csv                         # Tracks processed emails
+├── sync_index.csv                         # Tracks processed emails (monitor_outlook.py)
+└── runs_processing_index.csv              # Tracks processed CSVs (runs_miner.py)
 ```
 
 ## Data Quality Rules
@@ -318,16 +355,19 @@ These strings are converted to pandas NA:
 **Data Cleaning**:
 - Security names normalized (extra whitespace removed)
 - CUSIP-Security name conflicts resolved (canonical name = shortest among most common)
-- Unicode fraction conversion: ¼→0.25, ½→0.5, ¾→0.75
-- Size field cleaning: "2MM" → 2.0
+- Unicode fraction conversion: ¼→0.25, ½→0.5, ¾→0.75, ⅛→0.125, ⅜→0.375, ⅝→0.625, ⅞→0.875
+- Size field cleaning: "2MM" → 2
+- Size standardization: NBF dealer uses thousands (M), values ≥1000 divided by 1000 to convert to millions (MM)
 - Dealer code mapping: "BMO CAPITAL MARKETS"→"BMO", "NATIONAL BANK FINANC"→"NBF", etc.
 
-**Validation Checks** (logged to console):
-- Column misalignment detection (compares parsed vs expected column count)
-- Invalid CUSIP detection (length, character validation)
-- Inverted spreads (bid_spread < ask_spread, should be opposite)
-- Non-numeric spreads and sizes
-- Unicode fraction detection in benchmarks
+**Data Validation & Quality Checks**:
+- **Spread Range Validation**: Deletes rows where both B_Spd and A_Spd are outside 10-2000 bps range
+- **B_GSpd Validation**: Sets B_GSpd to NA if not within ±10 bps of B_Spd (prints examples)
+- **Column misalignment detection**: Compares parsed vs expected column count
+- **Invalid CUSIP detection**: Length and character validation
+- **Inverted spreads check**: Flags if bid_spread < ask_spread
+- **Non-numeric spreads and sizes**: Validates numeric conversion
+- **Unicode fraction detection**: Ensures all fractions converted to decimals in benchmarks
 
 ## Coding Standards
 
@@ -395,10 +435,16 @@ Edit `pipeline.py` → `main()` function → Add argparse arguments
 - Verify INPUT_DIR path in `runs_miner.py` (line 28) matches OUTPUT_DIR in `monitor_outlook.py` (line 28)
 - Check that CSV files exist and match pattern: `Outlook Data *.csv`
 
+**runs_miner.py says "No new files to process"**:
+- This is normal if all CSV files have been processed already
+- Run `python monitor_outlook.py` first to archive new emails
+- Or use `python runs_miner.py --rebuild` to reprocess everything
+
 **Data looks corrupted or incomplete**:
-- Run full rebuild: `python monitor_outlook.py --rebuild`
-- This deletes all CSV files, sync index, and logs, then re-archives everything
-- Check `bond_data/logs/outlook_monitor.log` for detailed error information
+- Full rebuild Outlook CSVs: `python monitor_outlook.py --rebuild`
+- Full rebuild Parquet output: `python runs_miner.py --rebuild`
+- Check `bond_data/logs/outlook_monitor.log` for email archiving errors
+- Delete `runs_processing_index.csv` manually if index is corrupted
 
 **High column misalignment warnings**:
 - This is expected for some email formats

@@ -6,14 +6,18 @@ bond pricing time series data into Parquet format.
 
 Workflow:
     1. User runs: python monitor_outlook.py --days 7
-    2. User runs: python runs_miner.py
+    2. User runs: python runs_miner.py                    # Incremental (default)
+       OR:       python runs_miner.py --rebuild           # Full rebuild
     3. Output: bond_timeseries_clean.parquet
 
 Created: October 26, 2025
+Updated: October 26, 2025 - Added incremental processing and --rebuild flag
 """
 
 import pandas as pd
 import re
+import argparse
+import csv
 from pathlib import Path
 from datetime import datetime
 
@@ -26,15 +30,89 @@ INPUT_DIR = r"C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Trading\COF\Models\
 
 # Output: Clean parquet file location
 OUTPUT_DIR = r"C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Trading\COF\Models\Unfinished Models\Eddy\Python Projects\Bond-RV-App\bond_data\parquet"
-OUTPUT_FILENAME = "bond_timeseries_clean.parquet"
+OUTPUT_FILENAME = "runs_timeseries_clean.parquet"
 
 # Options
 SHOW_PROGRESS = True  # Display progress during processing
 SAVE_LOG = True  # Save processing log file
 
+# Processing index file (tracks which CSV files have been processed)
+PROCESSING_INDEX_FILE = "runs_processing_index.csv"
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
+def load_processing_index(input_dir):
+    """
+    Load the processing index that tracks which CSV files have been processed.
+
+    Args:
+        input_dir: Directory containing the index file
+
+    Returns:
+        set: Set of filenames that have been processed
+    """
+    index_path = Path(input_dir) / PROCESSING_INDEX_FILE
+    processed_files = set()
+
+    if not index_path.exists():
+        return processed_files
+
+    try:
+        with open(index_path, 'r', encoding='utf-8', newline='') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                processed_files.add(row['filename'])
+    except Exception as e:
+        print(f"Warning: Could not load processing index: {e}")
+
+    return processed_files
+
+
+def update_processing_index(input_dir, filename, record_count):
+    """
+    Add a file to the processing index.
+
+    Args:
+        input_dir: Directory containing the index file
+        filename: Name of the CSV file processed
+        record_count: Number of records extracted from this file
+    """
+    index_path = Path(input_dir) / PROCESSING_INDEX_FILE
+    file_exists = index_path.exists()
+
+    try:
+        with open(index_path, 'a', encoding='utf-8', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['filename', 'processed_at', 'record_count'])
+
+            if not file_exists:
+                writer.writeheader()
+
+            writer.writerow({
+                'filename': filename,
+                'processed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'record_count': record_count
+            })
+    except Exception as e:
+        print(f"Warning: Could not update processing index: {e}")
+
+
+def clear_processing_index(input_dir):
+    """
+    Delete the processing index file (for --rebuild mode).
+
+    Args:
+        input_dir: Directory containing the index file
+    """
+    index_path = Path(input_dir) / PROCESSING_INDEX_FILE
+    if index_path.exists():
+        try:
+            index_path.unlink()
+            print(f"Deleted processing index: {index_path.name}")
+        except Exception as e:
+            print(f"Warning: Could not delete processing index: {e}")
+
 
 def is_valid_cusip(value):
     """
@@ -101,16 +179,17 @@ def parse_maturity(date_str):
 
 def fix_benchmark(bench_str):
     """
-    Fix Unicode fraction characters in benchmark strings.
+    Fix Unicode fraction characters in benchmark and security strings.
 
-    Converts: ¼ → .25, ½ → .5, ¾ → .75
+    Converts: ¼ → .25, ½ → .5, ¾ → .75, ⅛ → .125, ⅜ → .375, ⅝ → .625, ⅞ → .875
+    Also handles "Â" and other garbled unicode that appear as fractions
     Example: "CAN 2 ¾ 12/01/55" → "CAN 2.75 12/01/55"
 
     Args:
-        bench_str: Benchmark string
+        bench_str: Benchmark or security string
 
     Returns:
-        str: Fixed benchmark string
+        str: Fixed string
     """
     if pd.isna(bench_str):
         return bench_str
@@ -118,10 +197,20 @@ def fix_benchmark(bench_str):
     fixed = str(bench_str)
 
     # Replace Unicode fractions with decimals
-    # Pattern: "CAN X <frac> date" → "CAN X.decimal date"
-    fixed = re.sub(r'(\d+)\s+\u00BC\s+', r'\g<1>.25 ', fixed)  # ¼
-    fixed = re.sub(r'(\d+)\s+\u00BD\s+', r'\g<1>.5 ', fixed)   # ½
-    fixed = re.sub(r'(\d+)\s+\u00BE\s+', r'\g<1>.75 ', fixed)  # ¾
+    # Pattern: "X <frac>" → "X.decimal" (with or without spaces)
+    fixed = re.sub(r'(\d+)\s*\u00BC\s*', r'\g<1>.25 ', fixed)  # ¼ (chr 188)
+    fixed = re.sub(r'(\d+)\s*\u00BD\s*', r'\g<1>.5 ', fixed)   # ½ (chr 189)
+    fixed = re.sub(r'(\d+)\s*\u00BE\s*', r'\g<1>.75 ', fixed)  # ¾ (chr 190)
+    fixed = re.sub(r'(\d+)\s*\u215B\s*', r'\g<1>.125 ', fixed) # ⅛
+    fixed = re.sub(r'(\d+)\s*\u215C\s*', r'\g<1>.375 ', fixed) # ⅜
+    fixed = re.sub(r'(\d+)\s*\u215D\s*', r'\g<1>.625 ', fixed) # ⅝
+    fixed = re.sub(r'(\d+)\s*\u215E\s*', r'\g<1>.875 ', fixed) # ⅞
+
+    # Handle other garbled characters (just remove them)
+    fixed = re.sub(r'[�Â]', '', fixed)
+
+    # Clean up any double spaces
+    fixed = re.sub(r'\s+', ' ', fixed)
 
     return fixed
 
@@ -310,28 +399,50 @@ def parse_email_body_dynamic(body, received_date, received_datetime, sender_name
     return records
 
 
-def process_all_emails(input_dir):
+def process_all_emails(input_dir, incremental=True):
     """
-    Process all Outlook Data CSV files in directory.
+    Process Outlook Data CSV files in directory.
 
     Args:
         input_dir: Directory containing Outlook Data*.csv files
+        incremental: If True, only process new files not in processing index
 
     Returns:
         pandas.DataFrame: Raw extracted records
     """
     input_path = Path(input_dir)
-    files = sorted(input_path.glob('Outlook Data*.csv'))
+    all_files = sorted(input_path.glob('Outlook Data*.csv'))
 
-    if not files:
+    if not all_files:
         raise FileNotFoundError(f"No 'Outlook Data*.csv' files found in {input_dir}")
 
-    print(f"Found {len(files)} Outlook Data CSV files")
+    # Load processing index if incremental mode
+    processed_files = set()
+    if incremental:
+        processed_files = load_processing_index(input_dir)
+        if processed_files:
+            print(f"Found {len(processed_files)} already-processed files in index")
+
+    # Filter to new files only if incremental
+    if incremental:
+        files_to_process = [f for f in all_files if f.name not in processed_files]
+        print(f"Total CSV files: {len(all_files)}")
+        print(f"Already processed: {len(processed_files)}")
+        print(f"New files to process: {len(files_to_process)}")
+    else:
+        files_to_process = all_files
+        print(f"Found {len(files_to_process)} Outlook Data CSV files")
+        print("Mode: Full rebuild (processing all files)")
+
+    if not files_to_process:
+        print("\nNo new files to process!")
+        return pd.DataFrame()
+
     print()
 
     all_records = []
 
-    for file in files:
+    for file in files_to_process:
         if SHOW_PROGRESS:
             print(f"Processing: {file.name}")
 
@@ -350,6 +461,10 @@ def process_all_emails(input_dir):
 
         if SHOW_PROGRESS:
             print(f"  Emails: {len(df)}, Records extracted: {file_records}")
+
+        # Update processing index for this file
+        if incremental:
+            update_processing_index(input_dir, file.name, file_records)
 
     print()
     return pd.DataFrame(all_records)
@@ -401,6 +516,7 @@ def clean_bond_data(df):
     Apply data cleaning transformations.
 
     - Normalize security names (remove extra whitespace)
+    - Fix Unicode fractions in Security column
     - Clean size fields (remove "MM" suffix)
     - Extract ticker from security name
     - Extract coupon from security name
@@ -415,29 +531,75 @@ def clean_bond_data(df):
     if SHOW_PROGRESS:
         print("Cleaning data...")
 
-    # 1. Normalize security names
+    # 1. Fix Unicode fractions in Security column (¼ → 0.25, ½ → 0.5, ¾ → 0.75, etc.)
+    df['Security'] = df['Security'].apply(fix_benchmark)
+
+    # 2. Normalize security names (remove extra whitespace)
     df['Security'] = df['Security'].str.replace(r'  +', ' ', regex=True).str.strip()
 
-    # 2. Clean size fields
+    # 3. Clean size fields
     df['B_Sz_MM'] = df['B_Sz_MM'].astype(str).str.replace('MM', '', regex=False).replace('nan', '')
     df['A_Sz_MM'] = df['A_Sz_MM'].astype(str).str.replace('MM', '', regex=False).replace('nan', '')
     df.loc[df['B_Sz_MM'] == '', 'B_Sz_MM'] = None
     df.loc[df['A_Sz_MM'] == '', 'A_Sz_MM'] = None
 
-    # 3. Extract ticker
+    # 4. Validate B_GSpd against B_Spd (must be within +-10 bps)
+    df['B_Spd_num'] = pd.to_numeric(df['B_Spd'], errors='coerce')
+    df['B_GSpd_num'] = pd.to_numeric(df['B_GSpd'], errors='coerce')
+
+    # Identify bad B_GSpd values
+    bad_gspd = (
+        df['B_Spd_num'].notna() &
+        df['B_GSpd_num'].notna() &
+        (abs(df['B_GSpd_num'] - df['B_Spd_num']) > 10)
+    )
+
+    if bad_gspd.sum() > 0:
+        print(f"  Found {bad_gspd.sum()} records with B_GSpd outside +-10 of B_Spd - setting to NA")
+        # Print examples for debugging
+        bad_examples = df[bad_gspd][['Security', 'B_Spd', 'B_GSpd']].head(5)
+        for idx, row in bad_examples.iterrows():
+            print(f"    {row['Security'][:40]:40s} | B_Spd={row['B_Spd']:>6s} | B_GSpd={row['B_GSpd']:>6s}")
+
+    # Set bad B_GSpd values to NA
+    df.loc[bad_gspd, 'B_GSpd'] = None
+
+    # Drop temporary numeric columns
+    df = df.drop(['B_Spd_num', 'B_GSpd_num'], axis=1)
+
+    # 5. Extract ticker
     df['Ticker'] = df['Security'].str.split(' ').str[0]
 
-    # 4. Extract coupon
+    # 6. Extract coupon
     coupon_pattern = r'(\d+\.?\d*)\s+\d{2}/\d{2}/\d{2}'
     df['Coupon'] = df['Security'].str.extract(coupon_pattern, expand=False)
     df['Coupon'] = pd.to_numeric(df['Coupon'], errors='coerce')
 
-    # 5. Extract maturity
+    # 7. Extract maturity
     maturity_pattern = r'(\d{2}/\d{2}/\d{2,4})'
     df['Maturity'] = df['Security'].str.extract(maturity_pattern, expand=False)
     df['Maturity_Date'] = df['Maturity'].apply(parse_maturity)
     df['Maturity_Date'] = pd.to_datetime(df['Maturity_Date'], errors='coerce')
     df = df.drop('Maturity', axis=1)
+
+    # 8. Validate spread ranges (10-2000 bps) - delete rows outside range
+    df['B_Spd_check'] = pd.to_numeric(df['B_Spd'], errors='coerce')
+    df['A_Spd_check'] = pd.to_numeric(df['A_Spd'], errors='coerce')
+
+    # Rows to keep: either B_Spd or A_Spd must be in valid range (10-2000)
+    valid_b_spd = (df['B_Spd_check'] >= 10) & (df['B_Spd_check'] <= 2000)
+    valid_a_spd = (df['A_Spd_check'] >= 10) & (df['A_Spd_check'] <= 2000)
+    valid_rows = valid_b_spd | valid_a_spd
+
+    rows_before = len(df)
+    df = df[valid_rows].copy()
+    rows_deleted = rows_before - len(df)
+
+    if rows_deleted > 0:
+        print(f"  Deleted {rows_deleted} rows with B_Spd and A_Spd outside range (10-2000 bps)")
+
+    # Drop temporary check columns
+    df = df.drop(['B_Spd_check', 'A_Spd_check'], axis=1)
 
     if SHOW_PROGRESS:
         print(f"  Extracted ticker for all {len(df)} records")
@@ -465,10 +627,16 @@ def apply_final_formatting(df):
     if SHOW_PROGRESS:
         print("Applying final formatting...")
 
-    # 1. Split datetime
+    # 1. Split datetime and format
     df['ReceivedDateTime'] = pd.to_datetime(df['ReceivedDateTime'])
-    df['Date'] = pd.to_datetime(df['ReceivedDateTime'].dt.date)
-    df['Time'] = df['ReceivedDateTime'].dt.time
+    # Format Date as mm/dd/yyyy string
+    df['Date'] = df['ReceivedDateTime'].dt.strftime('%m/%d/%Y')
+    # Format Time as hh:mm string (no seconds)
+    df['Time'] = df['ReceivedDateTime'].dt.strftime('%H:%M')
+
+    # Format Maturity_Date as mm/dd/yyyy string and rename
+    df['Maturity Date'] = df['Maturity_Date'].dt.strftime('%m/%d/%Y')
+    df = df.drop('Maturity_Date', axis=1)
 
     # 2. Split dealer
     df[['Bank', 'Sender']] = df['Dealer'].apply(
@@ -483,24 +651,49 @@ def apply_final_formatting(df):
         'RBC DOMINION SECURIT': 'RBC'
     }
     df['Bank'] = df['Bank'].map(bank_mapping)
+
+    # Drop old Dealer column before renaming to avoid duplicates
+    df = df.drop('Dealer', axis=1)
     df = df.rename(columns={'Bank': 'Dealer'})
 
     # 3. Fix benchmark fractions
     df['Bench'] = df['Bench'].apply(fix_benchmark)
 
-    # Final column order
+    # 4. Standardize and format size columns (B_Sz_MM, A_Sz_MM)
+    # NBF uses thousands (M), other dealers use millions (MM)
+    # Smart logic: values >= 1000 are assumed to be in thousands, divide by 1000
+    for col in ['B_Sz_MM', 'A_Sz_MM']:
+        # Convert to numeric (coerce errors to NaN)
+        numeric_values = pd.to_numeric(df[col], errors='coerce')
+
+        # Standardize to millions: if value >= 1000, divide by 1000
+        # (NBF sends in thousands, e.g., 5000 → 5 MM)
+        standardized = numeric_values.apply(
+            lambda x: x / 1000 if pd.notna(x) and x >= 1000 else x
+        )
+
+        # Format as integers (no decimal places)
+        df[col] = standardized.apply(
+            lambda x: str(int(x)) if pd.notna(x) else None
+        )
+
+    # Final column order (removed B_YTNC - everything after B_GSpd)
     final_columns = [
         'Date', 'Time',
         'Dealer', 'Sender',
-        'Ticker', 'Security', 'CUSIP', 'Coupon', 'Maturity_Date',
+        'Ticker', 'Security', 'CUSIP', 'Coupon', 'Maturity Date',
         'B_Spd', 'A_Spd', 'B_Sz_MM', 'A_Sz_MM',
-        'Bench', 'B_GSpd', 'B_YTNC'
+        'Bench', 'B_GSpd'
     ]
 
     if SHOW_PROGRESS:
         print(f"  Split datetime into Date and Time")
-        print(f"  Split dealer into {df['Dealer'].nunique()} unique dealers")
-        print(f"  Fixed {df['Bench'].str.contains(r'\d+\.\d+', na=False, regex=True).sum()} benchmark fractions")
+        unique_dealers = df['Dealer'].nunique()
+        print(f"  Split dealer into {unique_dealers} unique dealers")
+        # Calculate benchmark fractions outside f-string (can't use backslash in f-string)
+        decimal_pattern = r'\d+\.\d+'
+        fraction_count = df['Bench'].str.contains(decimal_pattern, na=False, regex=True).sum()
+        print(f"  Fixed {fraction_count} benchmark fractions")
         print()
 
     return df[final_columns]
@@ -541,7 +734,7 @@ def validate_output(df):
         results['issues'].append(f"Column misalignment: {len(misaligned)} records")
     else:
         if SHOW_PROGRESS:
-            print("✓ Zero column misalignment")
+            print("[PASS] Zero column misalignment")
 
     # 2. Validate CUSIPs
     valid_cusip_pattern = re.compile(r'^[A-Z0-9]{9}$')
@@ -554,7 +747,7 @@ def validate_output(df):
         results['issues'].append(f"Invalid CUSIPs: {len(invalid)} records")
     else:
         if SHOW_PROGRESS:
-            print("✓ All CUSIPs valid (excluding empty)")
+            print("[PASS] All CUSIPs valid (excluding empty)")
 
     # 3. Check for inverted spreads
     df['B_Spd_num'] = pd.to_numeric(df['B_Spd'], errors='coerce')
@@ -565,7 +758,7 @@ def validate_output(df):
         results['issues'].append(f"Inverted spreads: {len(inverted)} records")
     else:
         if SHOW_PROGRESS:
-            print("✓ Zero inverted spreads")
+            print("[PASS] Zero inverted spreads")
 
     # 4. Check for Unicode fractions
     has_unicode = df['Bench'].str.contains(r'[\u00BC\u00BD\u00BE]', na=False, regex=True).sum()
@@ -573,7 +766,7 @@ def validate_output(df):
         results['issues'].append(f"Unicode fractions remaining: {has_unicode} records")
     else:
         if SHOW_PROGRESS:
-            print("✓ All Unicode fractions converted")
+            print("[PASS] All Unicode fractions converted")
 
     # 5. Spread statistics
     spread_width = df['B_Spd_num'] - df['A_Spd_num']
@@ -585,6 +778,12 @@ def validate_output(df):
 
     results['spread_avg'] = spread_width.mean()
     results['spread_median'] = spread_width.median()
+
+    # Clean up temporary validation columns
+    validation_temp_cols = ['CUSIP_Valid', 'B_Spd_num', 'A_Spd_num']
+    for col in validation_temp_cols:
+        if col in df.columns:
+            df.drop(col, axis=1, inplace=True)
 
     if SHOW_PROGRESS:
         print()
@@ -598,6 +797,21 @@ def validate_output(df):
 
 def main():
     """Main execution function."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Parse Outlook Data CSV files into clean bond time series Parquet",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                         Process new CSV files only (incremental, default)
+  %(prog)s --rebuild               Full rebuild (delete output, reprocess all CSVs)
+        """
+    )
+
+    parser.add_argument('--rebuild', action='store_true',
+                       help='Full rebuild: delete output Parquet and processing index, then reprocess all CSVs')
+
+    args = parser.parse_args()
 
     print("=" * 80)
     print("OUTLOOK RUNS EMAIL DATA MINER")
@@ -605,17 +819,43 @@ def main():
     print()
     print(f"Input directory:  {INPUT_DIR}")
     print(f"Output location:  {Path(OUTPUT_DIR) / OUTPUT_FILENAME}")
+    print(f"Mode:             {'Full rebuild' if args.rebuild else 'Incremental (new files only)'}")
     print()
     print("=" * 80)
     print()
 
+    # Handle --rebuild mode
+    if args.rebuild:
+        print("*** FULL REBUILD MODE ***")
+        print()
+
+        # Delete output Parquet file
+        output_path = Path(OUTPUT_DIR) / OUTPUT_FILENAME
+        if output_path.exists():
+            output_path.unlink()
+            print(f"Deleted: {output_path.name}")
+
+        # Delete processing index
+        clear_processing_index(INPUT_DIR)
+        print()
+
     start_time = datetime.now()
 
     try:
-        # 1. Process all emails
+        # 1. Process emails (incremental or full)
         print("STEP 1: PARSING EMAIL DATA")
         print("-" * 80)
-        df_raw = process_all_emails(INPUT_DIR)
+        df_raw = process_all_emails(INPUT_DIR, incremental=not args.rebuild)
+
+        # If no new data and incremental mode, exit early
+        if len(df_raw) == 0:
+            print("\n" + "=" * 80)
+            print("NO NEW DATA TO PROCESS")
+            print("=" * 80)
+            print("\nAll CSV files have already been processed.")
+            print("Use --rebuild flag to reprocess everything from scratch.")
+            return 0
+
         print(f"Total records extracted: {len(df_raw):,}")
         print()
 
@@ -644,15 +884,45 @@ def main():
         print("-" * 80)
         output_path = Path(OUTPUT_DIR) / OUTPUT_FILENAME
 
-        df_final.to_parquet(
-            output_path,
-            engine='pyarrow',
-            compression='snappy',
-            index=False
-        )
+        # In incremental mode, append to existing file if it exists
+        if not args.rebuild and output_path.exists():
+            print("Appending to existing Parquet file...")
+            # Read existing data
+            df_existing = pd.read_parquet(output_path)
+            print(f"  Existing records: {len(df_existing):,}")
+            print(f"  New records: {len(df_final):,}")
+
+            # Combine and deduplicate
+            df_combined = pd.concat([df_existing, df_final], ignore_index=True)
+            print(f"  Combined: {len(df_combined):,}")
+
+            # Remove duplicates (Date + CUSIP + Dealer), keep last
+            # Create temporary datetime for sorting (Date is now mm/dd/yyyy string, Time is hh:mm string)
+            df_combined['_TempDateTime'] = pd.to_datetime(df_combined['Date'] + ' ' + df_combined['Time'], format='%m/%d/%Y %H:%M')
+            df_combined = df_combined.sort_values('_TempDateTime', ascending=True)
+            df_combined = df_combined.drop_duplicates(subset=['Date', 'CUSIP', 'Dealer'], keep='last')
+            df_combined = df_combined.drop('_TempDateTime', axis=1)
+
+            print(f"  After deduplication: {len(df_combined):,}")
+
+            # Save combined data
+            df_combined.to_parquet(
+                output_path,
+                engine='pyarrow',
+                compression='snappy',
+                index=False
+            )
+        else:
+            # Fresh write (rebuild mode or first run)
+            df_final.to_parquet(
+                output_path,
+                engine='pyarrow',
+                compression='snappy',
+                index=False
+            )
 
         file_size_mb = output_path.stat().st_size / (1024 * 1024)
-        print(f"✓ Saved to: {output_path}")
+        print(f"[SUCCESS] Saved to: {output_path}")
         print(f"  File size: {file_size_mb:.2f} MB")
         print()
 
@@ -668,12 +938,12 @@ def main():
         print()
 
         if validation_results['issues']:
-            print("⚠️  WARNINGS:")
+            print("[WARNINGS]")
             for issue in validation_results['issues']:
                 print(f"  - {issue}")
             print()
         else:
-            print("✓ All validation checks passed!")
+            print("[PASS] All validation checks passed!")
             print()
 
         print(f"Duration: {(datetime.now() - start_time).total_seconds():.1f}s")

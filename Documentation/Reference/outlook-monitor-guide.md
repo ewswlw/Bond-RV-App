@@ -1,12 +1,12 @@
 # Outlook Email Monitor - Quick Reference Guide
 
-**Last Updated**: October 24, 2025 8:05 PM
+**Last Updated**: October 26, 2025 6:30 PM
 
 This is a quick reference guide for the Outlook Email Monitor utility. For comprehensive technical documentation including architecture, implementation details, and optimization strategies, see **[Outlook Email Archiving System](outlook-email-archiving.md)**.
 
 ## Overview
 
-The Outlook Email Monitor is a standalone utility that uses Windows COM automation (pywin32) to archive emails from the "RUNS" folder (eddy.winiarz@ytmcapital.com) to CSV files organized by date. It supports incremental sync, date-range filtering, and full rebuild modes.
+The Outlook Email Monitor is a standalone utility that uses Windows COM automation (pywin32) to archive emails from the "RUNS" folder (eddy.winiarz@ytmcapital.com) to CSV files organized by date. It supports incremental sync, date-range filtering, and full rebuild modes with comprehensive logging to `bond_data/logs/outlook_monitor.log`.
 
 ## Prerequisites
 
@@ -52,10 +52,10 @@ Only processes emails from X days ago to today (much faster than full archive).
 ### Rebuild Entire Archive
 
 ```bash
-python monitor_outlook.py --all
+python monitor_outlook.py --rebuild
 ```
 
-Deletes sync index and rebuilds all CSV files from scratch.
+Deletes all CSV files, sync index, and log files, then rebuilds the entire archive from scratch.
 
 ### Show Latest Email
 
@@ -144,6 +144,54 @@ def handle_new_email(email_data):
     print(f"New email: {email_data['subject']}")
 
 monitor.monitor_new_emails(check_interval=60, callback=handle_new_email)
+```
+
+### Logging
+
+All operations are logged to `bond_data/logs/outlook_monitor.log` with comprehensive details:
+
+**Log Contents**:
+- Scan phase: Total emails found, date range filtering
+- Processing phase: Emails processed, new vs skipped, progress updates
+- Summary statistics: Total/new/skipped counts, files created/updated, errors
+- Performance metrics: Emails per second, total duration
+- Error details: Failed email processing with subject and EntryID
+
+**Log Format**:
+- Formatted sections with separators (80-char lines)
+- UTF-8 encoding with proper Unicode support
+- Timestamped entries for each run
+- Console shows only errors; file has full details
+
+**Example Log Output**:
+```
+================================================================================
+OUTLOOK EMAIL ARCHIVING - 2025-10-26 14:30:22
+================================================================================
+Mode: Incremental (new emails only)
+
+SCAN PHASE
+--------------------------------------------------------------------------------
+Total emails in RUNS folder: 803
+Date range: 2025-10-22 to 2025-10-26
+
+PROCESSING PHASE
+--------------------------------------------------------------------------------
+[85.2%] 684/803 - NEW: Bond market update for Oct 26...
+
+RESULTS
+--------------------------------------------------------------------------------
+Total emails:             803
+New emails archived:      127
+Already synced (skipped): 676
+CSV files created:        1
+CSV files updated:        2
+Errors:                   0
+
+PERFORMANCE
+--------------------------------------------------------------------------------
+Duration:      2.3 seconds
+Emails/second: 349.1
 ```
 
 ## Troubleshooting

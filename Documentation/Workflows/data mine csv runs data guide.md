@@ -2,8 +2,9 @@
 
 **Author**: Claude (AI Assistant)
 **Date Created**: October 26, 2025
+**Last Updated**: October 26, 2025 6:30 PM
 **Project**: Bond Trading Data Extraction & Cleaning Pipeline
-**Final Output**: bond_timeseries_clean.csv
+**Final Output**: bond_timeseries_clean.parquet
 
 ---
 
@@ -27,17 +28,20 @@
 Extract clean, structured bond pricing time series data from Outlook email archives containing dealer bond quotes.
 
 ### Scope
-- **Input**: 3 CSV files exported from Outlook (Oct 22-24, 2025)
-- **Raw Records**: 806 emails containing 22,728 bond quotes
-- **Final Records**: 2,146 unique bond quotes (after deduplication)
-- **Processing Time**: Approximately 2 hours (includes quality analysis & validation)
+- **Input**: CSV files exported from Outlook (Oct 22-24, 2025)
+- **Raw Records**: 806 emails containing 23,315 bond quotes
+- **Final Records**: 2,136 unique bond quotes (after deduplication and validation)
+- **Output Format**: Parquet (compressed, optimized for analytics)
+- **Processing Time**: < 1 second (incremental mode)
 
 ### Key Achievements
-- ✅ Zero parsing errors
-- ✅ 99.7% data completeness for core fields
-- ✅ Dynamic parser handles 48 different email formats
-- ✅ All character encoding issues resolved
-- ✅ Production-ready dataset with comprehensive validation
+- ✅ Zero column misalignment errors
+- ✅ Comprehensive data validation (spread ranges, B_GSpd, CUSIPs)
+- ✅ Dynamic parser handles 48+ different email formats
+- ✅ All Unicode fractions converted (¼½¾⅛⅜⅝⅞ → decimals)
+- ✅ Size standardization across dealers (NBF thousands → millions)
+- ✅ Incremental processing with --rebuild option
+- ✅ Production-ready Parquet output with 15 columns
 
 ---
 
@@ -54,9 +58,11 @@ Extract clean, structured bond pricing time series data from Outlook email archi
 
 **Total**: 806 emails
 
+**Note**: These files are created by `monitor_outlook.py`, which archives Outlook RUNS folder emails to CSV files (one CSV per date).
+
 ### Source Email Structure
 
-These CSV files are exported from Microsoft Outlook and contain the following columns:
+These CSV files are created by monitor_outlook.py and contain the following columns:
 - `EntryID`: Unique email identifier
 - `ReceivedDate`: Date received (YYYY-MM-DD format)
 - `ReceivedTime`: Time received (HH:MM:SS format)
@@ -612,11 +618,11 @@ Line 8: CUSIP
 
 ### File Information
 
-**Filename**: `bond_timeseries_clean.csv`
-**Size**: 276 KB
-**Records**: 2,146
-**Columns**: 16
-**Encoding**: UTF-8 with BOM
+**Filename**: `bond_timeseries_clean.parquet`
+**Format**: Apache Parquet (snappy compression)
+**Size**: ~60 KB (compressed)
+**Records**: 2,136
+**Columns**: 15
 **Date Range**: October 22-24, 2025
 
 ---
@@ -625,22 +631,21 @@ Line 8: CUSIP
 
 | Column | Type | Nullable | Population | Description |
 |--------|------|----------|------------|-------------|
-| Date | datetime | No | 100% | Trade date |
-| Time | time | No | 100% | Quote time (HH:MM:SS) |
+| Date | string | No | 100% | Trade date (mm/dd/yyyy format) |
+| Time | string | No | 100% | Quote time (hh:mm format, no seconds) |
 | Dealer | string | No | 100% | Bank code: BMO, NBF, RBC |
 | Sender | string | No | 100% | Trader name |
 | Ticker | string | No | 100% | Issuer symbol |
 | Security | string | No | 100% | Full bond description |
 | CUSIP | string | Yes | 98.4% | 9-char identifier |
-| Coupon | float | Yes | 85.9% | Coupon rate % |
-| Maturity_Date | datetime | Yes | 90.6% | Maturity date |
-| B_Spd | float | Yes | 99.7% | Bid spread (bps) |
-| A_Spd | float | Yes | 99.7% | Ask spread (bps) |
-| B_Sz_MM | float | Yes | 98.2% | Bid size (millions) |
-| A_Sz_MM | float | Yes | 93.8% | Ask size (millions) |
-| Bench | string | Yes | 99.8% | Benchmark bond |
-| B_GSpd | float | Yes | 63.8% | Bid G-spread |
-| B_YTNC | float | Yes | 44.9% | Bid yield to call |
+| Coupon | string | Yes | 90.5% | Coupon rate |
+| Maturity Date | string | Yes | 90.6% | Maturity date (mm/dd/yyyy format) |
+| B_Spd | string | Yes | 99.7% | Bid spread (bps) |
+| A_Spd | string | Yes | 99.7% | Ask spread (bps) |
+| B_Sz_MM | string | Yes | 100% | Bid size (millions, standardized) |
+| A_Sz_MM | string | Yes | 100% | Ask size (millions, standardized) |
+| Bench | string | Yes | 99.8% | Benchmark bond (fractions converted) |
+| B_GSpd | string | Yes | 63.8% | Bid G-spread (validated ±10 bps)
 
 ---
 
@@ -656,7 +661,10 @@ Line 8: CUSIP
 - Column misalignment: 0%
 - Invalid CUSIPs: 0%
 - Inverted spreads: 0
-- Average spread: 6.15 bps (realistic)
+- Average spread: 6.18 bps (realistic)
+- Spread range validation: 10 rows deleted (outside 10-2000 bps)
+- B_GSpd validation: 175 values set to NA (outside ±10 bps)
+- Size standardization: NBF values converted from thousands to millions
 
 **Dealer Distribution**:
 - RBC: 1,775 records (82.7%)
@@ -714,11 +722,17 @@ df = clean_bond_data(df)
 # Final formatting
 df = apply_final_formatting(df)
 
-# Export
-df.to_csv('bond_timeseries_clean.csv', index=False, encoding='utf-8-sig')
+# Export to Parquet
+df.to_parquet('bond_timeseries_clean.parquet', compression='snappy', index=False)
 
 print(f'Processed {len(df):,} records')
 ```
+
+**Note**: The actual implementation uses `runs_miner.py` which provides:
+- Incremental processing (processes only new CSV files)
+- `--rebuild` flag for full rebuild
+- Comprehensive validation and logging
+- Performance optimizations
 
 ---
 
@@ -730,7 +744,7 @@ print(f'Processed {len(df):,} records')
 import pandas as pd
 import re
 
-df = pd.read_csv('bond_timeseries_clean.csv')
+df = pd.read_parquet('bond_timeseries_clean.parquet')
 
 # 1. Column misalignment check
 misaligned = df[df['B_Spd'].astype(str).str.startswith('CAN', na=False)]
