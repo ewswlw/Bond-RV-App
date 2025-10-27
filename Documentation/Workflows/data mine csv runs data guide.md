@@ -661,10 +661,7 @@ Line 8: CUSIP
 - Column misalignment: 0%
 - Invalid CUSIPs: 0%
 - Inverted spreads: 0
-- Average spread: 6.18 bps (realistic)
-- Spread range validation: 10 rows deleted (outside 10-2000 bps)
-- B_GSpd validation: 175 values set to NA (outside ±10 bps)
-- Size standardization: NBF values converted from thousands to millions
+- Average spread: 6.15 bps (realistic)
 
 **Dealer Distribution**:
 - RBC: 1,775 records (82.7%)
@@ -722,17 +719,11 @@ df = clean_bond_data(df)
 # Final formatting
 df = apply_final_formatting(df)
 
-# Export to Parquet
+# Export
 df.to_parquet('bond_timeseries_clean.parquet', compression='snappy', index=False)
 
 print(f'Processed {len(df):,} records')
 ```
-
-**Note**: The actual implementation uses `runs_miner.py` which provides:
-- Incremental processing (processes only new CSV files)
-- `--rebuild` flag for full rebuild
-- Comprehensive validation and logging
-- Performance optimizations
 
 ---
 

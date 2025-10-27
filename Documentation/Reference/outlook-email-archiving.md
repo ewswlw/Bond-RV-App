@@ -13,7 +13,7 @@ Automated email archiving system that syncs emails from the Outlook "RUNS" folde
 - **Date-Based Organization**: One CSV file per date (e.g., "Outlook Data 10.24.2025.csv")
 - **Efficient Filtering**: Uses Outlook's native filtering to process only emails in specified date range
 - **Index Tracking**: Maintains sync_index.csv to track processed emails by EntryID
-- **Comprehensive Logging**: All operations logged to `bond_data/logs/outlook_monitor.log`
+- **Comprehensive Logging**: All operations logged to bond_data/logs/outlook_monitor.log
 - **Three Operating Modes**:
   - Default: Archive new emails only (incremental)
   - `--rebuild`: Delete all data and rebuild entire archive from scratch

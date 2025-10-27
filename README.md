@@ -35,18 +35,20 @@ python pipeline.py -i "../Raw Data/" -m append
 
 ## 📋 Overview
 
-This project includes two data pipelines:
+This project contains two data pipelines for bond trading analysis:
 
 ### Excel Pipeline
 Processes Excel files containing bond data and creates two optimized Parquet tables:
+
 1. **`historical_bond_details.parquet`** - Time series data with unique `Date + CUSIP` combinations
 2. **`universe.parquet`** - Current universe of all unique CUSIPs (13 key columns)
 
 ### Outlook Email Pipeline
 Archives and parses bond trading emails from Outlook RUNS folder:
-1. **`monitor_outlook.py`** - Archives Outlook emails to CSV files (one CSV per date)
-2. **`runs_miner.py`** - Parses email bodies and extracts clean bond quotes
-3. **Output**: `runs_timeseries_clean.parquet` - Clean bond pricing time series (15 columns)
+
+1. **`monitor_outlook.py`** - Archives emails to CSV files (one CSV per date)
+2. **`runs_miner.py`** - Parses email bodies into clean Parquet format
+3. **Output**: `runs_timeseries_clean.parquet` - Dealer bond quotes time series (15 columns)
 
 ### Key Features
 
@@ -82,20 +84,15 @@ bond-rv-app/
 │
 ├── bond_data/                  # Data directory (local only)
 │   ├── parquet/                # Output parquet files
-│   │   ├── historical_bond_details.parquet  # Excel pipeline
-│   │   ├── universe.parquet                  # Excel pipeline
-│   │   └── runs_timeseries_clean.parquet     # Outlook pipeline
+│   │   ├── historical_bond_details.parquet  # Excel pipeline output
+│   │   ├── universe.parquet                 # Excel pipeline output
+│   │   └── runs_timeseries_clean.parquet    # Outlook pipeline output
 │   └── logs/                   # Processing logs
-│       ├── processing.log      # Excel pipeline
-│       ├── duplicates.log      # Excel pipeline
-│       ├── validation.log      # Excel pipeline
-│       ├── summary.log         # Excel pipeline
-│       └── outlook_monitor.log # Outlook pipeline
-│
-├── monitor_outlook.py          # Outlook email archiver (CLI)
-├── runs_miner.py               # Outlook email parser
-├── utils/
-│   └── outlook_monitor.py      # Outlook monitor core class
+│       ├── processing.log      # Excel pipeline logs
+│       ├── duplicates.log
+│       ├── validation.log
+│       ├── summary.log
+│       └── outlook_monitor.log # Outlook pipeline logs
 │
 ├── Documentation/              # Complete documentation
 │   ├── README.md               # Documentation index
@@ -122,15 +119,14 @@ bond-rv-app/
 
 ### Install Dependencies
 ```bash
-pip install -r requirements.txt
-# Includes: pandas, pyarrow, openpyxl, pywin32 (for Outlook)
+pip install pandas pyarrow openpyxl
 ```
 
 ---
 
 ## 📖 Usage
 
-### Excel Pipeline - Command Line Interface
+### Command Line Interface
 
 ```bash
 # Override mode - rebuild everything from scratch
@@ -140,32 +136,16 @@ python pipeline.py -i "~/Dropbox/Bond-RV-App-Data/Universe Historical/" -m overr
 python pipeline.py -i "~/Dropbox/Bond-RV-App-Data/Universe Historical/" -m append
 ```
 
-### Outlook Pipeline - Quick Start
-
-```bash
-# Step 1: Archive emails from Outlook
-python monitor_outlook.py              # Incremental (new emails only)
-python monitor_outlook.py --rebuild    # Full rebuild
-
-# Step 2: Parse emails into clean Parquet
-python runs_miner.py                   # Incremental (new CSV files)
-python runs_miner.py --rebuild         # Full rebuild
-```
-
-**See [CLAUDE.md](CLAUDE.md) for detailed Outlook pipeline documentation.**
-
 ### Python API
 
 ```python
 import pandas as pd
 
-# Load historical time series
+# Load Excel pipeline outputs
 df_hist = pd.read_parquet('bond_data/parquet/historical_bond_details.parquet')
-
-# Load current universe
 df_universe = pd.read_parquet('bond_data/parquet/universe.parquet')
 
-# Load Outlook email data (RUNS folder quotes)
+# Load Outlook pipeline output
 df_runs = pd.read_parquet('bond_data/parquet/runs_timeseries_clean.parquet')
 
 # Example: Get time series for specific CUSIP
@@ -174,9 +154,24 @@ cusip_ts = df_hist[df_hist['CUSIP'] == '037833DX5'].sort_values('Date')
 # Example: Filter by date range
 recent = df_hist[df_hist['Date'] >= '2025-09-01']
 
-# Example: Get latest dealer quotes for a bond
-latest_quotes = df_runs[df_runs['CUSIP'] == '89353ZCF3'].sort_values('Date')
+# Example: Get dealer quotes for specific bond
+bond_quotes = df_runs[df_runs['CUSIP'] == '037833DX5']
 ```
+
+### Outlook Email Pipeline
+
+```bash
+# Step 1: Archive emails from Outlook to CSV files
+python monitor_outlook.py              # Incremental (new emails only)
+python monitor_outlook.py --rebuild    # Full rebuild
+python monitor_outlook.py --days 7     # Last 7 days
+
+# Step 2: Parse CSV files into clean Parquet
+python runs_miner.py                   # Incremental (new CSVs only)
+python runs_miner.py --rebuild         # Full rebuild
+```
+
+**Requirements**: Windows OS, Microsoft Outlook installed, pywin32 package
 
 ---
 
