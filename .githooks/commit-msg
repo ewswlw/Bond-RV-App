@@ -1,0 +1,123 @@
+#!/bin/bash
+# Commit message hook for Bond Pipeline Project
+# Validates commit message format
+# Created: October 24, 2025
+# Last Updated: October 24, 2025
+
+commit_msg_file=$1
+commit_msg=$(cat "$commit_msg_file")
+
+echo "📝 Validating commit message..."
+echo ""
+
+# Remove leading/trailing whitespace
+commit_msg=$(echo "$commit_msg" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+# Get first line (subject)
+subject=$(echo "$commit_msg" | head -n 1)
+
+# Check minimum length
+if [[ ${#subject} -lt 10 ]]; then
+    echo "❌ ERROR: Commit message too short (minimum 10 characters)"
+    echo ""
+    echo "   Your message: '$subject'"
+    echo "   Length: ${#subject} characters"
+    echo ""
+    echo "   Examples of good commit messages:"
+    echo "   - Add CUSIP validation to pipeline"
+    echo "   - Fix duplicate removal in transform module"
+    echo "   - Update documentation with examples"
+    echo ""
+    exit 1
+fi
+
+# Check maximum length for subject
+if [[ ${#subject} -gt 72 ]]; then
+    echo "⚠️  WARNING: Commit subject line is long (${#subject} chars, recommended: <72)"
+    echo "   Consider making it more concise"
+    echo ""
+    # Don't fail, just warn
+fi
+
+# Check if starts with capital letter
+if ! [[ $subject =~ ^[A-Z] ]]; then
+    echo "⚠️  WARNING: Commit message should start with a capital letter"
+    echo "   Your message: '$subject'"
+    echo ""
+    # Don't fail, just warn
+fi
+
+# Check for trailing period
+if [[ $subject =~ \.$ ]]; then
+    echo "⚠️  WARNING: Commit subject should not end with a period"
+    echo "   Your message: '$subject'"
+    echo ""
+    # Don't fail, just warn
+fi
+
+# Check for WIP or FIXME in message
+if [[ $subject =~ ^(WIP|FIXME|TODO) ]]; then
+    echo "ℹ️  Work-in-progress commit detected: $subject"
+    echo "   Remember to squash or reword before final push"
+    echo ""
+fi
+
+# Optional: Check for conventional commits format
+# Format: type(scope): description
+# Example: feat(pipeline): add CUSIP validation
+if [[ $subject =~ ^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: ]]; then
+    echo "✅ Conventional commit format detected"
+    
+    # Extract type
+    commit_type=$(echo "$subject" | sed -n 's/^\([a-z]*\).*/\1/p')
+    echo "   Type: $commit_type"
+    
+    # Check if scope is present
+    if [[ $subject =~ \(.+\) ]]; then
+        scope=$(echo "$subject" | sed -n 's/^[a-z]*(\([^)]*\)).*/\1/p')
+        echo "   Scope: $scope"
+    fi
+    echo ""
+else
+    echo "ℹ️  Standard commit message (not using conventional commits)"
+    echo ""
+    echo "   Optional: Use conventional commits format:"
+    echo "   - feat(scope): Add new feature"
+    echo "   - fix(scope): Fix a bug"
+    echo "   - docs(scope): Update documentation"
+    echo "   - test(scope): Add tests"
+    echo "   - refactor(scope): Refactor code"
+    echo ""
+fi
+
+# Check for body and footer (if multi-line)
+line_count=$(echo "$commit_msg" | wc -l)
+if [[ $line_count -gt 1 ]]; then
+    # Check for blank line after subject
+    second_line=$(echo "$commit_msg" | sed -n '2p')
+    if [[ -n "$second_line" ]]; then
+        echo "⚠️  WARNING: Second line should be blank"
+        echo "   Format: Subject line, blank line, then body"
+        echo ""
+    else
+        echo "✅ Proper multi-line format (subject, blank line, body)"
+    fi
+fi
+
+# Check for common typos
+if echo "$subject" | grep -qi "teh\|recieve\|occured\|seperate"; then
+    echo "⚠️  WARNING: Possible typo detected in commit message"
+    echo ""
+fi
+
+# Check for issue references (optional)
+if echo "$commit_msg" | grep -qE "#[0-9]+|issue [0-9]+|fixes #[0-9]+"; then
+    echo "✅ Issue reference found"
+    echo ""
+fi
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ Commit message valid"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
