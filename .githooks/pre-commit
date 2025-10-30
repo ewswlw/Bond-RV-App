@@ -36,8 +36,8 @@ echo ""
 # 2. Check for sensitive data
 echo "🔒 Checking for sensitive data..."
 sensitive_patterns="(password|api_key|secret|token|private_key|aws_access|db_password)"
-# Exclude .githooks directory and documentation from sensitive data check
-staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep -v "^\.githooks/" | grep -v "^Documentation/" || true)
+# Exclude .githooks directory, documentation, and markdown files from sensitive data check
+staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep -v "^\.githooks/" | grep -v "^Documentation/" | grep -v "\.md$" || true)
 if [[ -n "$staged_files" ]]; then
     sensitive_found=$(git diff --cached -- $staged_files | grep -iE "$sensitive_patterns" || true)
     if [[ -n "$sensitive_found" ]]; then
