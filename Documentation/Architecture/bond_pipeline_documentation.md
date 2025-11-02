@@ -2,6 +2,7 @@
 
 **Project**: Relative Value Bond App for Professional Traders  
 **Date Started**: October 21, 2025  
+**Last Updated**: November 2, 2025 18:27:11  
 **Approach**: Modular, iterative data engineering with parquet storage
 
 ---
@@ -394,16 +395,20 @@ python pipeline.py --mode override --input "Universe Historical/"
 
 ### Modular Architecture
 
+**Current Module Structure** (as of November 2, 2025):
+
 ```
 bond_pipeline/
+├── __init__.py            # Package initialization
 ├── config.py              # Configuration and constants
-├── utils.py               # Utility functions (date parsing, CUSIP validation)
-├── extract.py             # Excel file reading
-├── transform.py           # Data cleaning and transformation
-├── load.py                # Parquet writing
-├── pipeline.py            # Main orchestration
-└── validate.py            # Data validation and logging
+├── utils.py               # Helper functions (date parsing, CUSIP validation, logging)
+├── extract.py             # Excel file reading (ExcelExtractor class)
+├── transform.py           # Data cleaning and transformation (DataTransformer class)
+├── load.py                # Parquet writing (ParquetLoader class)
+└── pipeline.py            # Main orchestration (BondDataPipeline class)
 ```
+
+**Note**: As of November 2025, `validate.py` has been integrated into `transform.py` and `utils.py`. All validation and logging functionality is now distributed across the core modules.
 
 ### Logging & Validation
 
@@ -455,7 +460,10 @@ bond_pipeline/
 
 ## Implementation Complete - Test Results
 
-### Test Run Summary (October 21, 2025)
+### Test Run Summary (November 2, 2025)
+
+**Last Test Run**: November 2, 2025  
+**Test Status**: ✅ All tests passing
 
 #### Override Mode Test ✅
 ```bash
@@ -646,4 +654,45 @@ The bond data pipeline has been successfully implemented and tested with the fol
 ✅ **Documentation**: Complete README and technical documentation  
 
 The pipeline is ready for production use and can be extended as needed for the relative value bond trading application.
+
+---
+
+## Recent Updates (November 2, 2025)
+
+### Bug Fixes Applied
+
+1. **UTF-8 Encoding Error Fix** (November 2, 2025)
+   - Fixed log rotation failing with invalid UTF-8 bytes
+   - Added `errors='replace'` parameter to log file reading in `utils.py`
+   - Logs now handle corrupted bytes gracefully without stopping pipeline
+
+2. **FutureWarning Fix for DataFrame Concatenation** (November 2, 2025)
+   - Fixed deprecation warning about concatenating empty DataFrames
+   - Added filtering to remove empty DataFrames before `pd.concat()` in `load.py`
+   - Applied to both `load_historical_append()` and `load_historical_override()` methods
+
+### Current Execution Methods
+
+**Recommended Method** (as of November 2, 2025):
+```bash
+# Simple interactive runner from project root
+python run_pipeline.py
+# Prompts for mode: 1=Override, 2=Append
+```
+
+**Alternative Methods**:
+```bash
+# Direct CLI from bond_pipeline directory
+cd bond_pipeline
+python pipeline.py -i "../Raw Data/" -m append
+python pipeline.py -i "../Raw Data/" -m override
+
+# Using Python module
+python -m bond_pipeline.pipeline -i "Raw Data/" -m append
+```
+
+---
+
+**Document Last Updated**: November 2, 2025 18:27:11  
+**Pipeline Version**: 1.0 (Production Ready)
 

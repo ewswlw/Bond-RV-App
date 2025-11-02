@@ -1,7 +1,7 @@
 # Local Workflow - Drag & Drop Excel Files
 
-**Document Version**: 2.2
-**Date**: October 24, 2025 12:00 PM
+**Document Version**: 2.3  
+**Last Updated**: November 2, 2025 18:27:11  
 **Purpose**: Simple drag-and-drop workflow using local Raw Data folder
 
 ---
@@ -427,6 +427,6 @@ If you encounter issues:
 
 ---
 
-**Document maintained by**: Bond RV App Team
-**Last updated**: October 24, 2025 12:00 PM
+**Document maintained by**: Bond RV App Team  
+**Last updated**: November 2, 2025 18:27:11
 

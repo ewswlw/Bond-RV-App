@@ -1,6 +1,6 @@
 # Bond Data Pipeline - Quick Start Guide
 
-**Last Updated**: October 24, 2025 12:00 PM
+**Last Updated**: November 2, 2025 18:27:11
 
 ## 🚀 Getting Started in 5 Minutes
 
@@ -28,15 +28,17 @@ python -c "import pandas; import pyarrow; import openpyxl; print('All dependenci
 ```
 
 ### Directory Structure
+**Current Structure** (as of November 2, 2025):
 ```
 bond_pipeline/          # Pipeline code (7 modules)
+├── __init__.py         # Package initialization
 ├── config.py           # Configuration
-├── utils.py            # Helper functions  
-├── extract.py          # Excel reading
-├── transform.py        # Data cleaning
-├── load.py             # Parquet writing
-├── pipeline.py         # Main script
-└── README.md           # Full documentation
+├── utils.py            # Helper functions (date parsing, CUSIP validation, logging)
+├── extract.py          # Excel reading (ExcelExtractor class)
+├── transform.py       # Data cleaning (DataTransformer class)
+├── load.py             # Parquet writing (ParquetLoader class)
+└── pipeline.py         # Main orchestration (BondDataPipeline class)
+```
 
 bond_data/
 ├── parquet/            # Output parquet files
@@ -47,9 +49,12 @@ bond_data/
 
 ## 📂 Input Data
 
-The pipeline can read Excel files from two locations:
+**Current Setup** (as of November 2, 2025):
 - **Raw Data/** folder (recommended - simple drag & drop)
-- Dropbox folder (optional - for automatic syncing)
+- Default Dropbox folder (optional - configured in `config.py`)
+
+**Default Input Directory** (as configured in `bond_pipeline/config.py`):
+- Windows: `C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Trading\COF\Models\Unfinished Models\Support Files\API Historical`
 
 See [Local-Workflow.md](../Workflows/Local-Workflow.md) for the recommended workflow.
 

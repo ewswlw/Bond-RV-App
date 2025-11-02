@@ -4,6 +4,7 @@ BOND DATA PIPELINE - COMPLETE DELIVERABLES
 
 Project: Relative Value Bond App - Data Pipeline
 Date: October 21, 2025
+Last Updated: November 2, 2025 18:27:11
 Status: ✅ COMPLETE & TESTED
 
 ================================================================================
@@ -11,13 +12,14 @@ Status: ✅ COMPLETE & TESTED
 ================================================================================
 
 bond_pipeline/
-├── config.py           - Configuration, paths, constants
-├── utils.py            - Helper functions (date parsing, CUSIP validation)
-├── extract.py          - Excel file reading and date extraction
-├── transform.py        - Data cleaning, normalization, deduplication
-├── load.py             - Parquet writing (append/override modes)
-├── pipeline.py         - Main orchestration script with CLI
-└── README.md           - Complete usage documentation
+├── __init__.py          - Package initialization
+├── config.py            - Configuration, paths, constants
+├── utils.py             - Helper functions (date parsing, CUSIP validation, logging)
+├── extract.py           - Excel file reading (ExcelExtractor class)
+├── transform.py         - Data cleaning, normalization, deduplication (DataTransformer class)
+├── load.py              - Parquet writing (ParquetLoader class)
+├── pipeline.py           - Main orchestration (BondDataPipeline class)
+└── README.md             - Complete usage documentation
 
 ================================================================================
 2. OUTPUT DATA (Parquet Tables)
@@ -77,12 +79,17 @@ bond_data/logs/
 6. USAGE
 ================================================================================
 
-# First time setup (override mode)
-cd bond_pipeline
-python pipeline.py -i "/path/to/Universe Historical/" -m override
+# Recommended method (interactive from project root)
+python run_pipeline.py
+# Select: 1=Override (first run), 2=Append (daily updates)
 
-# Daily updates (append mode)
-python pipeline.py -i "/path/to/Universe Historical/" -m append
+# Alternative: Direct CLI from bond_pipeline directory
+cd bond_pipeline
+python pipeline.py -i "../Raw Data/" -m override
+python pipeline.py -i "../Raw Data/" -m append
+
+# Alternative: Python module
+python -m bond_pipeline.pipeline -i "Raw Data/" -m append
 
 # Read parquet files
 import pandas as pd
@@ -149,5 +156,22 @@ Integration with Trading App:
 - Filter by CUSIP_VALID flag for clean data
 
 ================================================================================
+11. RECENT UPDATES (November 2, 2025)
+================================================================================
+
+Bug Fixes:
+- ✅ Fixed UTF-8 encoding error in log rotation (utils.py)
+- ✅ Fixed FutureWarning for DataFrame concatenation (load.py)
+
+Execution Methods:
+- ✅ Added run_pipeline.py for simple interactive execution
+- ✅ Multiple execution methods available (CLI, module, interactive)
+
+Test Status:
+- ✅ test_utils.py: 25 comprehensive tests complete
+- ⏳ Additional test modules planned for future implementation
+
+================================================================================
 END OF DELIVERABLES
+Last Updated: November 2, 2025 18:27:11
 ================================================================================
