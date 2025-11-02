@@ -1,0 +1,130 @@
+#!/bin/bash
+# Pre-push hook for Bond Pipeline Project
+# Runs tests before allowing push
+# Created: October 24, 2025
+# Last Updated: October 24, 2025
+
+set -e
+
+echo "🚀 Running pre-push checks..."
+echo ""
+
+# 1. Run unit tests
+echo "🧪 Running unit tests..."
+if command -v pytest &> /dev/null; then
+    if [[ -d "tests/unit" ]]; then
+        if pytest tests/unit/ -v --tb=short 2>&1 | tee /tmp/pytest_output.txt; then
+            echo "✅ All unit tests passed"
+        else
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "❌ Unit tests failed!"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "Fix failing tests before pushing:"
+            grep "FAILED" /tmp/pytest_output.txt || true
+            echo ""
+            exit 1
+        fi
+    else
+        echo "⚠️  No tests/unit directory found"
+    fi
+else
+    echo "⚠️  pytest not installed, skipping tests"
+    echo "   Install: pip install pytest"
+fi
+echo ""
+
+# 2. Check test coverage
+echo "📊 Checking test coverage..."
+if command -v pytest &> /dev/null && command -v coverage &> /dev/null; then
+    if [[ -d "tests/unit" ]]; then
+        coverage_output=$(pytest --cov=bond_pipeline --cov-report=term-missing tests/unit/ 2>&1 || true)
+        coverage=$(echo "$coverage_output" | grep "TOTAL" | awk '{print $NF}' | sed 's/%//' || echo "0")
+        
+        if [[ -n "$coverage" ]] && [[ $(echo "$coverage >= 80" | bc -l 2>/dev/null || echo "1") -eq 1 ]]; then
+            echo "✅ Test coverage: ${coverage}%"
+        elif [[ -n "$coverage" ]]; then
+            echo "⚠️  WARNING: Test coverage is ${coverage}% (target: 85%)"
+            echo "   Consider adding more tests"
+            # Don't fail, just warn
+        else
+            echo "ℹ️  Could not determine coverage"
+        fi
+    fi
+else
+    echo "⚠️  pytest or coverage not installed, skipping coverage check"
+    echo "   Install: pip install pytest pytest-cov"
+fi
+echo ""
+
+# 3. Check if pipeline can run (smoke test)
+echo "🔥 Running pipeline smoke test..."
+if [[ -f "bond_pipeline/pipeline.py" ]]; then
+    if python3 -c "from bond_pipeline import pipeline; print('✅ Pipeline imports OK')" 2>&1; then
+        echo "✅ Pipeline module loads successfully"
+    else
+        echo "❌ Pipeline import failed!"
+        echo "   Fix import errors before pushing"
+        exit 1
+    fi
+else
+    echo "⚠️  bond_pipeline/pipeline.py not found"
+fi
+echo ""
+
+# 4. Check for merge conflicts
+echo "🔀 Checking for merge conflict markers..."
+conflict_markers=$(git diff --cached | grep -E "^(\<\<\<\<\<\<\<|\>\>\>\>\>\>\>|=======)" || true)
+if [[ -n "$conflict_markers" ]]; then
+    echo "❌ ERROR: Merge conflict markers found!"
+    echo "   Resolve conflicts before pushing"
+    exit 1
+fi
+echo "✅ No merge conflicts"
+echo ""
+
+# 5. Check branch name
+echo "🌿 Checking branch..."
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+echo "   Current branch: $current_branch"
+
+if [[ "$current_branch" == "main" ]] || [[ "$current_branch" == "master" ]]; then
+    echo "⚠️  WARNING: Pushing directly to $current_branch"
+    echo "   Consider using feature branches for development"
+    # Don't fail, just warn
+fi
+echo ""
+
+# 6. Check for uncommitted changes
+echo "📝 Checking for uncommitted changes..."
+if [[ -n $(git status --porcelain) ]]; then
+    echo "⚠️  WARNING: You have uncommitted changes"
+    git status --short
+    echo ""
+    echo "   Consider committing or stashing before pushing"
+    # Don't fail, just warn
+else
+    echo "✅ No uncommitted changes"
+fi
+echo ""
+
+# 7. Verify requirements.txt is up to date
+echo "📦 Checking requirements.txt..."
+if [[ -f "requirements.txt" ]]; then
+    if git diff --cached --name-only | grep -q "requirements.txt"; then
+        echo "✅ requirements.txt is being updated"
+    elif git diff --cached --name-only | grep -q "\.py$"; then
+        echo "ℹ️  Python files changed, verify requirements.txt is current"
+    fi
+else
+    echo "⚠️  No requirements.txt found"
+fi
+echo ""
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ All pre-push checks passed!"
+echo "🚀 Pushing to remote..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+

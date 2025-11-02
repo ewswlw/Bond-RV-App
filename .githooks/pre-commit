@@ -1,0 +1,166 @@
+#!/bin/bash
+# Pre-commit hook for Bond Pipeline Project
+# Runs code quality checks before allowing commit
+# Created: October 24, 2025
+# Last Updated: October 24, 2025
+
+set -e  # Exit on first error
+
+echo "🔍 Running pre-commit checks..."
+echo ""
+
+# Check if we're in a virtual environment
+if [[ -z "$VIRTUAL_ENV" ]]; then
+    echo "⚠️  WARNING: Not in a virtual environment!"
+    echo "   Activate venv: source venv/bin/activate"
+    echo ""
+    # Don't fail, just warn
+fi
+
+# 1. Check for large files
+echo "📦 Checking for large files..."
+large_files=$(git diff --cached --name-only --diff-filter=ACM | xargs -I {} du -h {} 2>/dev/null | awk '$1 ~ /[0-9]+M/ {size=$1; gsub(/M/, "", size); if (size > 10) print}')
+if [[ -n "$large_files" ]]; then
+    echo "❌ ERROR: Large files detected (> 10MB):"
+    git diff --cached --name-only --diff-filter=ACM | xargs -I {} du -h {} 2>/dev/null | awk '$1 ~ /[0-9]+M/ {size=$1; gsub(/M/, "", size); if (size > 10) print}'
+    echo ""
+    echo "   Solutions:"
+    echo "   - Add to .gitignore"
+    echo "   - Use Git LFS: git lfs track '*.xlsx'"
+    echo "   - Compress the file"
+    exit 1
+fi
+echo "✅ No large files"
+echo ""
+
+# 2. Check for sensitive data
+echo "🔒 Checking for sensitive data..."
+sensitive_patterns="(password|api_key|secret|token|private_key|aws_access|db_password)"
+# Exclude .githooks directory, documentation, and markdown files from sensitive data check
+staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep -v "^\.githooks/" | grep -v "^Documentation/" | grep -v "\.md$" || true)
+if [[ -n "$staged_files" ]]; then
+    sensitive_found=$(git diff --cached -- $staged_files | grep -iE "$sensitive_patterns" || true)
+    if [[ -n "$sensitive_found" ]]; then
+        echo "❌ ERROR: Potential sensitive data detected!"
+        echo "   Review your changes for passwords, API keys, or secrets"
+        echo ""
+        echo "   Matches found:"
+        echo "$sensitive_found" | head -5
+        echo ""
+        exit 1
+    fi
+fi
+echo "✅ No sensitive data detected"
+echo ""
+
+# 3. Check Python syntax
+echo "🐍 Checking Python syntax..."
+python_files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+if [[ -n "$python_files" ]]; then
+    syntax_errors=0
+    for file in $python_files; do
+        if ! python3 -m py_compile "$file" 2>&1 | grep -v "^$"; then
+            echo "❌ Syntax error in $file"
+            syntax_errors=1
+        fi
+    done
+    
+    if [[ $syntax_errors -eq 1 ]]; then
+        exit 1
+    fi
+    echo "✅ Python syntax valid"
+else
+    echo "ℹ️  No Python files to check"
+fi
+echo ""
+
+# 4. Run Black formatter check
+echo "🎨 Checking code formatting (Black)..."
+if command -v black &> /dev/null; then
+    if [[ -n "$python_files" ]]; then
+        if ! black --check $python_files 2>&1 | grep -q "would be reformatted"; then
+            echo "✅ Code formatting OK"
+        else
+            echo "❌ Code formatting issues detected!"
+            echo ""
+            black --check $python_files 2>&1 | grep "would be reformatted"
+            echo ""
+            echo "   Fix with: black $python_files"
+            exit 1
+        fi
+    fi
+else
+    echo "⚠️  Black not installed, skipping format check"
+    echo "   Install: pip install black"
+fi
+echo ""
+
+# 5. Check for debug statements
+echo "🐛 Checking for debug statements..."
+if [[ -n "$python_files" ]]; then
+    debug_found=$(git diff --cached | grep -E "^\+.*(print\(|breakpoint\(\)|pdb\.set_trace|import pdb)" || true)
+    if [[ -n "$debug_found" ]]; then
+        echo "⚠️  WARNING: Debug statements found:"
+        echo "$debug_found" | head -5
+        echo ""
+        echo "   Consider removing before commit"
+        echo "   (This is a warning, not blocking commit)"
+        # Don't fail, just warn
+    else
+        echo "✅ No debug statements"
+    fi
+else
+    echo "ℹ️  No Python files to check"
+fi
+echo ""
+
+# 6. Check for TODO comments in staged changes
+echo "📝 Checking for new TODOs..."
+new_todos=$(git diff --cached | grep -E "^\+.*TODO" || true)
+if [[ -n "$new_todos" ]]; then
+    todo_count=$(echo "$new_todos" | wc -l)
+    echo "ℹ️  New TODO comments added ($todo_count):"
+    echo "$new_todos" | head -3
+    if [[ $todo_count -gt 3 ]]; then
+        echo "   ... and $((todo_count - 3)) more"
+    fi
+    echo ""
+else
+    echo "✅ No new TODOs"
+fi
+echo ""
+
+# 7. Check for documentation timestamps
+echo "📅 Checking documentation timestamps..."
+doc_files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.md$' || true)
+if [[ -n "$doc_files" ]]; then
+    for file in $doc_files; do
+        if ! grep -q "Last Updated.*$(date +%Y)" "$file"; then
+            echo "⚠️  WARNING: $file may need timestamp update"
+        fi
+    done
+    echo "✅ Documentation timestamp check complete"
+else
+    echo "ℹ️  No documentation files to check"
+fi
+echo ""
+
+# 8. Check for trailing whitespace
+echo "🧹 Checking for trailing whitespace..."
+trailing_ws=$(git diff --cached --check 2>&1 | grep "trailing whitespace" || true)
+if [[ -n "$trailing_ws" ]]; then
+    echo "⚠️  WARNING: Trailing whitespace found:"
+    echo "$trailing_ws" | head -5
+    echo ""
+    echo "   Fix with: git diff --cached | sed 's/[ \t]*$//' | git apply"
+    # Don't fail, just warn
+else
+    echo "✅ No trailing whitespace"
+fi
+echo ""
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ All pre-commit checks passed!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
