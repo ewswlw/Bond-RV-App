@@ -16,7 +16,8 @@ from .config import (
     LOG_FILE_SUMMARY,
     HISTORICAL_PARQUET,
     UNIVERSE_PARQUET,
-    DEFAULT_INPUT_DIR
+    DEFAULT_INPUT_DIR,
+    DATE_COLUMN
 )
 from .utils import (
     setup_logging,
@@ -152,6 +153,17 @@ class BondDataPipeline:
             # Read complete historical data
             import pandas as pd
             historical_df = pd.read_parquet(HISTORICAL_PARQUET)
+            
+            # Convert Date column to datetime if needed (backward compatibility with string dates)
+            if DATE_COLUMN in historical_df.columns:
+                if historical_df[DATE_COLUMN].dtype == 'object':
+                    # Try to convert string dates to datetime
+                    from .utils import parse_mmddyyyy
+                    historical_df[DATE_COLUMN] = historical_df[DATE_COLUMN].apply(
+                        lambda x: parse_mmddyyyy(x) if pd.notna(x) and isinstance(x, str) else x
+                    )
+                    # Remove any None values (unparseable strings)
+                    historical_df = historical_df[historical_df[DATE_COLUMN].notna()]
 
             # Create universe
             universe_df = self.transformer.create_universe_table(historical_df)

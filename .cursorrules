@@ -21,6 +21,21 @@
   - File paths affected
 - **Track all modifications** for user review
 
+### Temporary File Cleanup Protocol
+- **ALWAYS clean up temporary files** created during chat sessions
+- **Before completing tasks**, remove any temporary files created:
+  - Migration scripts (`*_migrate*.py`)
+  - Restore scripts (`*_restore*.py`)
+  - Temporary test files (`*_temp*.py`)
+  - Backup files (`.backup`, `*_backup*`)
+- **List deleted files** in the final summary
+- **Clean up at the END** of each chat session that creates temporary files
+- **Common temporary files to remove**:
+  - Scripts in `utils/` created for one-time operations
+  - Backup parquet files in `bond_data/parquet/`
+  - Test output files
+  - Temporary data files
+
 ### Planning Mode Protocol
 1. Ask clarifying questions first
 2. Continue asking until ambiguity is eliminated
@@ -385,6 +400,7 @@ Bond-RV-App/
 - **Test files**: Always create in `tests/` folder when applicable
 - **Avoid duplication**: Check if existing modules can handle the requirement
 - **Justification**: Explain why new file is needed vs extending existing
+- **Clean up temporary files**: Remove any migration/restore/cleanup scripts after use
 
 ### When AI Assistant Helps
 1. **Read existing code**: Always read relevant files before suggesting changes
@@ -392,6 +408,7 @@ Bond-RV-App/
 3. **Propose edits**: Suggest specific changes with line-by-line diffs
 4. **Test changes**: Run relevant tests after modifications
 5. **Check lints**: Fix any linter errors introduced
+6. **Clean up temporary files**: Remove all temporary files, backups, and migration scripts before completing the task
 
 ### Example Code Modification
 **Before**: Adding a new validation function
@@ -595,9 +612,10 @@ pytest tests/unit/test_utils.py -v
 13. **Notify user** when ignoring requirements or using judgment
 14. **Ask clarifying questions** until all ambiguity is eliminated
 15. **Provide file change summary** after completing requests
-16. **Always update .cursorrules** after applicable changes
-17. **Include date/time stamps** in all documentation
-18. **Update .cursorrules before git commits**
+16. **ALWAYS clean up temporary files** created during chat sessions
+17. **Always update .cursorrules** after applicable changes
+18. **Include date/time stamps** in all documentation
+19. **Update .cursorrules before git commits**
 
 ### Quality Standards
 19. **Use pathlib.Path** for all path operations

@@ -212,17 +212,62 @@ def align_to_master_schema(df: pd.DataFrame, master_columns: list) -> pd.DataFra
     return df
 
 
-def format_date_string(date_obj: datetime) -> str:
+def parse_mmddyyyy(date_str: str) -> Optional[datetime]:
     """
-    Format datetime object to string for display.
+    Parse MMDDYYYY string format to datetime object.
+    
+    Args:
+        date_str: Date string in MMDDYYYY format
+    
+    Returns:
+        datetime object or None if invalid
+    
+    Examples:
+        '08242025' -> datetime(2025, 8, 24)
+        '01052023' -> datetime(2023, 1, 5)
+    """
+    try:
+        if len(date_str) != 8:
+            return None
+        month = int(date_str[0:2])
+        day = int(date_str[2:4])
+        year = int(date_str[4:8])
+        return datetime(year, month, day)
+    except (ValueError, IndexError):
+        return None
+
+
+def format_date_string(date_obj) -> str:
+    """
+    Format datetime object to display string (MM/DD/YYYY).
     
     Args:
         date_obj: datetime object
     
     Returns:
-        Formatted date string (YYYY-MM-DD)
+        Formatted date string (MM/DD/YYYY) for display/logging
+    
+    Examples:
+        datetime(2025, 8, 24) -> '08/24/2025'
+        datetime(2023, 1, 5) -> '01/05/2023'
     """
-    return date_obj.strftime('%Y-%m-%d')
+    if isinstance(date_obj, datetime):
+        return date_obj.strftime('%m/%d/%Y')
+    elif isinstance(date_obj, str):
+        # Try to parse if it's a string (for backward compatibility)
+        try:
+            # Try parsing as datetime first
+            if hasattr(date_obj, 'strftime'):
+                return date_obj.strftime('%m/%d/%Y')
+            # Try parsing MMDDYYYY format
+            parsed = parse_mmddyyyy(date_obj)
+            if parsed:
+                return parsed.strftime('%m/%d/%Y')
+        except:
+            pass
+        return str(date_obj)
+    else:
+        return str(date_obj)
 
 
 def get_file_list(input_dir: Path, pattern: str = '*.xlsx') -> list:

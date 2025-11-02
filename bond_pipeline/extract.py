@@ -61,7 +61,7 @@ class ExcelExtractor:
             df_info = format_dataframe_info(df, filename, format_date_string(date_obj))
             self.logger.info(df_info)
 
-            # Add Date column as first column
+            # Add Date column as first column (as datetime object)
             df.insert(0, DATE_COLUMN, date_obj)
 
             return (df, date_obj)

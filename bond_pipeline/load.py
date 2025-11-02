@@ -44,11 +44,28 @@ class ParquetLoader:
             df = pd.read_parquet(HISTORICAL_PARQUET, columns=[DATE_COLUMN])
             existing_dates = set(df[DATE_COLUMN].unique())
             
+            # Convert any string dates back to datetime if needed (backward compatibility)
+            converted_dates = set()
+            for date_val in existing_dates:
+                if pd.isna(date_val):
+                    continue
+                if isinstance(date_val, str):
+                    # Try to parse MMDDYYYY format
+                    from .utils import parse_mmddyyyy
+                    parsed = parse_mmddyyyy(date_val)
+                    if parsed:
+                        converted_dates.add(parsed)
+                    else:
+                        # Keep as-is if can't parse
+                        converted_dates.add(date_val)
+                else:
+                    converted_dates.add(date_val)
+            
             self.logger.info(
-                f"Found {len(existing_dates)} existing dates in historical parquet"
+                f"Found {len(converted_dates)} existing dates in historical parquet"
             )
             
-            return existing_dates
+            return converted_dates
             
         except Exception as e:
             self.logger.error(f"Error reading existing parquet: {str(e)}")
@@ -105,6 +122,17 @@ class ParquetLoader:
                 # Read existing
                 existing_df = pd.read_parquet(HISTORICAL_PARQUET)
                 self.logger.info(f"Loaded existing parquet: {len(existing_df)} rows")
+                
+                # Convert Date column to datetime if needed (backward compatibility)
+                if DATE_COLUMN in existing_df.columns:
+                    if existing_df[DATE_COLUMN].dtype == 'object':
+                        # Try to convert string dates to datetime
+                        from .utils import parse_mmddyyyy
+                        existing_df[DATE_COLUMN] = existing_df[DATE_COLUMN].apply(
+                            lambda x: parse_mmddyyyy(x) if pd.notna(x) and isinstance(x, str) else x
+                        )
+                        # Remove any None values (unparseable strings)
+                        existing_df = existing_df[existing_df[DATE_COLUMN].notna()]
                 
                 # Combine
                 combined_df = pd.concat([existing_df, new_df], ignore_index=True)
@@ -229,10 +257,21 @@ class ParquetLoader:
                 stats['historical_rows'] = len(df_hist)
                 stats['historical_dates'] = df_hist[DATE_COLUMN].nunique()
                 stats['historical_cusips'] = df_hist['CUSIP'].nunique()
-                stats['date_range'] = (
-                    df_hist[DATE_COLUMN].min(),
-                    df_hist[DATE_COLUMN].max()
-                )
+                # Handle date range (support both datetime64 and string dates)
+                date_col = df_hist[DATE_COLUMN]
+                if date_col.dtype == 'object':
+                    # If string format, parse to datetime for min/max
+                    from .utils import parse_mmddyyyy
+                    date_series = date_col.apply(
+                        lambda x: parse_mmddyyyy(x) if pd.notna(x) and isinstance(x, str) else None
+                    )
+                    date_min = date_series.min()
+                    date_max = date_series.max()
+                else:
+                    # If datetime64, use directly
+                    date_min = date_col.min()
+                    date_max = date_col.max()
+                stats['date_range'] = (date_min, date_max)
             
             if UNIVERSE_PARQUET.exists():
                 df_univ = pd.read_parquet(UNIVERSE_PARQUET)
