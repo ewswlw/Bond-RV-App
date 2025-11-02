@@ -104,8 +104,15 @@ class ParquetLoader:
             skipped_str = ', '.join([format_date_string(d) for d in sorted(skipped_dates)])
             self.logger.info(f"Skipping existing dates: {skipped_str}")
         
+        # Filter out empty DataFrames before concatenation
+        non_empty_dfs = [df for df in dates_to_add.values() if not df.empty and len(df) > 0]
+        
+        if not non_empty_dfs:
+            self.logger.info("No non-empty data to append")
+            return True
+        
         # Combine new data
-        new_df = pd.concat(dates_to_add.values(), ignore_index=True)
+        new_df = pd.concat(non_empty_dfs, ignore_index=True)
 
         # Convert all object columns to string to avoid type inference issues
         for col in new_df.columns:
@@ -174,8 +181,15 @@ class ParquetLoader:
             self.logger.error("No data to write")
             return False
         
+        # Filter out empty DataFrames before concatenation
+        non_empty_dfs = [df for df in all_data.values() if not df.empty and len(df) > 0]
+        
+        if not non_empty_dfs:
+            self.logger.error("No non-empty data to write")
+            return False
+        
         # Combine all data
-        combined_df = pd.concat(all_data.values(), ignore_index=True)
+        combined_df = pd.concat(non_empty_dfs, ignore_index=True)
         
         # Convert all object columns to string to avoid type inference issues
         for col in combined_df.columns:

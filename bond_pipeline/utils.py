@@ -454,7 +454,7 @@ def check_and_rotate_logs(log_file: Path):
 
     # Count run markers in log file
     try:
-        with open(log_file, 'r', encoding='utf-8') as f:
+        with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
             content = f.read()
             run_count = content.count('PIPELINE RUN #')
 
