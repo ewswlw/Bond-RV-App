@@ -1,0 +1,631 @@
+# Bond RV App - Cursor AI Rules
+
+**Last Updated**: January 2025 - Cursor AI Configuration  
+**Purpose**: Guide AI assistant in maintaining and extending bond data processing system
+
+> **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
+
+---
+
+## AI Assistant Core Workflow
+
+### General AI Behavior
+- **Think deeply** about prompt applicability given end goal and current context
+- **Use judgment** when interpreting prompts (e.g., if algo trading prompt mentions volume but raw data only has price, ignore volume requirement)
+- **Always notify** user when ignoring requirements or using judgment in interpretation
+- **Always ask clarifying questions** in planning mode; keep asking until all possible questions covering virtually any ambiguity are answered
+
+### File Change Summary
+- **After finishing requests** that add/edit files, show summary of:
+  - What was changed in each file
+  - File paths affected
+- **Track all modifications** for user review
+
+### Planning Mode Protocol
+1. Ask clarifying questions first
+2. Continue asking until ambiguity is eliminated
+3. Present plan for approval
+4. Execute after confirmation
+
+---
+
+## Project Overview
+
+This is a **modular data engineering pipeline** for processing bond data for relative value trading applications.
+
+### Core Purpose
+- Process Excel bond data files into optimized Parquet time-series tables
+- Archive and parse Outlook bond trading emails into clean data formats
+- Support incremental data loading for daily updates
+
+### Architecture
+- **Modular ETL**: Separate modules for Extract → Transform → Load
+- **Two Data Pipelines**:
+  1. Excel Pipeline: Excel files → Parquet tables (historical_bond_details, universe)
+  2. Outlook Pipeline: Outlook emails → Parquet table (runs_timeseries_clean)
+- **Incremental Loading**: Append mode (new dates only) vs Override mode (rebuild all)
+- **Data Integrity**: Primary key enforcement, deduplication, validation
+
+### Industry Best Practices
+- **Modular design**: Project must be set up in modular way with correct folder patterns according to industry best practices
+- **Single responsibility**: Each module has clear, focused purpose
+- **Separation of concerns**: Clear boundaries between extraction, transformation, and loading
+- **Configuration management**: All paths, constants, and settings centralized
+
+---
+
+## Technology Stack
+
+### Language & Version
+- **Python 3.11+** (strict requirement)
+- **Type hints required** for all function signatures
+- **Docstrings required** for all modules, classes, and functions
+
+### Key Dependencies
+- `pandas>=2.0.0` - Data manipulation
+- `pyarrow>=12.0.0` - Parquet I/O
+- `openpyxl>=3.1.0` - Excel reading
+- `pywin32>=305` - Outlook COM automation (Windows only)
+- `pytest>=7.0.0` - Testing framework
+
+### Environment Management
+- **Virtual environment**: `Bond-RV-App/` folder
+- **ALWAYS execute code in the current virtual environment**
+- **Install dependencies** via `pip install -r requirements.txt`
+
+---
+
+## Code Style & Conventions
+
+### Formatting
+- **Line length**: 88 characters maximum
+- **Indentation**: 4 spaces (no tabs)
+- **Imports**: Standard library → Third-party → Local imports (blank lines between groups)
+- **Naming**: snake_case for functions/variables, PascalCase for classes, UPPER_CASE for constants
+
+### Documentation
+- **Module docstrings**: First line is summary, followed by detailed description if needed
+- **Function docstrings**: Use Google style with Args/Returns/Raises sections
+- **Type hints**: Use modern Python typing (e.g., `Optional[str]`, `List[pd.DataFrame]`, `Tuple[str, int]`)
+- **Date and time stamps**: Include date/time stamps in all documentation entries
+- **Keep documentation current**: When creating new documentation, figure out if any old documentation needs updating
+- **Version tracking**: Update existing docs when adding new information
+
+### Example Function Signature
+```python
+def normalize_cusip(cusip: str) -> Optional[str]:
+    """
+    Normalize CUSIP to uppercase 9-character format.
+    
+    Args:
+        cusip: Raw CUSIP string (may contain lowercase, spaces, extra text)
+    
+    Returns:
+        Normalized CUSIP or None if invalid
+    """
+```
+
+---
+
+## Code Organization
+
+### Module Structure
+```
+bond_pipeline/
+├── config.py        # Configuration, paths, constants
+├── utils.py         # Helper functions (date parsing, validation, logging)
+├── extract.py       # Excel file reading and date extraction
+├── transform.py     # Data cleaning, normalization, deduplication
+├── load.py          # Parquet writing (append/override modes)
+├── pipeline.py      # Main orchestration script with CLI
+└── README.md        # Module documentation
+```
+
+### Design Principles
+1. **Single Responsibility**: Each module has one clear purpose
+2. **Dependency Injection**: Pass loggers, configs as constructor arguments
+3. **Separation of Concerns**: Extract (read) → Transform (clean) → Load (write)
+4. **Configuration Centralization**: All paths and constants in `config.py`
+5. **Immutable Config**: Don't modify config values at runtime
+
+### Class-Based Architecture
+Each pipeline stage is a class with clear responsibilities:
+- **ExcelExtractor**: File discovery, Excel reading, date extraction
+- **DataTransformer**: Schema alignment, CUSIP normalization, NA cleaning, deduplication
+- **ParquetLoader**: Append/override modes, date checking, universe creation
+- **BondDataPipeline**: Orchestrates all components, CLI interface
+
+---
+
+## Data Pipeline Patterns
+
+### Input Data Format
+- **Excel files**: Pattern `API MM.DD.YY.xlsx` (e.g., `API 10.20.25.xlsx`)
+- **Header row**: Row 3 (index 2, 0-based)
+- **Columns**: 75 columns in latest files (schema evolved from 59)
+- **NA values**: `#N/A Field Not Applicable`, `#N/A Invalid Security`, etc.
+
+### Output Data Format
+
+#### `historical_bond_details.parquet`
+- **Purpose**: Time series of all bonds over time
+- **Primary Key**: `Date + CUSIP` (unique combination)
+- **Schema**: All 75 columns + `Date` column (first position)
+- **Row count**: ~25,000+ rows spanning 2023-2025
+- **Storage**: `bond_data/parquet/historical_bond_details.parquet`
+
+#### `universe.parquet`
+- **Purpose**: Current universe of all unique CUSIPs ever seen
+- **Primary Key**: `CUSIP` (unique)
+- **Schema**: 13 key columns only
+  1. CUSIP, 2. Benchmark Cusip, 3. Custom_Sector, 4. Bloomberg Cusip, 5. Security,
+  6. Benchmark, 7. Pricing Date, 8. Pricing Date (Bench), 9. Worst Date,
+  10. Yrs (Worst), 11. Ticker, 12. Currency, 13. Equity Ticker
+- **Update strategy**: Always rebuild from `historical_bond_details` (most recent date per CUSIP)
+- **Storage**: `bond_data/parquet/universe.parquet`
+
+### Processing Rules
+
+#### Date Handling
+- Extract from filename pattern: `API MM.DD.YY.xlsx` → `datetime(YYYY-MM-DD)`
+- Store as `datetime64` in parquet (Date column first)
+- Append mode: Skip dates already in parquet file
+- Override mode: Delete existing parquet files, rebuild from scratch
+
+#### CUSIP Normalization & Validation
+- Convert to uppercase: `89678zab2` → `89678ZAB2`
+- Remove extra text: ` 06418GAD9 Corp` → `06418GAD9`
+- Validate length: Must be exactly 9 characters
+- Invalid CUSIPs: Log warning but include in data
+- Primary key enforcement: No duplicate Date+CUSIP combinations
+
+#### Schema Evolution
+- **Master schema**: 75 columns from latest files (set dynamically)
+- **Older files**: Fill missing columns with `NULL/NaN`
+- **Column order**: Preserve order from master schema
+- **Date column**: Always first column in all DataFrames
+
+#### Deduplication
+- Within file: Keep last occurrence of duplicate CUSIPs
+- Across files: One record per Date+CUSIP combination
+- Log all duplicates to `bond_data/logs/duplicates.log`
+
+#### Data Cleaning
+- Convert NA values to NULL: `#N/A Field Not Applicable`, `#N/A Invalid Security`, `N/A`, etc.
+- Empty cells → NULL/NaN
+- Preserve all other values as-is
+
+---
+
+## Logging Standards
+
+### Log File Organization
+```
+bond_data/logs/
+├── processing.log      # File extraction and loading operations
+├── duplicates.log      # All duplicate CUSIPs detected
+├── validation.log      # CUSIP validation warnings
+├── summary.log         # Pipeline execution summary (run headers, stats)
+└── outlook_monitor.log # Outlook email archiving
+```
+
+### Logging Levels
+- **DEBUG**: Detailed diagnostic info (file-by-file progress)
+- **INFO**: General informational messages
+- **WARNING**: CUSIP validation issues, schema mismatches
+- **ERROR**: File read failures, data corruption
+- **CRITICAL**: System failures
+
+### Logging Best Practices
+1. **Dual logging**: File logging (detailed) + Console logging (essential only)
+2. **No console spam**: Suppress detailed logs on console (console_level=logging.CRITICAL)
+3. **Run metadata**: Track run_id, timestamp, mode for each execution
+4. **Log rotation**: Archive logs after N runs (currently 10)
+5. **Structured info**: Include Date, CUSIP, file path in log messages
+
+### Example Logging Pattern
+```python
+# Setup logger (file only, no console)
+self.logger = setup_logging(LOG_FILE_PROCESSING, 'extract', console_level=logging.CRITICAL)
+
+# Log file processing
+self.logger.info(f"Processing file: {filename}")
+self.logger.info(f"Extracted {len(df)} rows for date {date_obj}")
+
+# Log validation issues
+self.logger.warning(f"Invalid CUSIP: {cusip} (length {len(cusip)})")
+
+# Log duplicates
+self.logger_dupes.info(f"Duplicate Date+CUSIP: {date} - {cusip} - {bond_name} (kept last occurrence)")
+```
+
+---
+
+## Testing Standards
+
+### Test Structure
+```
+tests/
+├── conftest.py              # Shared fixtures (sample data, mocks)
+├── unit/                    # Unit tests
+│   ├── test_utils.py       # ✅ 25 tests complete
+│   ├── test_extract.py     # TODO
+│   ├── test_transform.py   # TODO
+│   └── test_load.py        # TODO
+└── integration/             # Integration tests
+    └── test_pipeline.py    # TODO
+```
+
+### Testing Requirements
+1. **Coverage**: Target 85%+ overall, 90%+ for critical modules
+2. **Test location**: All tests in `tests/` directories within each module
+3. **Naming**: Test files follow naming convention: `test_*.py`
+4. **Framework**: Use pytest for testing
+5. **Fixtures**: Reusable test data in `conftest.py`
+6. **Isolation**: Tests must be independent (no shared state)
+7. **Mocking**: Mock all file I/O, external dependencies
+8. **Speed**: Full test suite should run in < 30 seconds
+
+### Test Categories
+- **Date parsing**: Valid/invalid formats, leap years, edge cases
+- **CUSIP validation**: Valid/invalid lengths, characters, normalization
+- **NA cleaning**: Standard patterns, mixed DataFrames
+- **Schema alignment**: Old (59) vs new (75) column schemas
+- **Deduplication**: Within file, across files, Date+CUSIP combinations
+- **Append mode**: Skip existing dates, append new dates
+- **Override mode**: Delete existing, rebuild from scratch
+
+### Running Tests
+```bash
+# Activate virtual environment
+Bond-RV-App\Scripts\activate  # Windows
+
+# Run all tests
+pytest
+
+# Run specific file
+pytest tests/unit/test_utils.py
+
+# Run with coverage
+pytest --cov=bond_pipeline --cov-report=html
+
+# Run specific test
+pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_cusip_valid
+```
+
+---
+
+## File Organization Rules
+
+### Directory Structure
+```
+Bond-RV-App/
+├── bond_pipeline/          # Pipeline code (7 modules)
+├── bond_data/              # Data directory (local only, git-ignored)
+│   ├── parquet/           # Output parquet files
+│   └── logs/              # Processing logs
+├── Documentation/          # Complete documentation
+│   ├── Setup/             # Getting started guides
+│   ├── Workflows/         # Step-by-step procedures
+│   └── Architecture/      # Design documentation
+├── Raw Data/              # Excel files (input)
+├── References and Documentation/  # Ignored by Cursor
+├── tests/                 # Test suite
+├── utils/                 # Utility scripts (outlook_monitor.py)
+├── .cursorrules           # This file
+├── .cursorignore          # Files to ignore
+├── requirements.txt       # Python dependencies
+├── README.md              # Project overview
+├── run_pipeline.py        # Simple pipeline runner
+├── monitor_outlook.py     # Outlook email archiver
+└── runs_miner.py          # Outlook email parser
+```
+
+### File Naming Conventions
+- **Modules**: `snake_case.py` (e.g., `bond_pipeline/utils.py`)
+- **Test files**: `test_*.py` (e.g., `tests/unit/test_utils.py`)
+- **Config files**: `.cursorrules`, `.cursorignore`, `pytest.ini`
+- **Data files**: `historical_bond_details.parquet`, `universe.parquet`
+
+### Important Paths
+- **Project root**: `PROJECT_ROOT = Path(__file__).parent.parent` (from config.py)
+- **Data directory**: `bond_data/` (git-ignored)
+- **Parquet files**: `bond_data/parquet/` (git-tracked)
+- **Logs**: `bond_data/logs/` (git-ignored)
+- **Default input**: Dropbox folder (Windows-specific path in config.py)
+
+### Path Handling Rules
+- **Use `pathlib.Path`** for all path operations
+- **Scripts must detect their location** and adjust paths accordingly
+- **Support running from multiple directory locations** (absolute and relative paths)
+- **Avoid hardcoded paths**: Use relative paths with config-based resolution
+
+---
+
+## Git & Version Control
+
+### Git-Ignored Files
+- Excel files: `*.xlsx`, `*.xls`
+- Log files: `bond_data/logs/*.log`
+- Virtual environment: `Bond-RV-App/`
+- Python cache: `__pycache__/`, `*.pyc`
+- Test output: `tests/test_output/`
+- References folder: `References and Documentation/` (in .cursorignore)
+
+### Git-Tracked Files
+- Parquet files: `bond_data/parquet/*.parquet` (processed data)
+- Source code: `bond_pipeline/`, `utils/`
+- Tests: `tests/`
+- Documentation: `Documentation/`
+- Config: `requirements.txt`, `.cursorrules`, `.cursorignore`
+- Scripts: `run_pipeline.py`, `monitor_outlook.py`, `runs_miner.py`
+
+### Git Commit Protocol
+- **Update `.cursorrules`** before every git commit
+- **Verify file timestamps** and version consistency
+- **Document changes** in commit messages with reference to `.cursorrules` updates
+
+### Unicode & Encoding
+- **Avoid unicode encoding issues** for Windows
+- **Use ASCII-compatible characters** when needed
+- **Test paths** on Windows file system before committing
+
+---
+
+## Code Modification Guidelines
+
+### Before Making Changes
+1. **Analyze entire codebase**: Understand dependencies and relationships
+2. **Map file impacts**: Identify ALL files that need modification
+3. **Check existing logic**: Extend or refactor before creating new code
+4. **Consider ripple effects**: Changes impact downstream modules
+
+### Coding Principles
+1. **Extend existing logic**: Never create new files when existing code can be extended
+2. **Refactor first**: Improve existing structure before adding new features
+3. **Minimal changes**: Make smallest change that achieves the goal
+4. **Backward compatibility**: Don't break existing functionality
+5. **Documentation**: Update docstrings when modifying functions
+
+### File Creation Rules
+- **List new files**: Announce file name and path before creating
+- **Test files**: Always create in `tests/` folder when applicable
+- **Avoid duplication**: Check if existing modules can handle the requirement
+- **Justification**: Explain why new file is needed vs extending existing
+
+### When AI Assistant Helps
+1. **Read existing code**: Always read relevant files before suggesting changes
+2. **Show context**: Reference existing code with `startLine:endLine:filepath` format
+3. **Propose edits**: Suggest specific changes with line-by-line diffs
+4. **Test changes**: Run relevant tests after modifications
+5. **Check lints**: Fix any linter errors introduced
+
+### Example Code Modification
+**Before**: Adding a new validation function
+```python
+# 1. Read existing utils.py to understand patterns
+# 2. Check if similar functions exist
+# 3. Extend existing module rather than create new file
+# 4. Add function following existing naming/documentation conventions
+# 5. Add tests in tests/unit/test_utils.py
+# 6. Update module docstring if needed
+```
+
+---
+
+## Execution & Workflow
+
+### Running the Pipeline
+```bash
+# 1. Activate virtual environment
+Bond-RV-App\Scripts\activate  # Windows
+source Bond-RV-App/bin/activate  # Mac/Linux
+
+# 2. Run automated pipeline runner
+python run_pipeline.py
+# Prompts: 1=Override (first run), 2=Append (daily updates)
+
+# 3. Or use direct CLI
+cd bond_pipeline
+python pipeline.py -i "../Raw Data/" -m append
+python pipeline.py -i "../Raw Data/" -m override
+
+# 4. Or use Python module
+python -m bond_pipeline.pipeline -i "Raw Data/" -m append
+```
+
+### Pipeline Modes
+
+#### Append Mode (Default, Daily Use)
+- **Use case**: Add new Excel files to existing parquet tables
+- **Behavior**: Skip dates already in parquet, append only new dates
+- **Output**: Updated `historical_bond_details.parquet` (with new dates appended)
+- **Universe**: Rebuild `universe.parquet` from complete historical data
+
+#### Override Mode (Rebuild Everything)
+- **Use case**: First-time setup, schema changes, data corruption recovery
+- **Behavior**: Delete existing parquet files, process all Excel files from scratch
+- **Output**: New `historical_bond_details.parquet`, new `universe.parquet`
+- **Speed**: Slower but ensures clean data
+
+### Checking Results
+```bash
+# View output parquet files
+ls bond_data/parquet/
+
+# Check logs
+cat bond_data/logs/summary.log       # Pipeline execution summary
+cat bond_data/logs/processing.log    # File-by-file details
+cat bond_data/logs/duplicates.log    # Duplicate CUSIPs
+cat bond_data/logs/validation.log    # CUSIP validation issues
+
+# Quick stats in Python
+import pandas as pd
+df = pd.read_parquet('bond_data/parquet/historical_bond_details.parquet')
+print(f"Rows: {len(df)}, Columns: {len(df.columns)}, Date range: {df['Date'].min()} to {df['Date'].max()}")
+```
+
+---
+
+## Common Patterns & Examples
+
+### Excel File Pattern Matching
+```python
+import re
+from config import FILE_PATTERN
+
+filename = "API 10.20.25.xlsx"
+match = re.match(FILE_PATTERN, filename)
+# Returns: datetime(2025, 10, 20)
+```
+
+### CUSIP Normalization
+```python
+from utils import normalize_cusip
+
+raw = "89678zab2"  # lowercase
+normalized = normalize_cusip(raw)  # Returns: "89678ZAB2"
+
+raw = " 06418GAD9 Corp"  # extra text
+normalized = normalize_cusip(raw)  # Returns: "06418GAD9"
+```
+
+### Schema Alignment
+```python
+from utils import align_to_master_schema
+
+old_schema_df = read_excel(old_file)  # 59 columns
+master_schema = [... 75 columns ...]
+aligned_df = align_to_master_schema(old_schema_df, master_schema)  # 75 columns with NULL in new cols
+```
+
+### Deduplication
+```python
+from transform import DataTransformer
+
+transformer = DataTransformer(log_dupes, log_valid)
+df_cleaned = transformer.deduplicate(df, bond_date)
+
+# Within same file: keep last occurrence
+# Across files: Date+CUSIP primary key enforcement
+```
+
+### Logging Pattern
+```python
+from pathlib import Path
+import logging
+from utils import setup_logging
+
+log_file = Path("bond_data/logs/processing.log")
+logger = setup_logging(log_file, 'module_name', console_level=logging.CRITICAL)
+
+logger.info("Processing file: API 10.20.25.xlsx")
+logger.warning("Invalid CUSIP: 1234567890 (length 10)")
+logger.error("Failed to read file: missing_header.xlsx")
+```
+
+### Reading/Writing Parquet
+```python
+import pandas as pd
+from config import HISTORICAL_PARQUET, DATE_COLUMN
+
+# Read existing dates (for append mode)
+df = pd.read_parquet(HISTORICAL_PARQUET, columns=[DATE_COLUMN])
+existing_dates = set(df[DATE_COLUMN].unique())
+
+# Write new data (append mode)
+df_new.to_parquet(HISTORICAL_PARQUET, mode='append', index=False)
+
+# Write new data (override mode)
+df_new.to_parquet(HISTORICAL_PARQUET, mode='overwrite', index=False)
+```
+
+---
+
+## Troubleshooting Common Issues
+
+### Import Errors
+```bash
+# Make sure you're in project root and virtual environment is activated
+cd Bond-RV-App
+Bond-RV-App\Scripts\activate
+
+# Use module syntax for imports
+python -m bond_pipeline.pipeline
+```
+
+### Virtual Environment Issues
+```bash
+# Reinstall dependencies
+pip install -r requirements.txt
+
+# Activate virtual environment if needed
+Bond-RV-App\Scripts\activate  # Windows
+source Bond-RV-App/bin/activate  # Mac/Linux
+```
+
+### Test Discovery Issues
+```bash
+# Run from project root
+cd Bond-RV-App
+pytest tests/
+
+# Or specific file
+pytest tests/unit/test_utils.py -v
+```
+
+### Parquet File Locking
+```bash
+# Close any open Python sessions reading parquet files
+# Windows: Check Task Manager for Python processes
+```
+
+---
+
+## Key Takeaways for AI Assistant
+
+### Essential Rules
+1. **Always analyze entire codebase** before making changes
+2. **Execute all code in current virtual environment** (Bond-RV-App)
+3. **Create tests in tests/ folder** when applicable
+4. **Never create new files** unless explicitly required by user
+5. **List file names and paths** when creating new files
+6. **Include .cursorrules for context** in planning
+7. **Map dependencies** before suggesting edits
+8. **Extend existing logic** rather than duplicating
+9. **Follow modular architecture**: config → utils → extract → transform → load → pipeline
+10. **Respect logging patterns**: file logging (detailed) + console (minimal)
+
+### Workflow Rules
+11. **Think deeply** about prompt applicability before acting
+12. **Use judgment** when interpreting conflicting requirements
+13. **Notify user** when ignoring requirements or using judgment
+14. **Ask clarifying questions** until all ambiguity is eliminated
+15. **Provide file change summary** after completing requests
+16. **Always update .cursorrules** after applicable changes
+17. **Include date/time stamps** in all documentation
+18. **Update .cursorrules before git commits**
+
+### Quality Standards
+19. **Use pathlib.Path** for all path operations
+20. **Avoid unicode issues** on Windows
+21. **Modular design** following industry best practices
+22. **Keep documentation current** when creating new docs
+
+---
+
+**File Created**: January 2025  
+**Last Major Update**: January 2025  
+**Project**: Bond RV App - Data Pipeline  
+**Version**: 1.0
+
+---
+
+**Change Log**:
+- **2025-01**: Initial comprehensive `.cursorrules` file created
+- **2025-01**: Added AI Assistant Core Workflow section
+- **2025-01**: Added git commit protocol and unicode handling
+- **2025-01**: Enhanced documentation timestamp requirements
+- **2025-01**: Added path handling and encoding rules
+- **2025-01**: Removed poetry environment references, switched to standard pip/virtual environment
+

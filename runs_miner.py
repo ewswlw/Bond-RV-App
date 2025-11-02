@@ -17,7 +17,7 @@ Updated: October 26, 2025 - Added incremental processing and --rebuild flag
 import pandas as pd
 import re
 import argparse
-import csv
+import csv1
 from pathlib import Path
 from datetime import datetime
 
@@ -658,24 +658,6 @@ def apply_final_formatting(df):
 
     # 3. Fix benchmark fractions
     df['Bench'] = df['Bench'].apply(fix_benchmark)
-
-    # 4. Standardize and format size columns (B_Sz_MM, A_Sz_MM)
-    # NBF uses thousands (M), other dealers use millions (MM)
-    # Smart logic: values >= 1000 are assumed to be in thousands, divide by 1000
-    for col in ['B_Sz_MM', 'A_Sz_MM']:
-        # Convert to numeric (coerce errors to NaN)
-        numeric_values = pd.to_numeric(df[col], errors='coerce')
-
-        # Standardize to millions: if value >= 1000, divide by 1000
-        # (NBF sends in thousands, e.g., 5000 → 5 MM)
-        standardized = numeric_values.apply(
-            lambda x: x / 1000 if pd.notna(x) and x >= 1000 else x
-        )
-
-        # Format as integers (no decimal places)
-        df[col] = standardized.apply(
-            lambda x: str(int(x)) if pd.notna(x) else None
-        )
 
     # Final column order (removed B_YTNC - everything after B_GSpd)
     final_columns = [
