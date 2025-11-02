@@ -35,14 +35,11 @@ This is a **modular data engineering pipeline** for processing bond data for rel
 
 ### Core Purpose
 - Process Excel bond data files into optimized Parquet time-series tables
-- Archive and parse Outlook bond trading emails into clean data formats
 - Support incremental data loading for daily updates
 
 ### Architecture
 - **Modular ETL**: Separate modules for Extract → Transform → Load
-- **Two Data Pipelines**:
-  1. Excel Pipeline: Excel files → Parquet tables (historical_bond_details, universe)
-  2. Outlook Pipeline: Outlook emails → Parquet table (runs_timeseries_clean)
+- **Data Pipeline**: Excel files → Parquet tables (historical_bond_details, universe)
 - **Incremental Loading**: Append mode (new dates only) vs Override mode (rebuild all)
 - **Data Integrity**: Primary key enforcement, deduplication, validation
 
@@ -65,7 +62,6 @@ This is a **modular data engineering pipeline** for processing bond data for rel
 - `pandas>=2.0.0` - Data manipulation
 - `pyarrow>=12.0.0` - Parquet I/O
 - `openpyxl>=3.1.0` - Excel reading
-- `pywin32>=305` - Outlook COM automation (Windows only)
 - `pytest>=7.0.0` - Testing framework
 
 ### Environment Management
@@ -205,8 +201,7 @@ bond_data/logs/
 ├── processing.log      # File extraction and loading operations
 ├── duplicates.log      # All duplicate CUSIPs detected
 ├── validation.log      # CUSIP validation warnings
-├── summary.log         # Pipeline execution summary (run headers, stats)
-└── outlook_monitor.log # Outlook email archiving
+└── summary.log         # Pipeline execution summary (run headers, stats)
 ```
 
 ### Logging Levels
@@ -311,14 +306,12 @@ Bond-RV-App/
 ├── Raw Data/              # Excel files (input)
 ├── References and Documentation/  # Ignored by Cursor
 ├── tests/                 # Test suite
-├── utils/                 # Utility scripts (outlook_monitor.py)
+├── utils/                 # Utility scripts
 ├── .cursorrules           # This file
 ├── .cursorignore          # Files to ignore
 ├── requirements.txt       # Python dependencies
 ├── README.md              # Project overview
-├── run_pipeline.py        # Simple pipeline runner
-├── monitor_outlook.py     # Outlook email archiver
-└── runs_miner.py          # Outlook email parser
+└── run_pipeline.py        # Simple pipeline runner
 ```
 
 ### File Naming Conventions
@@ -358,7 +351,7 @@ Bond-RV-App/
 - Tests: `tests/`
 - Documentation: `Documentation/`
 - Config: `requirements.txt`, `.cursorrules`, `.cursorignore`
-- Scripts: `run_pipeline.py`, `monitor_outlook.py`, `runs_miner.py`
+- Scripts: `run_pipeline.py`
 
 ### Git Commit Protocol
 - **Update `.cursorrules`** before every git commit
@@ -628,4 +621,5 @@ pytest tests/unit/test_utils.py -v
 - **2025-01**: Enhanced documentation timestamp requirements
 - **2025-01**: Added path handling and encoding rules
 - **2025-01**: Removed poetry environment references, switched to standard pip/virtual environment
+- **2025-01**: Removed all Outlook email pipeline functionality (monitor_outlook.py, runs_miner.py, utils/outlook_monitor.py, related documentation, and pywin32 dependency)
 

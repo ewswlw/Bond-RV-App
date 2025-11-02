@@ -35,20 +35,13 @@ python pipeline.py -i "../Raw Data/" -m append
 
 ## 📋 Overview
 
-This project contains two data pipelines for bond trading analysis:
+This project contains a data pipeline for bond trading analysis:
 
 ### Excel Pipeline
 Processes Excel files containing bond data and creates two optimized Parquet tables:
 
 1. **`historical_bond_details.parquet`** - Time series data with unique `Date + CUSIP` combinations
 2. **`universe.parquet`** - Current universe of all unique CUSIPs (13 key columns)
-
-### Outlook Email Pipeline
-Archives and parses bond trading emails from Outlook RUNS folder:
-
-1. **`monitor_outlook.py`** - Archives emails to CSV files (one CSV per date)
-2. **`runs_miner.py`** - Parses email bodies into clean Parquet format
-3. **Output**: `runs_timeseries_clean.parquet` - Dealer bond quotes time series (15 columns)
 
 ### Key Features
 
@@ -85,14 +78,12 @@ bond-rv-app/
 ├── bond_data/                  # Data directory (local only)
 │   ├── parquet/                # Output parquet files
 │   │   ├── historical_bond_details.parquet  # Excel pipeline output
-│   │   ├── universe.parquet                 # Excel pipeline output
-│   │   └── runs_timeseries_clean.parquet    # Outlook pipeline output
+│   │   └── universe.parquet                 # Excel pipeline output
 │   └── logs/                   # Processing logs
 │       ├── processing.log      # Excel pipeline logs
 │       ├── duplicates.log
 │       ├── validation.log
-│       ├── summary.log
-│       └── outlook_monitor.log # Outlook pipeline logs
+│       └── summary.log
 │
 ├── Documentation/              # Complete documentation
 │   ├── README.md               # Documentation index
@@ -145,33 +136,12 @@ import pandas as pd
 df_hist = pd.read_parquet('bond_data/parquet/historical_bond_details.parquet')
 df_universe = pd.read_parquet('bond_data/parquet/universe.parquet')
 
-# Load Outlook pipeline output
-df_runs = pd.read_parquet('bond_data/parquet/runs_timeseries_clean.parquet')
-
 # Example: Get time series for specific CUSIP
 cusip_ts = df_hist[df_hist['CUSIP'] == '037833DX5'].sort_values('Date')
 
 # Example: Filter by date range
 recent = df_hist[df_hist['Date'] >= '2025-09-01']
-
-# Example: Get dealer quotes for specific bond
-bond_quotes = df_runs[df_runs['CUSIP'] == '037833DX5']
 ```
-
-### Outlook Email Pipeline
-
-```bash
-# Step 1: Archive emails from Outlook to CSV files
-python monitor_outlook.py              # Incremental (new emails only)
-python monitor_outlook.py --rebuild    # Full rebuild
-python monitor_outlook.py --days 7     # Last 7 days
-
-# Step 2: Parse CSV files into clean Parquet
-python runs_miner.py                   # Incremental (new CSVs only)
-python runs_miner.py --rebuild         # Full rebuild
-```
-
-**Requirements**: Windows OS, Microsoft Outlook installed, pywin32 package
 
 ---
 
