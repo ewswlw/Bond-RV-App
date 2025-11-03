@@ -71,6 +71,85 @@ LOG_ARCHIVE_DIR = LOGS_DIR / "archive"
 LOG_METADATA_FILE = LOGS_DIR / ".run_metadata.json"
 BOND_NAME_COLUMN = "Security"  # Column to use for bond names in logs
 
+# ===== RUNS PIPELINE CONFIGURATION =====
+
+# Default input directory for RUNS Excel files
+RUNS_INPUT_DIR = Path(r"C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Trading\COF\Models\Unfinished Models\Support Files\Historical Runs")
+
+# RUNS file pattern
+RUNS_FILE_PATTERN = r'RUNS\s+(\d{2})\.(\d{2})\.(\d{2})\.xlsx$'
+RUNS_HEADER_ROW = 0  # 0-indexed, row 1 in Excel (header is in first row)
+
+# RUNS parquet output file
+RUNS_PARQUET = PARQUET_DIR / "runs_timeseries.parquet"
+
+# RUNS primary key columns
+RUNS_PRIMARY_KEY = ['Date', 'Dealer', 'CUSIP']
+
+# RUNS datetime column formats
+RUNS_DATE_FORMAT = '%m/%d/%Y'  # mm/dd/yyyy format
+RUNS_TIME_FORMAT = '%H:%M'      # hh:mm format
+
+# RUNS schema (30 columns from analysis)
+RUNS_COLUMNS = [
+    'Reference Security',
+    'Date',
+    'Time',
+    'Bid Workout Risk',
+    'Ticker',
+    'Dealer',
+    'Source',
+    'Security',
+    'Bid Price',
+    'Ask Price',
+    'Bid Spread',
+    'Ask Spread',
+    'Benchmark',
+    'Reference Benchmark',
+    'Bid Size',
+    'Ask Size',
+    'Sector',
+    'Bid Yield To Convention',
+    'Ask Yield To Convention',
+    'Bid Discount Margin',
+    'Ask Discount Margin',
+    'CUSIP',
+    'Sender Name',
+    'Currency',
+    'Subject',
+    'Keyword',
+    'Bid Interpolated Spread to Government',
+    'Ask Interpolated Spread to Government',
+    'Bid Contributed Yield',
+    'Bid Z-spread'
+]
+
+# RUNS validation settings
+RUNS_VALIDATE_DATE_RANGE = True
+RUNS_VALIDATE_TIME_FORMAT = True
+RUNS_VALIDATE_PRICES_POSITIVE = True
+RUNS_VALIDATE_SPREADS_REASONABLE = True
+RUNS_VALIDATE_DEALERS = True
+
+# RUNS known dealers list
+RUNS_KNOWN_DEALERS = [
+    'RBC',
+    'TD',
+    'CIBC',
+    'BMO',
+    'NBF',
+    'SCM',
+    'MS',
+    'YTMC',
+    'BBLP',
+    'IAS',
+    'TDS'
+]
+
+# CUSIP orphan tracking
+RUNS_TRACK_ORPHAN_CUSIPS = True  # Track CUSIPs not in universe.parquet
+RUNS_LOG_INVALID_CUSIPS = True   # Log invalid CUSIPs (wrong length, etc.)
+
 # Ensure directories exist
 PARQUET_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)

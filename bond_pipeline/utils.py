@@ -7,7 +7,7 @@ import re
 import logging
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 from typing import Optional, Tuple
 from io import StringIO
@@ -19,7 +19,16 @@ from .config import (
     NA_VALUES,
     LOG_ROTATION_RUNS,
     LOG_ARCHIVE_DIR,
-    LOG_METADATA_FILE
+    LOG_METADATA_FILE,
+    RUNS_DATE_FORMAT,
+    RUNS_TIME_FORMAT,
+    RUNS_VALIDATE_DATE_RANGE,
+    RUNS_VALIDATE_TIME_FORMAT,
+    RUNS_VALIDATE_PRICES_POSITIVE,
+    RUNS_VALIDATE_SPREADS_REASONABLE,
+    RUNS_VALIDATE_DEALERS,
+    RUNS_KNOWN_DEALERS,
+    UNIVERSE_PARQUET
 )
 
 
@@ -511,4 +520,334 @@ def log_with_timestamp(logger: logging.Logger, level: str, message: str):
         logger.warning(formatted_msg)
     else:
         logger.info(formatted_msg)
+
+
+# ============================================================================
+# RUNS Pipeline Utility Functions
+# ============================================================================
+
+def parse_runs_date(date_str) -> Optional[datetime]:
+    """
+    Parse MM/DD/YY string to datetime object (preserves mm/dd/yyyy format).
+    
+    Args:
+        date_str: Date string in MM/DD/YY format (e.g., "10/31/25")
+    
+    Returns:
+        datetime object or None if invalid
+    
+    Examples:
+        '10/31/25' -> datetime(2025, 10, 31)
+        '01/02/24' -> datetime(2024, 1, 2)
+    """
+    if pd.isna(date_str) or date_str == '':
+        return None
+    
+    date_str = str(date_str).strip()
+    
+    try:
+        # Try parsing MM/DD/YY format
+        parts = date_str.split('/')
+        if len(parts) != 3:
+            return None
+        
+        month = int(parts[0])
+        day = int(parts[1])
+        year_str = parts[2]
+        
+        # Convert 2-digit year to 4-digit
+        # Assume 20xx for years < 50, else 19xx
+        year_int = int(year_str)
+        if len(year_str) == 2:
+            full_year = int(f"20{year_str}") if year_int < 50 else int(f"19{year_str}")
+        else:
+            full_year = year_int
+        
+        date_obj = datetime(full_year, month, day)
+        return date_obj
+    
+    except (ValueError, IndexError, AttributeError):
+        return None
+
+
+def parse_runs_time(time_str) -> Optional[time]:
+    """
+    Parse HH:MM string to datetime.time object.
+    
+    Args:
+        time_str: Time string in HH:MM format (e.g., "15:45")
+    
+    Returns:
+        datetime.time object or None if invalid
+    
+    Examples:
+        '15:45' -> time(15, 45)
+        '08:12' -> time(8, 12)
+    """
+    if pd.isna(time_str) or time_str == '':
+        return None
+    
+    time_str = str(time_str).strip()
+    
+    try:
+        # Try parsing HH:MM format
+        parts = time_str.split(':')
+        if len(parts) != 2:
+            return None
+        
+        hour = int(parts[0])
+        minute = int(parts[1])
+        
+        # Validate hour and minute ranges
+        if hour < 0 or hour > 23:
+            return None
+        if minute < 0 or minute > 59:
+            return None
+        
+        time_obj = time(hour, minute)
+        return time_obj
+    
+    except (ValueError, IndexError, AttributeError):
+        return None
+
+
+def check_cusip_orphans(
+    runs_cusips: set,
+    universe_parquet: Path,
+    logger: logging.Logger,
+    runs_df: Optional[pd.DataFrame] = None
+) -> set:
+    """
+    Compare CUSIPs from runs data with universe.parquet.
+    Find CUSIPs in runs but not in universe (orphans).
+    
+    Args:
+        runs_cusips: Set of CUSIPs from runs data
+        universe_parquet: Path to universe.parquet file
+        logger: Logger instance for validation logging
+        runs_df: Optional DataFrame with runs data (for detailed logging)
+    
+    Returns:
+        Set of orphan CUSIPs (in runs but not in universe)
+    """
+    orphans = set()
+    
+    if not universe_parquet.exists():
+        logger.warning(
+            f"Universe parquet file not found: {universe_parquet}. "
+            "Cannot check for orphan CUSIPs."
+        )
+        return orphans
+    
+    try:
+        # Read CUSIPs from universe parquet
+        universe_df = pd.read_parquet(universe_parquet, columns=['CUSIP'])
+        universe_cusips = set(universe_df['CUSIP'].dropna().unique())
+        
+        # Find orphans (in runs but not in universe)
+        orphans = runs_cusips - universe_cusips
+        
+        if orphans:
+            logger.warning(
+                f"Found {len(orphans)} orphan CUSIPs not in universe.parquet"
+            )
+            
+            # Log orphan CUSIPs with context if DataFrame provided
+            if runs_df is not None and 'CUSIP' in runs_df.columns:
+                # Get sample rows for each orphan CUSIP (first occurrence per CUSIP)
+                orphan_samples = []
+                log_columns = ['CUSIP']
+                
+                # Add available columns for context
+                available_cols = []
+                if 'Security' in runs_df.columns:
+                    available_cols.append('Security')
+                if 'Date' in runs_df.columns:
+                    available_cols.append('Date')
+                if 'Dealer' in runs_df.columns:
+                    available_cols.append('Dealer')
+                if 'Time' in runs_df.columns:
+                    available_cols.append('Time')
+                if 'Ticker' in runs_df.columns:
+                    available_cols.append('Ticker')
+                
+                log_columns.extend(available_cols)
+                
+                # Get first occurrence of each orphan CUSIP
+                for cusip in sorted(list(orphans))[:20]:
+                    orphan_rows = runs_df[runs_df['CUSIP'] == cusip]
+                    if len(orphan_rows) > 0:
+                        # Take first row for this CUSIP
+                        sample_row = orphan_rows.iloc[0]
+                        orphan_samples.append({
+                            col: sample_row[col] if col in sample_row.index else None
+                            for col in log_columns
+                        })
+                
+                # Log orphan details
+                for sample in orphan_samples:
+                    cusip = sample['CUSIP']
+                    details = []
+                    
+                    # Security (bond name)
+                    security = sample.get('Security')
+                    if security and pd.notna(security) and str(security).strip():
+                        details.append(f"Security={str(security).strip()}")
+                    
+                    # Date
+                    date_val = sample.get('Date')
+                    if date_val and pd.notna(date_val):
+                        date_str = format_date_string(date_val)
+                        if date_str:
+                            details.append(f"Date={date_str}")
+                    
+                    # Dealer
+                    dealer = sample.get('Dealer')
+                    if dealer and pd.notna(dealer) and str(dealer).strip():
+                        details.append(f"Dealer={str(dealer).strip()}")
+                    
+                    # Time
+                    time_val = sample.get('Time')
+                    if time_val and pd.notna(time_val):
+                        if hasattr(time_val, 'strftime'):
+                            time_str = time_val.strftime('%H:%M')
+                        else:
+                            time_str = str(time_val)
+                        details.append(f"Time={time_str}")
+                    
+                    # Ticker
+                    ticker = sample.get('Ticker')
+                    if ticker and pd.notna(ticker) and str(ticker).strip():
+                        details.append(f"Ticker={str(ticker).strip()}")
+                    
+                    details_str = ", ".join(details) if details else ""
+                    logger.info(f"  Orphan CUSIP: {cusip}" + (f" ({details_str})" if details_str else ""))
+            else:
+                # Fallback: just log CUSIPs without context
+                for cusip in sorted(list(orphans))[:20]:
+                    logger.info(f"  Orphan CUSIP: {cusip}")
+            
+            if len(orphans) > 20:
+                logger.info(f"  ... and {len(orphans) - 20} more orphan CUSIPs")
+        else:
+            logger.info(
+                f"All {len(runs_cusips)} CUSIPs from runs data found in universe.parquet"
+            )
+    
+    except Exception as e:
+        logger.error(
+            f"Error checking orphan CUSIPs against universe.parquet: {str(e)}"
+        )
+    
+    return orphans
+
+
+def validate_runs_data(df: pd.DataFrame, logger: logging.Logger) -> bool:
+    """
+    Validate data quality for runs data.
+    
+    Checks:
+    - Date within reasonable range (1900-2100)
+    - Time in valid format (HH:MM)
+    - Prices positive (if not NaN)
+    - Spreads reasonable (if not NaN)
+    - Dealers in known list
+    
+    Args:
+        df: DataFrame to validate
+        logger: Logger instance for validation logging
+    
+    Returns:
+        True if validation passes (with warnings), False if critical errors
+    """
+    is_valid = True
+    warnings_count = 0
+    
+    # Validate dates
+    if RUNS_VALIDATE_DATE_RANGE and 'Date' in df.columns:
+        invalid_dates = df[df['Date'].isna()].index
+        if len(invalid_dates) > 0:
+            warnings_count += len(invalid_dates)
+            logger.warning(f"Found {len(invalid_dates)} rows with missing Date")
+        
+        # Check date range
+        valid_dates = df[df['Date'].notna()]['Date']
+        if len(valid_dates) > 0:
+            try:
+                min_date = valid_dates.min()
+                max_date = valid_dates.max()
+                
+                # Check reasonable date range (1900-2100)
+                min_reasonable = datetime(1900, 1, 1)
+                max_reasonable = datetime(2100, 12, 31)
+                
+                if min_date < min_reasonable or max_date > max_reasonable:
+                    logger.warning(
+                        f"Date range outside reasonable bounds: "
+                        f"{min_date} to {max_date}"
+                    )
+                    warnings_count += 1
+            except Exception as e:
+                logger.warning(f"Error validating date range: {str(e)}")
+                warnings_count += 1
+    
+    # Validate times
+    if RUNS_VALIDATE_TIME_FORMAT and 'Time' in df.columns:
+        invalid_times = df[df['Time'].isna()].index
+        if len(invalid_times) > 0:
+            warnings_count += len(invalid_times)
+            logger.warning(f"Found {len(invalid_times)} rows with missing Time")
+    
+    # Validate prices (positive if not NaN)
+    if RUNS_VALIDATE_PRICES_POSITIVE:
+        price_cols = ['Bid Price', 'Ask Price']
+        for col in price_cols:
+            if col in df.columns:
+                negative_prices = df[
+                    (df[col].notna()) & (df[col] < 0)
+                ].index
+                
+                if len(negative_prices) > 0:
+                    warnings_count += len(negative_prices)
+                    logger.warning(
+                        f"Found {len(negative_prices)} rows with negative {col}"
+                    )
+    
+    # Validate spreads (reasonable range if not NaN)
+    if RUNS_VALIDATE_SPREADS_REASONABLE:
+        spread_cols = ['Bid Spread', 'Ask Spread']
+        for col in spread_cols:
+            if col in df.columns:
+                # Check for extremely large spreads (> 1000 bps)
+                extreme_spreads = df[
+                    (df[col].notna()) & (df[col] > 1000)
+                ].index
+                
+                if len(extreme_spreads) > 0:
+                    warnings_count += len(extreme_spreads)
+                    logger.warning(
+                        f"Found {len(extreme_spreads)} rows with extreme {col} (> 1000 bps)"
+                    )
+    
+    # Validate dealers
+    if RUNS_VALIDATE_DEALERS and 'Dealer' in df.columns:
+        unknown_dealers = df[
+            (df['Dealer'].notna()) & 
+            (~df['Dealer'].isin(RUNS_KNOWN_DEALERS))
+        ]
+        
+        if len(unknown_dealers) > 0:
+            unique_unknown = unknown_dealers['Dealer'].unique()
+            warnings_count += len(unique_unknown)
+            logger.warning(
+                f"Found {len(unique_unknown)} unknown dealers: "
+                f"{', '.join(unique_unknown)}"
+            )
+    
+    if warnings_count > 0:
+        logger.warning(f"Data validation completed with {warnings_count} warnings")
+    else:
+        logger.info("Data validation passed with no warnings")
+    
+    return is_valid
 

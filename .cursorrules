@@ -123,13 +123,20 @@ def normalize_cusip(cusip: str) -> Optional[str]:
 ### Module Structure
 ```
 bond_pipeline/
-├── config.py        # Configuration, paths, constants
-├── utils.py         # Helper functions (date parsing, validation, logging)
+├── config.py        # Configuration, paths, constants (includes RUNS config)
+├── utils.py         # Helper functions (date parsing, validation, logging, runs utilities)
 ├── extract.py       # Excel file reading and date extraction
 ├── transform.py     # Data cleaning, normalization, deduplication
 ├── load.py          # Parquet writing (append/override modes)
 ├── pipeline.py      # Main orchestration script with CLI
 └── README.md        # Module documentation
+
+runs_pipeline/
+├── __init__.py      # Package exports
+├── extract.py       # RUNS Excel file reading and Date/Time parsing
+├── transform.py     # End-of-day deduplication, CUSIP validation/orphan tracking
+├── load.py          # Runs parquet writing (append/override modes)
+└── pipeline.py      # Main orchestration script with CLI
 ```
 
 ### Design Principles
@@ -141,20 +148,42 @@ bond_pipeline/
 
 ### Class-Based Architecture
 Each pipeline stage is a class with clear responsibilities:
+
+**Bond Pipeline:**
 - **ExcelExtractor**: File discovery, Excel reading, date extraction
 - **DataTransformer**: Schema alignment, CUSIP normalization, NA cleaning, deduplication
 - **ParquetLoader**: Append/override modes, date checking, universe creation
 - **BondDataPipeline**: Orchestrates all components, CLI interface
 
+**Runs Pipeline:**
+- **RunsExtractor**: RUNS Excel reading, Date/Time parsing (from columns, not filename)
+- **RunsTransformer**: End-of-day deduplication (vectorized, ~100x faster), CUSIP validation/orphan tracking (vectorized), schema alignment
+- **RunsLoader**: Runs parquet writing, Date+Dealer+CUSIP primary key enforcement
+- **RunsDataPipeline**: Orchestrates all components, CLI interface
+
+**Pipeline Orchestrator:**
+- **run_pipeline.py**: Unified entry point for both bond and runs pipelines
+- User can select: Bond only, Runs only, or Both pipelines
+- Shared mode selection (append/override) for selected pipelines
+
 ---
 
 ## Data Pipeline Patterns
 
-### Input Data Format
+### Bond Pipeline Input Data Format
 - **Excel files**: Pattern `API MM.DD.YY.xlsx` (e.g., `API 10.20.25.xlsx`)
 - **Header row**: Row 3 (index 2, 0-based)
 - **Columns**: 75 columns in latest files (schema evolved from 59)
 - **NA values**: `#N/A Field Not Applicable`, `#N/A Invalid Security`, etc.
+
+### Runs Pipeline Input Data Format
+- **Excel files**: Pattern `RUNS MM.DD.YY.xlsx` (e.g., `RUNS 10.31.25.xlsx`)
+- **Header row**: Row 1 (index 0, 0-based)
+- **Columns**: 30 columns in latest files (schema evolved from 28 in one old file)
+- **Date/Time**: Date and Time come from columns (not filename)
+  - Date: MM/DD/YY format (e.g., "10/31/25") → parsed to datetime object
+  - Time: HH:MM format (e.g., "15:45") → parsed to datetime.time object
+- **NA values**: Same as bond pipeline (`#N/A Field Not Applicable`, `#N/A Invalid Security`, etc.)
 
 ### Output Data Format
 
@@ -175,6 +204,14 @@ Each pipeline stage is a class with clear responsibilities:
 - **Update strategy**: Always rebuild from `historical_bond_details` (most recent date per CUSIP)
 - **Storage**: `bond_data/parquet/universe.parquet`
 
+#### `runs_timeseries.parquet`
+- **Purpose**: Time series of all dealer quotes over time (end-of-day snapshots)
+- **Primary Key**: `Date + Dealer + CUSIP` (unique combination, enforced after deduplication)
+- **Schema**: All 30 columns with Date and Time as first columns
+- **Row count**: ~130,000+ rows (after deduplication) spanning 2022-2025
+- **Storage**: `bond_data/parquet/runs_timeseries.parquet`
+- **Deduplication**: Keep latest Time per Date+Dealer+CUSIP (end-of-day snapshot)
+
 ### Processing Rules
 
 #### Date Handling
@@ -184,11 +221,21 @@ Each pipeline stage is a class with clear responsibilities:
 - Override mode: Delete existing parquet files, rebuild from scratch
 
 #### CUSIP Normalization & Validation
+
+**Bond Pipeline:**
 - Convert to uppercase: `89678zab2` → `89678ZAB2`
 - Remove extra text: ` 06418GAD9 Corp` → `06418GAD9`
 - Validate length: Must be exactly 9 characters
 - Invalid CUSIPs: Log warning but include in data
 - Primary key enforcement: No duplicate Date+CUSIP combinations
+
+**Runs Pipeline:**
+- No normalization: Keep CUSIPs as-is from Excel (no uppercase conversion, no text removal)
+- Validate length: Check if 9 characters using vectorized operations (but don't normalize)
+- **Optimized**: Vectorized CUSIP validation (~100x faster than row-by-row iteration)
+- Invalid CUSIPs: Log summary warning but include in data (same as bond pipeline)
+- **Enhanced Orphan Tracking**: Log orphans with context (Security, Date, Dealer, Time, Ticker) to validation.log
+- Primary key enforcement: No duplicate Date+Dealer+CUSIP combinations (after deduplication)
 
 #### Schema Evolution
 - **Master schema**: 75 columns from latest files (set dynamically)
@@ -197,9 +244,18 @@ Each pipeline stage is a class with clear responsibilities:
 - **Date column**: Always first column in all DataFrames
 
 #### Deduplication
+
+**Bond Pipeline:**
 - Within file: Keep last occurrence of duplicate CUSIPs
 - Across files: One record per Date+CUSIP combination
 - Log all duplicates to `bond_data/logs/duplicates.log`
+
+**Runs Pipeline:**
+- End-of-day snapshots: Keep latest Time per Date+Dealer+CUSIP (most recent quote of day)
+- Same-time tiebreaker: If multiple rows have same latest Time, keep last row by position
+- **Optimized**: Uses vectorized sort + drop_duplicates (O(n log n)) instead of row-by-row iteration (O(n*groups))
+- Within file and across files: One record per Date+Dealer+CUSIP combination
+- Log summary of duplicates to `bond_data/logs/duplicates.log` (combined with bond pipeline logs)
 
 #### Data Cleaning
 - Convert NA values to NULL: `#N/A Field Not Applicable`, `#N/A Invalid Security`, `N/A`, etc.
@@ -435,13 +491,21 @@ source Bond-RV-App/bin/activate  # Mac/Linux
 python run_pipeline.py
 # Prompts: 1=Override (first run), 2=Append (daily updates)
 
-# 3. Or use direct CLI
+# 3. Or use direct CLI (Bond Pipeline)
 cd bond_pipeline
 python pipeline.py -i "../Raw Data/" -m append
 python pipeline.py -i "../Raw Data/" -m override
 
-# 4. Or use Python module
+# 4. Or use Python module (Bond Pipeline)
 python -m bond_pipeline.pipeline -i "Raw Data/" -m append
+
+# 5. Runs Pipeline CLI
+python -m runs_pipeline.pipeline -i "Historical Runs/" -m append
+python -m runs_pipeline.pipeline -i "Historical Runs/" -m override
+
+# 6. Unified Pipeline Orchestrator (Recommended)
+python run_pipeline.py
+# Prompts: Select pipeline(s) (Bond/Runs/Both) and mode (Append/Override)
 ```
 
 ### Pipeline Modes
@@ -473,6 +537,12 @@ cat bond_data/logs/validation.log    # CUSIP validation issues
 import pandas as pd
 df = pd.read_parquet('bond_data/parquet/historical_bond_details.parquet')
 print(f"Rows: {len(df)}, Columns: {len(df.columns)}, Date range: {df['Date'].min()} to {df['Date'].max()}")
+
+# Runs pipeline stats
+df_runs = pd.read_parquet('bond_data/parquet/runs_timeseries.parquet')
+print(f"Rows: {len(df_runs)}, Columns: {len(df_runs.columns)}")
+print(f"Date range: {df_runs['Date'].min()} to {df_runs['Date'].max()}")
+print(f"Unique CUSIPs: {df_runs['CUSIP'].nunique()}, Unique Dealers: {df_runs['Dealer'].nunique()}")
 ```
 
 ---
@@ -640,4 +710,22 @@ pytest tests/unit/test_utils.py -v
 - **2025-01**: Added path handling and encoding rules
 - **2025-01**: Removed poetry environment references, switched to standard pip/virtual environment
 - **2025-01**: Removed all Outlook email pipeline functionality (monitor_outlook.py, runs_miner.py, utils/outlook_monitor.py, related documentation, and pywin32 dependency)
+- **2025-01**: Added runs_pipeline module documentation:
+  - Added runs_pipeline/ to module structure section
+  - Added runs_timeseries.parquet to output data format section
+  - Documented RUNS file pattern, header row, primary key (Date+Dealer+CUSIP)
+  - Documented end-of-day snapshot deduplication logic (latest Time per Date+Dealer+CUSIP)
+  - Documented CUSIP orphan tracking requirements (compare with universe.parquet)
+  - Added runs_pipeline execution examples to workflow section
+  - Updated class-based architecture section with runs pipeline classes
+- **2025-01-02**: Performance optimizations:
+  - Documented vectorized deduplication (~100x faster, O(n log n) vs O(n*groups))
+  - Documented vectorized CUSIP validation (~100x faster, vectorized string operations)
+  - Updated logging patterns to reflect summary logging instead of row-by-row
+- **2025-01-02**: Enhanced orphan CUSIP logging:
+  - Documented enhanced logging with context (Security, Date, Dealer, Time, Ticker)
+  - Updated orphan tracking section to reflect detailed context in logs
+- **2025-01-02**: Added unified pipeline orchestrator (run_pipeline.py):
+  - Documented run_pipeline.py as recommended entry point
+  - Added user selection for pipeline(s) and mode
 

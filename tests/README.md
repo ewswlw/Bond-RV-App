@@ -15,9 +15,15 @@ tests/
 │   ├── test_utils.py           # ✅ 25 tests (COMPLETE)
 │   ├── test_extract.py         # TODO
 │   ├── test_transform.py       # TODO
-│   └── test_load.py            # TODO
+│   ├── test_load.py            # TODO
+│   ├── test_utils_runs.py      # ✅ 30 tests (COMPLETE)
+│   ├── test_extract_runs.py    # ✅ 14 tests (COMPLETE)
+│   ├── test_transform_runs.py  # ✅ 17 tests (COMPLETE)
+│   └── test_load_runs.py       # ✅ 15 tests (COMPLETE)
 ├── integration/                 # Integration tests
-│   └── test_pipeline.py        # TODO
+│   ├── test_pipeline.py        # TODO
+│   ├── test_pipeline_runs.py  # ✅ 7 tests (COMPLETE)
+│   └── test_run_pipeline.py    # ✅ 16 tests (COMPLETE)
 └── fixtures/                    # Test data
     ├── excel_files/
     ├── parquet_files/
@@ -68,13 +74,21 @@ pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_cusip_valid
 
 | Module | Tests | Status | Coverage |
 |--------|-------|--------|----------|
+| **Bond Pipeline:** |
 | `utils.py` | 25 | ✅ COMPLETE | ~90% |
 | `extract.py` | 0 | ⏳ TODO | 0% |
 | `transform.py` | 0 | ⏳ TODO | 0% |
 | `load.py` | 0 | ⏳ TODO | 0% |
 | `config.py` | 0 | ⏳ TODO | 0% |
 | `pipeline.py` | 0 | ⏳ TODO | 0% |
-| **TOTAL** | **25** | **25% Complete** | **~15%** |
+| **Runs Pipeline:** |
+| `utils.py` (runs functions) | 30 | ✅ COMPLETE | ~90% |
+| `runs_pipeline/extract.py` | 14 | ✅ COMPLETE | ~85% |
+| `runs_pipeline/transform.py` | 17 | ✅ COMPLETE | ~85% |
+| `runs_pipeline/load.py` | 15 | ✅ COMPLETE | ~85% |
+| `runs_pipeline/pipeline.py` | 7 | ✅ COMPLETE | ~80% |
+| `run_pipeline.py` | 16 | ✅ COMPLETE | ~90% |
+| **TOTAL** | **118** | **~65% Complete** | **~40%** |
 
 ### Target Coverage
 
@@ -85,16 +99,18 @@ pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_cusip_valid
 
 ## Test Categories
 
-### ✅ Completed Tests (25 tests)
+### ✅ Completed Tests (118 tests)
 
-#### Date Parsing (6 tests)
+#### Bond Pipeline Tests (25 tests)
+
+##### Date Parsing (6 tests)
 - ✅ Valid date formats
 - ✅ Invalid date formats
 - ✅ Leap year handling
 - ✅ Edge cases (year 2000, 1999)
 - ✅ Invalid month/day
 
-#### CUSIP Validation (9 tests)
+##### CUSIP Validation (9 tests)
 - ✅ Valid CUSIPs
 - ✅ Invalid length (3, 8, 10, 12 chars)
 - ✅ Invalid characters (#, -, space)
@@ -103,19 +119,107 @@ pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_cusip_valid
 - ✅ All zeros and all letters
 - ✅ Whitespace handling
 
-#### NA Value Cleaning (5 tests)
+##### NA Value Cleaning (5 tests)
 - ✅ Standard NA values
 - ✅ Mixed DataFrame
 - ✅ Empty DataFrame
 - ✅ All NA values
 - ✅ No NA values
 
-#### Logger Setup (5 tests)
+##### Logger Setup (5 tests)
 - ✅ Logger creation
 - ✅ Writes to file
 - ✅ Multiple calls (no duplicate handlers)
 - ✅ Different logger names
 - ✅ Directory creation
+
+#### Runs Pipeline Tests (77 tests)
+
+##### Runs Date Parsing (10 tests)
+- ✅ Valid MM/DD/YY formats
+- ✅ Invalid formats
+- ✅ Leap year handling
+- ✅ Edge cases (year 2000, 1999, 2050+)
+- ✅ Invalid month/day
+- ✅ Empty string/None handling
+- ✅ Whitespace handling
+
+##### Runs Time Parsing (8 tests)
+- ✅ Valid HH:MM formats
+- ✅ Invalid formats (seconds, wrong separator)
+- ✅ Invalid hour/minute
+- ✅ Edge cases (midnight, end of day)
+- ✅ Empty string/None handling
+- ✅ Whitespace handling
+
+##### CUSIP Orphan Tracking (5 tests)
+- ✅ No orphans (all in universe)
+- ✅ With orphans
+- ✅ Universe file doesn't exist
+- ✅ Empty runs CUSIPs
+- ✅ All orphans
+
+##### Runs Data Validation (8 tests)
+- ✅ Valid data
+- ✅ Missing dates/times
+- ✅ Negative prices
+- ✅ Extreme spreads
+- ✅ Unknown dealers
+- ✅ Date range outside bounds
+- ✅ Missing date column
+
+##### Runs Extraction (14 tests)
+- ✅ Valid Excel reading
+- ✅ Date/Time parsing
+- ✅ Column reordering (Date, Time first)
+- ✅ Missing Date/Time columns
+- ✅ Empty files
+- ✅ Invalid date/time formats
+- ✅ Multiple files extraction
+- ✅ Error handling
+
+##### Runs Transformation (17 tests)
+- ✅ End-of-day deduplication (latest Time)
+- ✅ Same Time tiebreaker (keep last)
+- ✅ CUSIP validation
+- ✅ CUSIP orphan tracking
+- ✅ Schema alignment
+- ✅ Data cleaning (NA values)
+- ✅ Full transform pipeline
+
+##### Runs Loading (15 tests)
+- ✅ Append mode (new dates)
+- ✅ Append mode (skip existing dates)
+- ✅ Override mode (new/replace)
+- ✅ Primary key validation
+- ✅ Empty data handling
+- ✅ Summary statistics
+- ✅ File existence checks
+
+##### Runs Pipeline Integration (7 tests)
+- ✅ Pipeline initialization
+- ✅ Append mode execution
+- ✅ Override mode execution
+- ✅ File sorting (chronological)
+- ✅ No files found
+- ✅ Empty files
+- ✅ Full pipeline workflow
+
+##### Run Pipeline Script Integration (16 tests)
+- ✅ Bond pipeline execution (append/override modes)
+- ✅ Bond pipeline failure handling
+- ✅ Bond pipeline exception handling
+- ✅ Runs pipeline execution (append/override modes)
+- ✅ Runs pipeline failure handling
+- ✅ Runs pipeline exception handling
+- ✅ Main function: bond pipeline only
+- ✅ Main function: runs pipeline only
+- ✅ Main function: both pipelines (success)
+- ✅ Main function: both pipelines (bond fails)
+- ✅ Main function: both pipelines (runs fails)
+- ✅ Main function: override mode
+- ✅ Main function: default choices
+- ✅ Main function: invalid choices handling
 
 ### ⏳ Pending Tests
 
@@ -253,12 +357,29 @@ If pytest doesn't find your tests:
 
 ## Next Steps
 
+### Bond Pipeline Tests
 1. ✅ **Phase 1 Complete**: `test_utils.py` (25 tests)
 2. ⏳ **Phase 2**: Implement `test_extract.py` (20 tests)
 3. ⏳ **Phase 3**: Implement `test_transform.py` (25 tests)
 4. ⏳ **Phase 4**: Implement `test_load.py` (20 tests)
 5. ⏳ **Phase 5**: Implement `test_pipeline.py` (10 tests)
-6. ⏳ **Phase 6**: Add CI/CD integration
+
+### Runs Pipeline Tests
+1. ✅ **Phase 1 Complete**: `test_utils_runs.py` (30 tests)
+2. ✅ **Phase 2 Complete**: `test_extract_runs.py` (14 tests)
+3. ✅ **Phase 3 Complete**: `test_transform_runs.py` (17 tests)
+4. ✅ **Phase 4 Complete**: `test_load_runs.py` (15 tests)
+5. ✅ **Phase 5 Complete**: `test_pipeline_runs.py` (7 tests)
+
+### Run Pipeline Script Tests
+1. ✅ **Phase 1 Complete**: `test_run_pipeline.py` (16 tests)
+   - Bond pipeline execution (append/override)
+   - Runs pipeline execution (append/override)
+   - Main function orchestration (all combinations)
+   - Error handling (failures, exceptions)
+
+### Infrastructure
+2. ⏳ **Phase 2**: Add CI/CD integration
 
 ## Resources
 
@@ -268,6 +389,10 @@ If pytest doesn't find your tests:
 
 ---
 
-**Last Updated**: October 21, 2025  
-**Status**: Phase 1 Complete (25/100+ tests)
+**Last Updated**: January 2025  
+**Status**: 
+- Bond Pipeline: Phase 1 Complete (25/100+ tests)
+- Runs Pipeline: All Phases Complete (77/77 tests)
+- Run Pipeline Script: All Phases Complete (16/16 tests)
+- **Total**: 118 tests complete
 

@@ -5,7 +5,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, time
 import openpyxl
 from openpyxl import Workbook
 
@@ -218,3 +218,196 @@ def clean_test_dirs(tmp_path):
         'raw_data': raw_data_dir,
     }
 
+
+# ============================================================================
+# Runs Pipeline Fixtures
+# ============================================================================
+
+@pytest.fixture
+def sample_runs_dataframe():
+    """Sample DataFrame with RUNS data (30 columns)"""
+    from datetime import datetime, time
+    return pd.DataFrame({
+        'Reference Security': ['AM259052 Corp'] * 5,
+        'Date': ['10/31/25', '10/31/25', '10/31/25', '10/31/25', '10/31/25'],
+        'Time': ['15:45', '15:45', '15:46', '15:47', '16:00'],
+        'Bid Workout Risk': [5.14] * 5,
+        'Ticker': ['T'] * 5,
+        'Dealer': ['BMO', 'BMO', 'BMO', 'RBC', 'TD'],
+        'Source': ['RUN'] * 5,
+        'Security': ['T 4.85 05/25/47'] * 5,
+        'Bid Price': [91.608, 91.608, 91.609, 91.610, 91.615],
+        'Ask Price': [92.226, 92.226, 92.227, 92.228, 92.233],
+        'Bid Spread': [235.0, 235.0, 236.0, 237.0, 238.0],
+        'Ask Spread': [230.0, 230.0, 231.0, 232.0, 233.0],
+        'Benchmark': ['CAN 1 05/25/45'] * 5,
+        'Reference Benchmark': ['QZ074427 Corp'] * 5,
+        'Bid Size': [3000000.0] * 5,
+        'Ask Size': [2000000.0] * 5,
+        'Sector': ['HY'] * 5,
+        'Bid Yield To Convention': [5.1] * 5,
+        'Ask Yield To Convention': [5.05] * 5,
+        'Bid Discount Margin': [235.0] * 5,
+        'Ask Discount Margin': [230.0] * 5,
+        'CUSIP': ['00206RDY5', '00206RDY5', '00206RDY5', '00206RDY5', '00206RGB2'],
+        'Sender Name': ['BMOCM'] * 5,
+        'Currency': ['CAD'] * 5,
+        'Subject': ['BMOCM - ATT #1'] * 5,
+        'Keyword': [''] * 5,
+        'Bid Interpolated Spread to Government': [235.0] * 5,
+        'Ask Interpolated Spread to Government': [230.0] * 5,
+        'Bid Contributed Yield': [5.1] * 5,
+        'Bid Z-spread': [235.0] * 5,
+    })
+
+
+@pytest.fixture
+def sample_runs_with_duplicates():
+    """Sample RUNS DataFrame with duplicate Date+Dealer+CUSIP (different times)"""
+    return pd.DataFrame({
+        'Date': [
+            datetime(2025, 10, 31), datetime(2025, 10, 31), datetime(2025, 10, 31),
+            datetime(2025, 10, 31), datetime(2025, 10, 31), datetime(2025, 10, 31)
+        ],
+        'Time': [
+            time(7, 17), time(11, 58), time(11, 58),
+            time(8, 0), time(8, 0), time(9, 0)
+        ],
+        'Dealer': ['BMO', 'BMO', 'BMO', 'RBC', 'RBC', 'RBC'],
+        'CUSIP': ['00208DAB7', '00208DAB7', '00208DAB7', '00208DAB7', '00208DAB7', '00208DAB7'],
+        'Security': ['ARXCN 3.465 03/10/31'] * 6,
+        'Bid Price': [98.314, 98.429, 98.429, 98.300, 98.301, 98.302],
+        'Ask Price': [98.504, 98.620, 98.620, 98.490, 98.491, 98.492],
+        'Bid Spread': [106.0, 106.0, 106.0, 105.0, 105.0, 105.0],
+        'Ask Spread': [102.0, 102.0, 102.0, 101.0, 101.0, 101.0],
+    })
+
+
+@pytest.fixture
+def sample_runs_with_same_time_duplicates():
+    """Sample RUNS DataFrame with same Date+Dealer+CUSIP+Time duplicates"""
+    return pd.DataFrame({
+        'Date': [datetime(2025, 10, 31), datetime(2025, 10, 31), datetime(2025, 10, 31)],
+        'Time': [time(15, 45), time(15, 45), time(15, 45)],
+        'Dealer': ['BMO', 'BMO', 'BMO'],
+        'CUSIP': ['00206RDY5', '00206RDY5', '00206RDY5'],
+        'Security': ['T 4.85 05/25/47'] * 3,
+        'Bid Price': [91.608, 91.608, 91.610],  # Last one different
+        'Ask Price': [92.226, 92.226, 92.228],
+    })
+
+
+@pytest.fixture
+def sample_runs_dates():
+    """Sample dates for RUNS testing"""
+    return {
+        'valid': [
+            ('10/31/25', datetime(2025, 10, 31)),
+            ('01/02/24', datetime(2024, 1, 2)),
+            ('12/29/23', datetime(2023, 12, 29)),
+            ('01/01/00', datetime(2000, 1, 1)),
+        ],
+        'invalid': [
+            '2025-10-31',  # Wrong format
+            '10-31-25',    # Wrong separator
+            '31/10/25',    # Day/month swapped
+            '13/32/25',    # Invalid month/day
+            '',
+            None,
+        ],
+        'edge_cases': [
+            ('02/29/24', datetime(2024, 2, 29)),  # Leap year
+            ('12/31/99', datetime(1999, 12, 31)),  # Year 1999
+        ]
+    }
+
+
+@pytest.fixture
+def sample_runs_times():
+    """Sample times for RUNS testing"""
+    return {
+        'valid': [
+            ('15:45', time(15, 45)),
+            ('08:12', time(8, 12)),
+            ('8:12', time(8, 12)),  # Also accepts without leading zero
+            ('23:59', time(23, 59)),
+            ('00:00', time(0, 0)),
+        ],
+        'invalid': [
+            '15:45:30',  # Has seconds
+            '25:00',     # Invalid hour
+            '15:60',     # Invalid minute
+            '15-45',     # Wrong separator
+            '',
+            None,
+        ],
+        'edge_cases': [
+            ('00:00', time(0, 0)),
+            ('23:59', time(23, 59)),
+        ]
+    }
+
+
+@pytest.fixture
+def temp_runs_excel_file(tmp_path):
+    """Create a temporary RUNS Excel file with sample data"""
+    def _create_runs_excel(filename, data_df):
+        """
+        Create a RUNS Excel file with proper structure
+        
+        Args:
+            filename: Name of the file (e.g., 'RUNS 10.31.25.xlsx')
+            data_df: DataFrame to write (with Date and Time as columns)
+        """
+        filepath = tmp_path / filename
+        
+        # Create workbook
+        wb = Workbook()
+        ws = wb.active
+        
+        # Row 1: Headers (header is row 1, 0-indexed)
+        headers = list(data_df.columns)
+        for col_idx, header in enumerate(headers, start=1):
+            ws.cell(row=1, column=col_idx, value=header)
+        
+        # Row 2+: Data
+        for row_idx, row_data in enumerate(data_df.itertuples(index=False), start=2):
+            for col_idx, value in enumerate(row_data, start=1):
+                # Convert datetime objects to strings for Excel
+                if isinstance(value, datetime):
+                    value = value.strftime('%m/%d/%y')
+                elif isinstance(value, time):
+                    value = value.strftime('%H:%M')
+                ws.cell(row=row_idx, column=col_idx, value=value)
+        
+        wb.save(filepath)
+        return filepath
+    
+    return _create_runs_excel
+
+
+@pytest.fixture
+def sample_universe_parquet(tmp_path):
+    """Create sample universe.parquet for orphan tracking tests"""
+    universe_df = pd.DataFrame({
+        'CUSIP': [
+            '00206RDY5',
+            '00206RGB2',
+            '00208DAB7',
+            '037833CY4',
+            '03524BAH9',
+        ],
+        'Security': [
+            'T 4.85 05/25/47',
+            'T 4 11/25/25',
+            'ARXCN 3.465 03/10/31',
+            'Bond A',
+            'Bond B',
+        ],
+    })
+    
+    parquet_path = tmp_path / 'parquet' / 'universe.parquet'
+    parquet_path.parent.mkdir(parents=True, exist_ok=True)
+    universe_df.to_parquet(parquet_path, index=False)
+    
+    return parquet_path
