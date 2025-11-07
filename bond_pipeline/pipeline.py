@@ -17,7 +17,8 @@ from .config import (
     HISTORICAL_PARQUET,
     UNIVERSE_PARQUET,
     DEFAULT_INPUT_DIR,
-    DATE_COLUMN
+    DATE_COLUMN,
+    BQL_PARQUET,
 )
 from .utils import (
     setup_logging,
@@ -37,17 +38,19 @@ from .load import ParquetLoader
 class BondDataPipeline:
     """Main pipeline orchestrator."""
     
-    def __init__(self, input_dir: Path, mode: str = 'append'):
+    def __init__(self, input_dir: Path, mode: str = 'append', process_bql: bool = False):
         """
         Initialize pipeline.
 
         Args:
             input_dir: Directory containing Excel files
             mode: 'append' or 'override'
+            process_bql: Whether to process the BQL workbook as part of this run.
         """
         self.input_dir = Path(input_dir)
         self.mode = mode
         self.start_time = datetime.now()
+        self.process_bql = process_bql
 
         # Get run ID and save metadata
         self.run_id = get_run_id()
@@ -176,8 +179,41 @@ class BondDataPipeline:
                 self.console.info("[ERROR] Failed to load universe data")
                 return False
 
-            # Step 7: Summary statistics
-            self.logger.info("\n[STEP 7] Generating summary statistics...")
+            next_step = 7
+
+            if self.process_bql:
+                self.logger.info(f"\n[STEP {next_step}] Processing BQL dataset...")
+                self.console.info("   [+] Processing BQL dataset...")
+
+                bql_raw_df = self.extractor.read_bql_workbook()
+                if bql_raw_df is None or bql_raw_df.empty:
+                    self.logger.error("Failed to load BQL workbook or workbook is empty.")
+                    self.console.info("[ERROR] Failed to process BQL workbook.")
+                    return False
+
+                bql_artifacts = self.transformer.transform_bql_data(bql_raw_df)
+
+                if bql_artifacts.dataframe.empty:
+                    self.logger.error("BQL transformation produced no rows. Aborting BQL step.")
+                    self.console.info("[ERROR] BQL transformation returned no data.")
+                    return False
+
+                bql_success = self.loader.write_bql_dataset(
+                    bql_artifacts.dataframe,
+                    bql_artifacts.cusip_to_name,
+                )
+
+                if not bql_success:
+                    self.logger.error("Failed to persist BQL dataset to parquet.")
+                    self.console.info("[ERROR] Failed to write BQL parquet.")
+                    return False
+
+                self.console.info("   [+] BQL dataset written to Parquet.")
+
+                next_step += 1
+
+            # Summary statistics
+            self.logger.info(f"\n[STEP {next_step}] Generating summary statistics...")
             stats = self.loader.get_summary_stats()
 
             # Log detailed stats to file
@@ -218,6 +254,8 @@ class BondDataPipeline:
             if 'date_range' in stats:
                 date_min, date_max = stats['date_range']
                 self.console.info(f"   Date range: {format_date_string(date_min)} to {format_date_string(date_max)}")
+            if self.process_bql:
+                self.console.info(f"   BQL parquet: {BQL_PARQUET}")
             self.console.info(f"   Duration: {duration:.1f} seconds")
             self.console.info(f"\n   Detailed logs: bond_data/logs/")
 
@@ -263,6 +301,11 @@ Examples:
         default='append',
         help='Processing mode: append (add new dates) or override (rebuild all)'
     )
+    parser.add_argument(
+        '--process-bql',
+        action='store_true',
+        help='Include BQL workbook ingestion (writes bql.parquet)'
+    )
     
     args = parser.parse_args()
 
@@ -283,13 +326,15 @@ Examples:
         sys.exit(1)
     
     # Run pipeline
-    pipeline = BondDataPipeline(input_dir, args.mode)
+    pipeline = BondDataPipeline(input_dir, args.mode, process_bql=args.process_bql)
     success = pipeline.run()
     
     if success:
         print("\n✓ Pipeline completed successfully!")
         print(f"  Historical data: {HISTORICAL_PARQUET}")
         print(f"  Universe data: {UNIVERSE_PARQUET}")
+        if args.process_bql:
+            print(f"  BQL data: {BQL_PARQUET}")
         sys.exit(0)
     else:
         print("\n✗ Pipeline failed. Check logs for details.")

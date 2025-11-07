@@ -3,13 +3,24 @@ Transform module for data cleaning, normalization, and deduplication.
 Handles CUSIP validation, NA cleaning, and duplicate removal.
 """
 
-import pandas as pd
+import logging
 from pathlib import Path
 from typing import Optional
-import logging
 
-from .config import DATE_COLUMN, UNIVERSE_COLUMNS, BOND_NAME_COLUMN
+import pandas as pd
+
+from .config import (
+    BOND_NAME_COLUMN,
+    DATE_COLUMN,
+    UNIVERSE_COLUMNS,
+    BQL_CUSIP_COLUMN_NAME,
+    BQL_DATE_COLUMN_NAME,
+    BQL_NAME_COLUMN_NAME,
+    BQL_VALUE_COLUMN_NAME,
+)
 from .utils import (
+    BQLTransformArtifacts,
+    reshape_bql_to_long,
     setup_logging,
     validate_cusip,
     clean_na_values,
@@ -211,6 +222,49 @@ class DataTransformer:
         df = self.align_schema(df)
         
         return df
+
+    def transform_bql_data(self, raw_bql_df: pd.DataFrame) -> BQLTransformArtifacts:
+        """
+        Convert raw BQL workbook data into the standardized long format.
+
+        Args:
+            raw_bql_df: DataFrame produced directly from the BQL Excel workbook.
+
+        Returns:
+            BQLTransformArtifacts containing the transformed data and metadata.
+        """
+        artifacts = reshape_bql_to_long(raw_bql_df)
+
+        if artifacts.issues:
+            for issue in artifacts.issues:
+                self.logger_valid.warning(f"BQL transform issue: {issue}")
+        else:
+            self.logger_valid.info("BQL transform completed with no issues detected.")
+
+        record_count = len(artifacts.dataframe)
+        unique_cusips = artifacts.dataframe[BQL_CUSIP_COLUMN_NAME].nunique() if record_count else 0
+        unique_dates = artifacts.dataframe[BQL_DATE_COLUMN_NAME].nunique() if record_count else 0
+
+        self.logger_valid.info(
+            "BQL transformation stats: %s rows, %s unique CUSIPs, %s unique dates",
+            record_count,
+            unique_cusips,
+            unique_dates,
+        )
+
+        missing_names = [
+            cusip
+            for cusip, name in artifacts.cusip_to_name.items()
+            if not name or str(name).strip() == ""
+        ]
+        if missing_names:
+            self.logger_valid.warning(
+                "BQL transformation found %s CUSIPs without names (showing up to 10): %s",
+                len(missing_names),
+                ", ".join(missing_names[:10]),
+            )
+
+        return artifacts
     
     def create_universe_table(self, historical_df: pd.DataFrame) -> pd.DataFrame:
         """

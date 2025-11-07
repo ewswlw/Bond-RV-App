@@ -48,10 +48,16 @@ Processes Excel files containing dealer quote data (runs) and creates one optimi
 
 1. **`runs_timeseries.parquet`** - Time series of dealer quotes with unique `Date + Dealer + CUSIP` combinations (end-of-day snapshots)
 
+### BQL Workbook Ingestion
+Processes the Bloomberg query workbook (`bql.xlsx`) into a long-form spreads dataset:
+
+1. **`bql.parquet`** - Normalized table with columns `Date`, `Name`, `CUSIP`, `Value`, including CUSIP orphan logging versus `universe.parquet`
+
 ### Key Features
 
 ✅ **Modular Architecture** - Separate modules with clean separation of concerns  
 ✅ **Dual Pipelines** - Bond pipeline and Runs pipeline with shared utilities  
+✅ **BQL Workbook Ingestion** - Converts Bloomberg query output to long-form spreads dataset with orphan tracking  
 ✅ **Incremental Loading** - Append mode skips existing dates  
 ✅ **Data Validation** - CUSIP normalization & validation, orphan tracking  
 ✅ **Optimized Performance** - Vectorized operations (~100x faster for large datasets)  
@@ -96,6 +102,7 @@ bond-rv-app/
 │   ├── parquet/                # Output parquet files
 │   │   ├── historical_bond_details.parquet  # Bond pipeline output
 │   │   ├── universe.parquet                 # Bond pipeline output
+│   │   ├── bql.parquet                      # BQL spreads dataset
 │   │   └── runs_timeseries.parquet          # Runs pipeline output
 │   └── logs/                   # Processing logs
 │       ├── processing.log      # Excel pipeline logs
@@ -144,14 +151,15 @@ python run_pipeline.py
 # Prompts:
 # 1. Select pipeline: [1] Bond, [2] Runs, [3] Both
 # 2. Select mode: [1] Override, [2] Append
+# 3. (Bond) Include BQL workbook ingestion? [Y/n]
 ```
 
 ### Direct Pipeline CLI
 
 ```bash
 # Bond Pipeline
-python -m bond_pipeline.pipeline -i "Raw Data/" -m append
-python -m bond_pipeline.pipeline -i "Raw Data/" -m override
+python -m bond_pipeline.pipeline -i "Raw Data/" -m append --process-bql
+python -m bond_pipeline.pipeline -i "Raw Data/" -m override --process-bql
 
 # Runs Pipeline
 python -m runs_pipeline.pipeline -i "Historical Runs/" -m append
@@ -271,6 +279,11 @@ python pipeline.py -i "../Raw Data/" -m append
   12. Currency
   13. Equity Ticker
 - **Purpose**: Current universe of unique bonds with most recent data
+
+### BQL Spreads Table (Bond Pipeline)
+- **Primary Key**: `Date + CUSIP`
+- **Columns**: `Date`, `Name`, `CUSIP`, `Value`
+- **Purpose**: Long-form Bloomberg query spreads with orphan logging against `universe.parquet`
 
 ### Runs Timeseries Table (Runs Pipeline)
 - **Primary Key**: `Date + Dealer + CUSIP`

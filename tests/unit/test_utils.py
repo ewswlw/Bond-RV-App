@@ -2,21 +2,33 @@
 Unit tests for utils.py module
 Tests: date parsing, CUSIP validation, NA cleaning, logging
 """
-import pytest
-import pandas as pd
+import logging
+import os
+import sys
 from datetime import datetime
 from pathlib import Path
-import sys
-import os
+
+import pandas as pd
+import pytest
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
+from bond_pipeline.config import (
+    BQL_CUSIP_COLUMN_NAME,
+    BQL_DATE_COLUMN_NAME,
+    BQL_NAME_COLUMN_NAME,
+    BQL_OUTPUT_COLUMNS,
+    BQL_VALUE_COLUMN_NAME,
+)
+from bond_pipeline.load import ParquetLoader
 from bond_pipeline.utils import (
-    extract_date_from_filename,
-    validate_cusip,
     clean_na_values,
-    setup_logging
+    extract_date_from_filename,
+    normalize_bql_cusip,
+    reshape_bql_to_long,
+    setup_logging,
+    validate_cusip,
 )
 
 
@@ -280,6 +292,98 @@ class TestLoggerSetup:
         
         assert log_dir.exists()
         assert log_file.exists()
+
+
+class TestBQLUtilities:
+    """Tests for BQL-specific utility helpers."""
+
+    def test_normalize_bql_cusip_valid(self):
+        """BQL header with trailing Corp is normalized to 9-char CUSIP."""
+        cleaned, error = normalize_bql_cusip("037833CY4 Corp")
+        assert cleaned == "037833CY4"
+        assert error is None
+
+    def test_normalize_bql_cusip_invalid_length(self):
+        """Headers that do not reduce to nine characters are rejected."""
+        cleaned, error = normalize_bql_cusip("BBG01T1YK8V5 Corp")
+        assert cleaned is None
+        assert "Invalid CUSIP length" in error
+
+    def test_reshape_bql_to_long(self, sample_bql_raw_dataframe):
+        """Raw BQL DataFrame is reshaped into expected long-form layout."""
+        artifacts = reshape_bql_to_long(sample_bql_raw_dataframe)
+
+        assert list(artifacts.dataframe.columns) == BQL_OUTPUT_COLUMNS
+        assert len(artifacts.dataframe) == 3  # 3 numeric entries (2 + 1)
+        assert set(artifacts.dataframe[BQL_CUSIP_COLUMN_NAME].unique()) == {
+            "037833CY4",
+            "35085ZBY1",
+        }
+        assert set(artifacts.dataframe[BQL_NAME_COLUMN_NAME].unique()) == {
+            "Bond A",
+            "Bond B",
+        }
+        assert not artifacts.issues
+
+
+class TestParquetLoaderBQL:
+    """Tests for ParquetLoader BQL write behaviour."""
+
+    def test_write_bql_dataset_success(
+        self,
+        tmp_path,
+        sample_bql_long_dataframe,
+        sample_bql_cusip_names,
+        monkeypatch,
+    ):
+        """BQL dataset is written to parquet with universe alignment."""
+        log_file = tmp_path / "processing.log"
+        loader = ParquetLoader(log_file)
+
+        target_parquet = tmp_path / "bql.parquet"
+        universe_parquet = tmp_path / "universe.parquet"
+        monkeypatch.setattr("bond_pipeline.load.BQL_PARQUET", target_parquet)
+        monkeypatch.setattr("bond_pipeline.load.UNIVERSE_PARQUET", universe_parquet)
+
+        # Universe contains the primary CUSIP to avoid orphan warnings
+        universe_df = pd.DataFrame({BQL_CUSIP_COLUMN_NAME: ["037833CY4"]})
+        universe_df.to_parquet(universe_parquet, index=False)
+
+        result = loader.write_bql_dataset(sample_bql_long_dataframe, sample_bql_cusip_names)
+
+        assert result is True
+        assert target_parquet.exists()
+
+        written_df = pd.read_parquet(target_parquet)
+        pd.testing.assert_frame_equal(
+            written_df.sort_values(BQL_DATE_COLUMN_NAME).reset_index(drop=True),
+            sample_bql_long_dataframe.sort_values(BQL_DATE_COLUMN_NAME).reset_index(drop=True),
+        )
+
+    def test_write_bql_dataset_orphans_logged(
+        self,
+        tmp_path,
+        sample_bql_long_dataframe,
+        sample_bql_cusip_names,
+        monkeypatch,
+        caplog,
+    ):
+        """Missing universe entries trigger orphan warnings but still write parquet."""
+        caplog.set_level(logging.WARNING, logger="load")
+
+        log_file = tmp_path / "processing.log"
+        loader = ParquetLoader(log_file)
+
+        target_parquet = tmp_path / "bql.parquet"
+        missing_universe = tmp_path / "missing.parquet"
+        monkeypatch.setattr("bond_pipeline.load.BQL_PARQUET", target_parquet)
+        monkeypatch.setattr("bond_pipeline.load.UNIVERSE_PARQUET", missing_universe)
+
+        result = loader.write_bql_dataset(sample_bql_long_dataframe, sample_bql_cusip_names)
+
+        assert result is True
+        assert target_parquet.exists()
+        assert any("BQL CUSIPs missing" in record.message for record in caplog.records)
 
 
 # Run tests with: pytest tests/unit/test_utils.py -v

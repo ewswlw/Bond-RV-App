@@ -3,19 +3,21 @@ Extract module for reading Excel files.
 Handles file reading, date extraction, and initial data loading.
 """
 
-import pandas as pd
+import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
-from datetime import datetime
-import logging
 
-from .config import HEADER_ROW, DATE_COLUMN
-from .utils import (
-    extract_date_from_filename,
-    setup_logging,
-    format_date_string,
-    format_dataframe_info
+import pandas as pd
+
+from .config import (
+    BQL_EXCEL_PATH,
+    BQL_HEADER_LABEL,
+    BQL_SHEET_NAME,
+    DATE_COLUMN,
+    HEADER_ROW,
 )
+from .utils import extract_date_from_filename, format_dataframe_info, format_date_string, setup_logging
 
 
 class ExcelExtractor:
@@ -96,4 +98,48 @@ class ExcelExtractor:
         self.logger.info(f"Successfully extracted {len(results)} files")
         
         return results
+
+    def read_bql_workbook(self, workbook_path: Optional[Path] = None) -> Optional[pd.DataFrame]:
+        """
+        Read the BQL Excel workbook and return the raw wide DataFrame.
+
+        Args:
+            workbook_path: Optional explicit workbook path. Defaults to config path.
+
+        Returns:
+            DataFrame containing the raw BQL data, or None if read fails.
+        """
+        path = workbook_path or BQL_EXCEL_PATH
+        self.logger.info(f"Processing BQL workbook: {path}")
+
+        if not path.exists():
+            self.logger.error(f"BQL workbook does not exist: {path}")
+            return None
+
+        try:
+            df = pd.read_excel(path, sheet_name=BQL_SHEET_NAME)
+        except Exception as exc:
+            self.logger.error(f"Failed to read BQL workbook: {exc}")
+            return None
+
+        if df.empty:
+            self.logger.warning("BQL workbook is empty.")
+            return df
+
+        first_column_label = df.columns[0]
+        if str(first_column_label).strip() != BQL_HEADER_LABEL:
+            self.logger.warning(
+                "Unexpected BQL header label. Expected '%s', found '%s' (path=%s)",
+                BQL_HEADER_LABEL,
+                first_column_label,
+                path,
+            )
+
+        self.logger.info(f"  Read BQL sheet with {len(df)} rows, {len(df.columns)} columns")
+        self.logger.debug(
+            "  BQL columns preview: %s",
+            ", ".join(map(str, df.columns[: min(10, len(df.columns))])),
+        )
+
+        return df
 

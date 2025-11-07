@@ -20,11 +20,12 @@ from bond_pipeline.config import (
     RUNS_INPUT_DIR,
     HISTORICAL_PARQUET,
     RUNS_PARQUET,
-    UNIVERSE_PARQUET
+    UNIVERSE_PARQUET,
+    BQL_PARQUET,
 )
 
 
-def run_bond_pipeline(mode: str) -> bool:
+def run_bond_pipeline(mode: str, process_bql: bool) -> bool:
     """Run the bond data pipeline."""
     print("\n" + "=" * 70)
     print("  BOND DATA PIPELINE")
@@ -33,7 +34,7 @@ def run_bond_pipeline(mode: str) -> bool:
     print(f"   Input: {DEFAULT_INPUT_DIR}")
     
     try:
-        pipeline = BondDataPipeline(DEFAULT_INPUT_DIR, mode)
+        pipeline = BondDataPipeline(DEFAULT_INPUT_DIR, mode, process_bql=process_bql)
         success = pipeline.run()
         
         if success:
@@ -41,6 +42,8 @@ def run_bond_pipeline(mode: str) -> bool:
             print(f"   ✓ Bond Pipeline completed successfully")
             print(f"   Output: {HISTORICAL_PARQUET}")
             print(f"   Universe: {UNIVERSE_PARQUET}")
+            if process_bql:
+                print(f"   BQL: {BQL_PARQUET}")
             print("-" * 70)
         else:
             print("\n" + "-" * 70)
@@ -116,11 +119,16 @@ def main():
     
     # Track results
     results = {}
+    process_bql = False
+
+    if pipeline_choice in ['1', '3']:
+        bql_choice = input("\nProcess BQL workbook as part of Bond Pipeline? (Y/n): ").strip().lower()
+        process_bql = bql_choice != 'n'
     
     # Run selected pipeline(s)
     if pipeline_choice in ['1', '3']:
         # Run Bond Pipeline
-        results['bond'] = run_bond_pipeline(mode)
+        results['bond'] = run_bond_pipeline(mode, process_bql)
     
     if pipeline_choice in ['2', '3']:
         # Run Runs Pipeline

@@ -18,6 +18,25 @@ DEFAULT_INPUT_DIR = Path(r"C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Tradin
 # Parquet file names
 HISTORICAL_PARQUET = PARQUET_DIR / "historical_bond_details.parquet"
 UNIVERSE_PARQUET = PARQUET_DIR / "universe.parquet"
+BQL_PARQUET = PARQUET_DIR / "bql.parquet"
+
+# BQL input configuration
+BQL_EXCEL_PATH = Path(
+    r"C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Trading\COF\Models\Unfinished Models\Support Files\bql.xlsx"
+)
+BQL_SHEET_NAME = "bql"
+BQL_HEADER_LABEL = "CUSIPs"
+BQL_NAME_ROW_INDEX = 0  # First row contains security names
+BQL_DATE_COLUMN_NAME = "Date"
+BQL_VALUE_COLUMN_NAME = "Value"
+BQL_NAME_COLUMN_NAME = "Name"
+BQL_CUSIP_COLUMN_NAME = "CUSIP"
+BQL_OUTPUT_COLUMNS = [
+    BQL_DATE_COLUMN_NAME,
+    BQL_NAME_COLUMN_NAME,
+    BQL_CUSIP_COLUMN_NAME,
+    BQL_VALUE_COLUMN_NAME,
+]
 
 # Excel file patterns
 FILE_PATTERN = r'API\s+(\d{2})\.(\d{2})\.(\d{2})\.xlsx$'

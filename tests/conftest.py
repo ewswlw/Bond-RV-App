@@ -219,6 +219,41 @@ def clean_test_dirs(tmp_path):
     }
 
 
+@pytest.fixture
+def sample_bql_raw_dataframe():
+    """Sample raw BQL workbook structure."""
+    return pd.DataFrame(
+        [
+            ["name", "Bond A", "Bond B"],
+            ["2025-05-07 00:00:00", 68.1, 70.2],
+            ["2025-05-08 00:00:00", 68.3, None],
+        ],
+        columns=["CUSIPs", "037833CY4 Corp", "35085ZBY1 Corp"],
+    )
+
+
+@pytest.fixture
+def sample_bql_long_dataframe():
+    """Sample long-form BQL dataset."""
+    return pd.DataFrame(
+        {
+            "Date": pd.to_datetime(["2025-05-07", "2025-05-08", "2025-05-07"]),
+            "Name": ["Bond A", "Bond A", "Bond B"],
+            "CUSIP": ["037833CY4", "037833CY4", "35085ZBY1"],
+            "Value": [68.1, 68.3, 70.2],
+        }
+    )
+
+
+@pytest.fixture
+def sample_bql_cusip_names():
+    """Mapping of BQL CUSIPs to security names."""
+    return {
+        "037833CY4": "Bond A",
+        "35085ZBY1": "Bond B",
+    }
+
+
 # ============================================================================
 # Runs Pipeline Fixtures
 # ============================================================================

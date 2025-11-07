@@ -3,12 +3,18 @@ Load module for writing data to parquet files.
 Handles append and override modes.
 """
 
-import pandas as pd
-from pathlib import Path
-from typing import Optional, Set
 import logging
+from pathlib import Path
+from typing import Dict, Optional, Set
+
+import pandas as pd
 
 from .config import (
+    BQL_CUSIP_COLUMN_NAME,
+    BQL_DATE_COLUMN_NAME,
+    BQL_NAME_COLUMN_NAME,
+    BQL_PARQUET,
+    BQL_VALUE_COLUMN_NAME,
     HISTORICAL_PARQUET,
     UNIVERSE_PARQUET,
     DATE_COLUMN
@@ -295,4 +301,106 @@ class ParquetLoader:
             self.logger.error(f"Error reading parquet stats: {str(e)}")
         
         return stats
+
+    def write_bql_dataset(self, bql_df: pd.DataFrame, cusip_to_name: Dict[str, str]) -> bool:
+        """
+        Write the BQL dataset to parquet (always overwrite) and log summary metrics.
+
+        Args:
+            bql_df: Long-form BQL DataFrame.
+            cusip_to_name: Mapping of CUSIP to security name.
+
+        Returns:
+            True when the parquet write succeeds, False otherwise.
+        """
+        if bql_df is None or bql_df.empty:
+            self.logger.error("BQL dataset is empty. Nothing to write.")
+            return False
+
+        required_columns = {
+            BQL_DATE_COLUMN_NAME,
+            BQL_NAME_COLUMN_NAME,
+            BQL_CUSIP_COLUMN_NAME,
+            BQL_VALUE_COLUMN_NAME,
+        }
+        if missing := required_columns - set(bql_df.columns):
+            self.logger.error(
+                "BQL dataset missing required columns: %s",
+                ", ".join(sorted(missing)),
+            )
+            return False
+
+        # Ensure value column is numeric
+        bql_df = bql_df.copy()
+        bql_df[BQL_VALUE_COLUMN_NAME] = pd.to_numeric(
+            bql_df[BQL_VALUE_COLUMN_NAME],
+            errors="coerce",
+        )
+        bql_df = bql_df.dropna(subset=[BQL_VALUE_COLUMN_NAME])
+
+        if bql_df.empty:
+            self.logger.error("BQL dataset contains no numeric values after cleaning.")
+            return False
+
+        total_rows = len(bql_df)
+        unique_cusips = bql_df[BQL_CUSIP_COLUMN_NAME].nunique()
+        unique_dates = bql_df[BQL_DATE_COLUMN_NAME].nunique()
+
+        self.logger.info(
+            "BQL dataset stats: %s rows, %s unique CUSIPs, %s unique dates",
+            total_rows,
+            unique_cusips,
+            unique_dates,
+        )
+
+        # Determine orphan CUSIPs compared to universe
+        bql_cusips = set(bql_df[BQL_CUSIP_COLUMN_NAME].unique())
+        universe_cusips: Set[str] = set()
+        if UNIVERSE_PARQUET.exists():
+            try:
+                universe_df = pd.read_parquet(UNIVERSE_PARQUET, columns=["CUSIP"])
+                universe_cusips = set(
+                    universe_df["CUSIP"].dropna().astype(str).str.upper().unique().tolist()
+                )
+            except Exception as exc:
+                self.logger.error(
+                    "Failed to read universe parquet for BQL orphan comparison: %s",
+                    exc,
+                )
+        else:
+            self.logger.warning(
+                "Universe parquet missing at %s. Skipping orphan comparison.",
+                UNIVERSE_PARQUET,
+            )
+
+        orphan_cusips = sorted(bql_cusips - universe_cusips)
+        if orphan_cusips:
+            self.logger.warning(
+                "Found %s BQL CUSIPs missing from universe.parquet.",
+                len(orphan_cusips),
+            )
+            for cusip in orphan_cusips[:20]:
+                name = cusip_to_name.get(cusip, "").strip()
+                display_name = name or "Unknown name"
+                self.logger.warning("  Orphan CUSIP: %s | Name: %s", cusip, display_name)
+            if len(orphan_cusips) > 20:
+                self.logger.warning(
+                    "  ... and %s additional orphan CUSIPs not shown.",
+                    len(orphan_cusips) - 20,
+                )
+        else:
+            self.logger.info("All BQL CUSIPs are present in universe.parquet.")
+
+        try:
+            if BQL_PARQUET.exists():
+                BQL_PARQUET.unlink()
+                self.logger.info("Deleted existing BQL parquet: %s", BQL_PARQUET)
+
+            bql_df.to_parquet(BQL_PARQUET, index=False, engine="pyarrow")
+            self.logger.info("BQL parquet written successfully: %s", BQL_PARQUET)
+        except Exception as exc:
+            self.logger.error("Failed to write BQL parquet: %s", exc)
+            return False
+
+        return True
 

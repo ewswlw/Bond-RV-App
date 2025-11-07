@@ -3,33 +3,202 @@ Utility functions for bond data pipeline.
 Includes date parsing, CUSIP validation, and logging helpers.
 """
 
-import re
 import logging
 import json
 import sys
+import re
+from dataclasses import dataclass
 from datetime import datetime, time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from io import StringIO
 import pandas as pd
 
 from .config import (
-    FILE_PATTERN,
+    BQL_CUSIP_COLUMN_NAME,
+    BQL_DATE_COLUMN_NAME,
+    BQL_HEADER_LABEL,
+    BQL_NAME_COLUMN_NAME,
+    BQL_OUTPUT_COLUMNS,
+    BQL_VALUE_COLUMN_NAME,
     CUSIP_LENGTH,
-    NA_VALUES,
-    LOG_ROTATION_RUNS,
+    FILE_PATTERN,
     LOG_ARCHIVE_DIR,
     LOG_METADATA_FILE,
+    LOG_ROTATION_RUNS,
+    NA_VALUES,
     RUNS_DATE_FORMAT,
+    RUNS_KNOWN_DEALERS,
     RUNS_TIME_FORMAT,
     RUNS_VALIDATE_DATE_RANGE,
-    RUNS_VALIDATE_TIME_FORMAT,
+    RUNS_VALIDATE_DEALERS,
     RUNS_VALIDATE_PRICES_POSITIVE,
     RUNS_VALIDATE_SPREADS_REASONABLE,
-    RUNS_VALIDATE_DEALERS,
-    RUNS_KNOWN_DEALERS,
-    UNIVERSE_PARQUET
+    RUNS_VALIDATE_TIME_FORMAT,
+    UNIVERSE_PARQUET,
 )
+
+
+@dataclass
+class BQLTransformArtifacts:
+    """
+    Container for BQL transformation outputs.
+
+    Attributes:
+        dataframe: Long-form DataFrame containing BQL results.
+        cusip_to_name: Mapping of normalized CUSIP to security name.
+        issues: Collection of warnings encountered during transformation.
+    """
+
+    dataframe: pd.DataFrame
+    cusip_to_name: Dict[str, str]
+    issues: List[str]
+
+
+def normalize_bql_cusip(header_value: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Normalize a BQL column header into a 9-character CUSIP string.
+
+    Args:
+        header_value: Raw header string from the workbook.
+
+    Returns:
+        Tuple of (cleaned_cusip, error_message). cleaned_cusip is None when invalid.
+    """
+    if header_value is None or (isinstance(header_value, float) and pd.isna(header_value)):
+        return (None, "Missing header value")
+
+    raw_value = str(header_value).strip().upper()
+
+    if not raw_value:
+        return (None, "Empty header value")
+
+    cleaned = re.sub(r"\s+CORP$", "", raw_value, flags=re.IGNORECASE)
+    cleaned = cleaned.replace("CORP", "")
+    cleaned = re.sub(r"\s+", "", cleaned)
+
+    if len(cleaned) != CUSIP_LENGTH:
+        return (None, f"Invalid CUSIP length after cleaning: {len(cleaned)}")
+
+    if not cleaned.isalnum():
+        return (None, "CUSIP contains non-alphanumeric characters after cleaning")
+
+    return (cleaned, None)
+
+
+def reshape_bql_to_long(raw_df: pd.DataFrame) -> BQLTransformArtifacts:
+    """
+    Convert the wide BQL workbook DataFrame into long-form layout.
+
+    Args:
+        raw_df: DataFrame loaded directly from the BQL workbook.
+
+    Returns:
+        BQLTransformArtifacts with long-form data, CUSIP-name mapping, and issues.
+    """
+    empty_result = BQLTransformArtifacts(
+        dataframe=pd.DataFrame(columns=BQL_OUTPUT_COLUMNS),
+        cusip_to_name={},
+        issues=[],
+    )
+
+    if raw_df is None or raw_df.empty:
+        return empty_result
+
+    issues: List[str] = []
+
+    header_label = str(raw_df.columns[0]).strip()
+    if header_label != BQL_HEADER_LABEL:
+        issues.append(
+            f"Unexpected first column label: expected '{BQL_HEADER_LABEL}', found '{header_label}'",
+        )
+
+    if raw_df.shape[0] <= 1 or raw_df.shape[1] <= 1:
+        issues.append("BQL DataFrame missing required rows or columns.")
+        return BQLTransformArtifacts(
+            dataframe=pd.DataFrame(columns=BQL_OUTPUT_COLUMNS),
+            cusip_to_name={},
+            issues=issues,
+        )
+
+    name_row = raw_df.iloc[0].copy()
+    data_df = raw_df.iloc[1:].copy()
+    data_df = data_df.reset_index(drop=True)
+
+    original_date_column = raw_df.columns[0]
+    data_df[BQL_DATE_COLUMN_NAME] = pd.to_datetime(data_df[original_date_column], errors="coerce")
+    data_df = data_df.drop(columns=[original_date_column])
+    data_df = data_df.dropna(subset=[BQL_DATE_COLUMN_NAME])
+    data_df[BQL_DATE_COLUMN_NAME] = data_df[BQL_DATE_COLUMN_NAME].dt.normalize()
+
+    if data_df.empty:
+        issues.append("No valid dates found in BQL data after parsing.")
+        return BQLTransformArtifacts(
+            dataframe=pd.DataFrame(columns=BQL_OUTPUT_COLUMNS),
+            cusip_to_name={},
+            issues=issues,
+        )
+
+    long_frames: List[pd.DataFrame] = []
+    cusip_to_name: Dict[str, str] = {}
+    seen_cusips: set[str] = set()
+
+    for column_label in raw_df.columns[1:]:
+        cleaned_cusip, error = normalize_bql_cusip(column_label)
+        if error:
+            issues.append(f"Skipped column '{column_label}': {error}")
+            continue
+
+        if cleaned_cusip in seen_cusips:
+            issues.append(f"Duplicate CUSIP column encountered: {cleaned_cusip}. Skipping duplicate.")
+            continue
+
+        seen_cusips.add(cleaned_cusip)
+
+        security_name_value = name_row[column_label] if column_label in name_row.index else ""
+        security_name = str(security_name_value).strip() if pd.notna(security_name_value) else ""
+
+        if column_label not in data_df.columns:
+            issues.append(f"BQL data missing expected column '{column_label}'. Skipping.")
+            continue
+
+        value_series = pd.to_numeric(data_df[column_label], errors="coerce")
+        if value_series.notna().sum() == 0:
+            issues.append(f"Column '{column_label}' contains no numeric values. Skipping.")
+            continue
+
+        cusip_to_name[cleaned_cusip] = security_name
+
+        temp_df = pd.DataFrame({
+            BQL_DATE_COLUMN_NAME: data_df[BQL_DATE_COLUMN_NAME],
+            BQL_NAME_COLUMN_NAME: security_name,
+            BQL_CUSIP_COLUMN_NAME: cleaned_cusip,
+            BQL_VALUE_COLUMN_NAME: value_series,
+        })
+
+        temp_df = temp_df.dropna(subset=[BQL_VALUE_COLUMN_NAME])
+
+        if not temp_df.empty:
+            long_frames.append(temp_df)
+
+    if not long_frames:
+        issues.append("No usable value columns found in BQL workbook.")
+        return BQLTransformArtifacts(
+            dataframe=pd.DataFrame(columns=BQL_OUTPUT_COLUMNS),
+            cusip_to_name=cusip_to_name,
+            issues=issues,
+        )
+
+    long_df = pd.concat(long_frames, ignore_index=True)
+    long_df = long_df[BQL_OUTPUT_COLUMNS]
+    long_df.sort_values([BQL_DATE_COLUMN_NAME, BQL_CUSIP_COLUMN_NAME], inplace=True)
+    long_df.reset_index(drop=True, inplace=True)
+
+    return BQLTransformArtifacts(
+        dataframe=long_df,
+        cusip_to_name=cusip_to_name,
+        issues=issues,
+    )
 
 
 def setup_logging(log_file: Path, name: str = None, console_level: int = logging.WARNING) -> logging.Logger:

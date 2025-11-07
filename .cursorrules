@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: January 2025 - Cursor AI Configuration  
+**Last Updated**: 2025-11-07 15:30 ET - Cursor AI Configuration  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -54,7 +54,7 @@ This is a **modular data engineering pipeline** for processing bond data for rel
 
 ### Architecture
 - **Modular ETL**: Separate modules for Extract → Transform → Load
-- **Data Pipeline**: Excel files → Parquet tables (historical_bond_details, universe)
+- **Data Pipeline**: Excel + BQL workbooks → Parquet tables (historical_bond_details, universe, bql)
 - **Incremental Loading**: Append mode (new dates only) vs Override mode (rebuild all)
 - **Data Integrity**: Primary key enforcement, deduplication, validation
 
@@ -176,6 +176,13 @@ Each pipeline stage is a class with clear responsibilities:
 - **Columns**: 75 columns in latest files (schema evolved from 59)
 - **NA values**: `#N/A Field Not Applicable`, `#N/A Invalid Security`, etc.
 
+### BQL Workbook Input Data Format
+- **Excel file**: Fixed workbook `bql.xlsx` located in Support Files directory
+- **Sheet**: `bql`
+- **Structure**: Column 0 labelled `CUSIPs`; row 0 contains security names; remaining rows store daily timestamps and numeric spreads
+- **Header cleaning**: Strip whitespace, remove trailing `Corp`, enforce 9-character uppercase CUSIP
+- **Output expectation**: Long-form DataFrame with columns `Date`, `Name`, `CUSIP`, `Value`
+
 ### Runs Pipeline Input Data Format
 - **Excel files**: Pattern `RUNS MM.DD.YY.xlsx` (e.g., `RUNS 10.31.25.xlsx`)
 - **Header row**: Row 1 (index 0, 0-based)
@@ -203,6 +210,14 @@ Each pipeline stage is a class with clear responsibilities:
   10. Yrs (Worst), 11. Ticker, 12. Currency, 13. Equity Ticker
 - **Update strategy**: Always rebuild from `historical_bond_details` (most recent date per CUSIP)
 - **Storage**: `bond_data/parquet/universe.parquet`
+
+#### `bql.parquet`
+- **Purpose**: Long-form Bloomberg query spreads dataset
+- **Primary Key**: `Date + CUSIP`
+- **Schema**: Columns `Date`, `Name`, `CUSIP`, `Value`
+- **Name mapping**: Derived from workbook header row; used for orphan logging
+- **Storage**: `bond_data/parquet/bql.parquet`
+- **Logging**: Warn when `bql` CUSIPs are missing from `universe.parquet`
 
 #### `runs_timeseries.parquet`
 - **Purpose**: Time series of all dealer quotes over time (end-of-day snapshots)
@@ -262,6 +277,13 @@ Each pipeline stage is a class with clear responsibilities:
 - Empty cells → NULL/NaN
 - Preserve all other values as-is
 
+#### BQL Pipeline
+- Normalize header row to derive security names and enforce 9-character CUSIPs
+- Reshape wide workbook to long-form dataset (`Date`, `Name`, `CUSIP`, `Value`)
+- Skip duplicate/invalid CUSIP columns and log issues for traceability
+- Drop rows with non-numeric values before persisting
+- Compare resulting CUSIPs against `universe.parquet` and log orphan details (CUSIP + Name)
+
 ---
 
 ## Logging Standards
@@ -288,6 +310,7 @@ bond_data/logs/
 3. **Run metadata**: Track run_id, timestamp, mode for each execution
 4. **Log rotation**: Archive logs after N runs (currently 10)
 5. **Structured info**: Include Date, CUSIP, file path in log messages
+6. **BQL ingestion**: Log unique CUSIP/date counts and orphan CUSIPs with security names
 
 ### Example Logging Pattern
 ```python
@@ -314,7 +337,7 @@ self.logger_dupes.info(f"Duplicate Date+CUSIP: {date} - {cusip} - {bond_name} (k
 tests/
 ├── conftest.py              # Shared fixtures (sample data, mocks)
 ├── unit/                    # Unit tests
-│   ├── test_utils.py       # ✅ 25 tests complete
+│   ├── test_utils.py       # ✅ Bond utility & BQL helper tests
 │   ├── test_extract.py     # TODO
 │   ├── test_transform.py   # TODO
 │   └── test_load.py        # TODO
@@ -340,6 +363,7 @@ tests/
 - **Deduplication**: Within file, across files, Date+CUSIP combinations
 - **Append mode**: Skip existing dates, append new dates
 - **Override mode**: Delete existing, rebuild from scratch
+- **BQL ingestion**: Header normalization, wide→long reshape, orphan logging against universe
 
 ### Running Tests
 ```bash
@@ -489,12 +513,12 @@ source Bond-RV-App/bin/activate  # Mac/Linux
 
 # 2. Run automated pipeline runner
 python run_pipeline.py
-# Prompts: 1=Override (first run), 2=Append (daily updates)
+# Prompts: 1) Pipeline selection, 2) Mode (override/append), 3) (Bond) Include BQL workbook
 
 # 3. Or use direct CLI (Bond Pipeline)
 cd bond_pipeline
-python pipeline.py -i "../Raw Data/" -m append
-python pipeline.py -i "../Raw Data/" -m override
+python pipeline.py -i "../Raw Data/" -m append --process-bql
+python pipeline.py -i "../Raw Data/" -m override --process-bql
 
 # 4. Or use Python module (Bond Pipeline)
 python -m bond_pipeline.pipeline -i "Raw Data/" -m append
@@ -505,7 +529,7 @@ python -m runs_pipeline.pipeline -i "Historical Runs/" -m override
 
 # 6. Unified Pipeline Orchestrator (Recommended)
 python run_pipeline.py
-# Prompts: Select pipeline(s) (Bond/Runs/Both) and mode (Append/Override)
+# Prompts: Select pipeline(s), choose mode, decide on BQL ingestion when running Bond pipeline
 ```
 
 ### Pipeline Modes
@@ -543,6 +567,10 @@ df_runs = pd.read_parquet('bond_data/parquet/runs_timeseries.parquet')
 print(f"Rows: {len(df_runs)}, Columns: {len(df_runs.columns)}")
 print(f"Date range: {df_runs['Date'].min()} to {df_runs['Date'].max()}")
 print(f"Unique CUSIPs: {df_runs['CUSIP'].nunique()}, Unique Dealers: {df_runs['Dealer'].nunique()}")
+
+# BQL spreads stats
+df_bql = pd.read_parquet('bond_data/parquet/bql.parquet')
+print(f"BQL rows: {len(df_bql)}, Unique CUSIPs: {df_bql['CUSIP'].nunique()}, Unique Dates: {df_bql['Date'].nunique()}")
 ```
 
 ---
@@ -696,7 +724,7 @@ pytest tests/unit/test_utils.py -v
 ---
 
 **File Created**: January 2025  
-**Last Major Update**: January 2025  
+**Last Major Update**: 2025-11-07 15:30 ET  
 **Project**: Bond RV App - Data Pipeline  
 **Version**: 1.0
 
@@ -728,4 +756,9 @@ pytest tests/unit/test_utils.py -v
 - **2025-01-02**: Added unified pipeline orchestrator (run_pipeline.py):
   - Documented run_pipeline.py as recommended entry point
   - Added user selection for pipeline(s) and mode
+- **2025-11-07 15:30 ET**: Added BQL workbook ingestion pipeline:
+  - Documented `bql.xlsx` processing and `bql.parquet` output
+  - Updated CLI/orchestrator guidance with `--process-bql` flag and prompt
+  - Captured orphan logging requirements (CUSIP + Name) for BQL dataset
+  - Added testing coverage notes for BQL helpers in `tests/unit/test_utils.py`
 
