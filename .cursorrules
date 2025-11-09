@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-09 18:00 ET - Runs Today Analytics Script  
+**Last Updated**: 2025-01-XX XX:XX ET - Portfolio Combinations Pair Analytics Script  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -428,11 +428,13 @@ Bond-RV-App/
 ├── analytics/             # Analytics scripts and processed outputs
 │   ├── cr01_comb.py      # CR01 pair analytics (BQL universe vs holdings spreads)
 │   ├── all_comb.py       # All combinations pair analytics (all CAD CUSIPs)
+│   ├── port_comb.py      # Portfolio combinations pair analytics (filters to portfolio CUSIPs as cusip_2)
 │   ├── runs-adjusted_ts.py  # Runs adjusted timeseries analytics (Date+CUSIP+Benchmark aggregation)
 │   ├── runs_today.py     # Runs today analytics (last date with DoD changes)
 │   └── processed_data/   # CSV outputs from analytics scripts
 │       ├── cr01_pair_analytics.csv
 │       ├── all_comb.csv
+│       ├── port_comb.csv
 │       ├── runs_adjusted_ts.csv
 │       └── runs_today.csv
 ├── bond_pipeline/          # Pipeline code (7 modules)
@@ -880,5 +882,14 @@ pytest tests/unit/test_utils.py -v
     - Sorts by CUSIP
     - Exports to `runs_today.csv` in `analytics/processed_data/`
     - Displays table preview and `df.info()` for validation
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created portfolio combinations pair analytics script:
+  - Created `analytics/port_comb.py` - portfolio pair analytics script:
+    - Similar to `all_comb.py` but filters pairs where `cusip_2` is in portfolio CUSIP list
+    - Computes all pairwise combinations first, then filters to portfolio CUSIPs, then selects top 80 by Z Score
+    - Portfolio CUSIP list defined as constant (59 CUSIPs, normalized to uppercase)
+    - Shows bond names (not just CUSIPs) in warning messages for missing portfolio CUSIPs from BQL data
+    - Uses same filtering logic as `all_comb.py` (CAD CUSIPs, recent dates, complete data)
+    - Outputs to `port_comb.csv` in `analytics/processed_data/`
     - Uses script-relative path resolution for portability
 
