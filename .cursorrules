@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-XX XX:XX ET - Portfolio Combinations Pair Analytics Script  
+**Last Updated**: 2025-01-XX XX:XX ET - CAD vs USD Pair Analytics Scripts (port_executable, cad_cheap_vs_usd, cad_rich_vs_usd)  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -429,12 +429,18 @@ Bond-RV-App/
 │   ├── cr01_comb.py      # CR01 pair analytics (BQL universe vs holdings spreads)
 │   ├── all_comb.py       # All combinations pair analytics (all CAD CUSIPs)
 │   ├── port_comb.py      # Portfolio combinations pair analytics (filters to portfolio CUSIPs as cusip_2)
+│   ├── port_executable.py  # Portfolio executable combinations pair analytics (filters cusip_1 by CR01 @ Wide Offer >= 2000, cusip_2 by portfolio)
+│   ├── cad_cheap_vs_usd.py  # CAD cheap vs USD pair analytics (CAD/USD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
+│   ├── cad_rich_vs_usd.py   # CAD rich vs USD pair analytics (USD/CAD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
 │   ├── runs-adjusted_ts.py  # Runs adjusted timeseries analytics (Date+CUSIP+Benchmark aggregation)
 │   ├── runs_today.py     # Runs today analytics (last date with DoD changes)
 │   └── processed_data/   # CSV outputs from analytics scripts
 │       ├── cr01_pair_analytics.csv
 │       ├── all_comb.csv
 │       ├── port_comb.csv
+│       ├── port_executable.csv
+│       ├── cad_cheap_vs_usd.csv
+│       ├── cad_rich_vs_usd.csv
 │       ├── runs_adjusted_ts.csv
 │       └── runs_today.csv
 ├── bond_pipeline/          # Pipeline code (7 modules)
@@ -891,5 +897,36 @@ pytest tests/unit/test_utils.py -v
     - Shows bond names (not just CUSIPs) in warning messages for missing portfolio CUSIPs from BQL data
     - Uses same filtering logic as `all_comb.py` (CAD CUSIPs, recent dates, complete data)
     - Outputs to `port_comb.csv` in `analytics/processed_data/`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created portfolio executable combinations pair analytics script:
+  - Created `analytics/port_executable.py` - portfolio executable pair analytics script:
+    - Similar to `port_comb.py` but adds additional filter on `cusip_1`
+    - Filters `cusip_1` to CUSIPs from `runs_today.csv` where `CR01 @ Wide Offer >= 2000`
+    - Filters `cusip_2` to portfolio CUSIPs (same as `port_comb.py`)
+    - Both filters applied (AND condition) after computing all pairs
+    - Raises error if `CR01 @ Wide Offer` column missing or no matching CUSIPs found
+    - Excludes rows with NaN/null `CR01 @ Wide Offer` values
+    - Outputs to `port_executable.csv` in `analytics/processed_data/`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created CAD cheap vs USD pair analytics script:
+  - Created `analytics/cad_cheap_vs_usd.py` - CAD vs USD pair analytics script:
+    - Based on `all_comb.py` but removes CAD-only filter from BQL data
+    - Computes all pairwise combinations first, then filters results
+    - Filters to pairs where `cusip_1` has Currency="CAD" and `cusip_2` has Currency="USD"
+    - Requires matching Ticker values (from last date in historical_bond_details.parquet)
+    - Requires matching Custom_Sector values (from last date)
+    - Requires absolute difference in "Yrs (Cvn)" <= 2 (from last date)
+    - Excludes CUSIPs with missing/null Currency, Ticker, Custom_Sector, or Yrs (Cvn)
+    - Outputs top 80 pairs sorted by Z Score to `cad_cheap_vs_usd.csv`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created CAD rich vs USD pair analytics script:
+  - Created `analytics/cad_rich_vs_usd.py` - USD vs CAD pair analytics script:
+    - Same as `cad_cheap_vs_usd.py` but with swapped Currency roles
+    - Filters to pairs where `cusip_1` has Currency="USD" and `cusip_2` has Currency="CAD"
+    - Requires matching Ticker values (from last date in historical_bond_details.parquet)
+    - Requires matching Custom_Sector values (from last date)
+    - Requires absolute difference in "Yrs (Cvn)" <= 2 (from last date)
+    - Excludes CUSIPs with missing/null Currency, Ticker, Custom_Sector, or Yrs (Cvn)
+    - Outputs top 80 pairs sorted by Z Score to `cad_rich_vs_usd.csv`
     - Uses script-relative path resolution for portability
 
