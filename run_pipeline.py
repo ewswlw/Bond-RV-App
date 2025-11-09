@@ -13,8 +13,6 @@ from pathlib import Path
 # Add bond_pipeline to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from bond_pipeline.pipeline import BondDataPipeline
-from runs_pipeline.pipeline import RunsDataPipeline
 from bond_pipeline.config import (
     DEFAULT_INPUT_DIR,
     RUNS_INPUT_DIR,
@@ -23,6 +21,9 @@ from bond_pipeline.config import (
     UNIVERSE_PARQUET,
     BQL_PARQUET,
 )
+from bond_pipeline.pipeline import BondDataPipeline
+from bond_pipeline.utils import log_parquet_diagnostics
+from runs_pipeline.pipeline import RunsDataPipeline
 
 
 def run_bond_pipeline(mode: str, process_bql: bool) -> bool:
@@ -39,7 +40,7 @@ def run_bond_pipeline(mode: str, process_bql: bool) -> bool:
         
         if success:
             print("\n" + "-" * 70)
-            print(f"   ✓ Bond Pipeline completed successfully")
+            print("   [OK] Bond Pipeline completed successfully")
             print(f"   Output: {HISTORICAL_PARQUET}")
             print(f"   Universe: {UNIVERSE_PARQUET}")
             if process_bql:
@@ -47,13 +48,13 @@ def run_bond_pipeline(mode: str, process_bql: bool) -> bool:
             print("-" * 70)
         else:
             print("\n" + "-" * 70)
-            print(f"   ✗ Bond Pipeline failed")
+            print("   [FAIL] Bond Pipeline failed")
             print(f"   Logs: {HISTORICAL_PARQUET.parent.parent / 'logs'}")
             print("-" * 70)
         
         return success
     except Exception as e:
-        print(f"\n✗ Bond Pipeline error: {str(e)}")
+        print(f"\n[ERROR] Bond Pipeline error: {str(e)}")
         return False
 
 
@@ -71,18 +72,18 @@ def run_runs_pipeline(mode: str) -> bool:
         
         if success:
             print("\n" + "-" * 70)
-            print(f"   ✓ Runs Pipeline completed successfully")
+            print("   [OK] Runs Pipeline completed successfully")
             print(f"   Output: {RUNS_PARQUET}")
             print("-" * 70)
         else:
             print("\n" + "-" * 70)
-            print(f"   ✗ Runs Pipeline failed")
+            print("   [FAIL] Runs Pipeline failed")
             print(f"   Logs: {RUNS_PARQUET.parent.parent / 'logs'}")
             print("-" * 70)
         
         return success
     except Exception as e:
-        print(f"\n✗ Runs Pipeline error: {str(e)}")
+        print(f"\n[ERROR] Runs Pipeline error: {str(e)}")
         return False
 
 
@@ -140,16 +141,24 @@ def main():
     print("=" * 70)
     
     if 'bond' in results:
-        status = "✓ SUCCESS" if results['bond'] else "✗ FAILED"
+        status = "SUCCESS" if results['bond'] else "FAILED"
         print(f"\n  Bond Pipeline: {status}")
     
     if 'runs' in results:
-        status = "✓ SUCCESS" if results['runs'] else "✗ FAILED"
+        status = "SUCCESS" if results['runs'] else "FAILED"
         print(f"  Runs Pipeline: {status}")
     
     print("=" * 70)
     
     # Return exit code
+    try:
+        log_parquet_diagnostics()
+    except Exception as exc:
+        print(
+            "\nWarning: Unable to log parquet diagnostics "
+            f"({exc})"
+        )
+
     if all(results.values()):
         return 0
     else:

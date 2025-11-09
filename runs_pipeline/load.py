@@ -4,6 +4,7 @@ Handles append and override modes with Date+Dealer+CUSIP primary key.
 """
 
 import pandas as pd
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Set, Optional
 from datetime import datetime
@@ -15,6 +16,20 @@ from bond_pipeline.utils import (
     setup_logging,
     format_date_string
 )
+
+
+@dataclass
+class LoadResult:
+    """Structured response for parquet load operations."""
+
+    success: bool
+    new_rows: int = 0
+    skipped_rows: int = 0
+    existing_rows: int = 0
+    total_rows: int = 0
+    new_dates: Set[datetime] = field(default_factory=set)
+    new_cusips: int = 0
+    new_dealers: int = 0
 
 
 class RunsLoader:
@@ -36,6 +51,35 @@ class RunsLoader:
         self.logger = setup_logging(
             log_file, 'runs_load', console_level=logging.CRITICAL
         )
+
+    @staticmethod
+    def _normalize_dates(date_series: pd.Series) -> Set[datetime]:
+        """
+        Normalize a pandas Series of date-like values into Python datetime objects.
+
+        Args:
+            date_series: Series containing date values.
+
+        Returns:
+            Set of normalized datetime objects.
+        """
+        normalized: Set[datetime] = set()
+
+        if date_series is None:
+            return normalized
+
+        for value in pd.Series(date_series).dropna().unique():
+            if isinstance(value, datetime):
+                normalized.add(value)
+            elif hasattr(value, 'to_pydatetime'):
+                normalized.add(value.to_pydatetime())
+            else:
+                try:
+                    normalized.add(pd.to_datetime(value).to_pydatetime())
+                except Exception:
+                    continue
+
+        return normalized
     
     def get_existing_dates(self) -> Set[datetime]:
         """
@@ -141,114 +185,147 @@ class RunsLoader:
         
         return True
     
-    def load_append(self, data: pd.DataFrame) -> bool:
+    def load_append(
+        self,
+        data: pd.DataFrame,
+        existing_dates: Optional[Set[datetime]] = None,
+    ) -> LoadResult:
         """
         Append new data to runs_timeseries.parquet.
-        Skip dates already in parquet file.
-        
+        Skip dates already captured in the existing parquet file.
+
         Args:
-            data: DataFrame with new data to append
-        
+            data: DataFrame with new data to append.
+            existing_dates: Optional pre-fetched set of dates already present.
+
         Returns:
-            True if successful
+            LoadResult containing success flag and metrics.
         """
         if data is None or len(data) == 0:
             self.logger.warning("No data to append")
-            return True
-        
-        # Get existing dates
-        existing_dates = self.get_existing_dates()
-        
-        # Filter out rows with dates already in parquet
-        if len(existing_dates) > 0 and 'Date' in data.columns:
-            data_filtered = data[~data['Date'].isin(existing_dates)].copy()
-            
-            skipped_count = len(data) - len(data_filtered)
-            if skipped_count > 0:
+            return LoadResult(success=True)
+
+        original_row_count = len(data)
+        dates_to_compare = (
+            existing_dates if existing_dates is not None else self.get_existing_dates()
+        )
+
+        filtered_data = data
+        skipped_rows = 0
+
+        if dates_to_compare and 'Date' in data.columns:
+            filtered_data = data[~data['Date'].isin(dates_to_compare)].copy()
+            skipped_rows = original_row_count - len(filtered_data)
+
+            if skipped_rows > 0:
                 self.logger.info(
-                    f"Filtered out {skipped_count} rows with existing dates"
+                    f"Filtered out {skipped_rows} rows with dates already in parquet"
                 )
-            
-            data = data_filtered
-        
-        if len(data) == 0:
+
+        if len(filtered_data) == 0:
             self.logger.info(
-                "All dates already exist in parquet, nothing to append"
+                "All candidate rows already exist in parquet; nothing to append"
             )
-            return True
-        
-        # Validate primary key on filtered data
-        if not self.validate_primary_key(data):
-            return False
-        
-        # Append to existing or create new
+            return LoadResult(
+                success=True,
+                new_rows=0,
+                skipped_rows=skipped_rows,
+                new_dates=set(),
+            )
+
+        if not self.validate_primary_key(filtered_data):
+            return LoadResult(success=False, skipped_rows=skipped_rows)
+
+        new_dates = self._normalize_dates(filtered_data.get('Date'))
+        new_cusips = (
+            filtered_data['CUSIP'].nunique()
+            if 'CUSIP' in filtered_data.columns
+            else 0
+        )
+        new_dealers = (
+            filtered_data['Dealer'].nunique()
+            if 'Dealer' in filtered_data.columns
+            else 0
+        )
+
         try:
+            existing_rows = 0
+            total_rows = len(filtered_data)
+
             if bond_config.RUNS_PARQUET.exists():
-                # Read existing
                 existing_df = pd.read_parquet(bond_config.RUNS_PARQUET)
+                existing_rows = len(existing_df)
                 self.logger.info(
-                    f"Loaded existing parquet: {len(existing_df)} rows"
+                    f"Loaded existing parquet: {existing_rows} rows"
                 )
-                
-                # Validate existing data has no duplicates
+
                 existing_dupes = existing_df.duplicated(
                     subset=RUNS_PRIMARY_KEY, keep=False
                 )
                 if existing_dupes.any():
                     self.logger.error(
-                        f"Existing parquet has duplicate Date+Dealer+CUSIP "
-                        f"combinations! Cannot append."
+                        "Existing parquet has duplicate Date+Dealer+CUSIP "
+                        "combinations; aborting append."
                     )
-                    return False
-                
-                # Combine
-                combined_df = pd.concat([existing_df, data], ignore_index=True)
-                
-                # Validate combined data
+                    return LoadResult(success=False, skipped_rows=skipped_rows)
+
+                combined_df = pd.concat(
+                    [existing_df, filtered_data],
+                    ignore_index=True,
+                )
+
                 if not self.validate_primary_key(combined_df):
-                    return False
-                
+                    return LoadResult(success=False, skipped_rows=skipped_rows)
+
+                total_rows = len(combined_df)
                 self.logger.info(
-                    f"Combined total: {len(combined_df)} rows "
-                    f"({len(existing_df)} existing + {len(data)} new)"
+                    f"Combined total rows after append: {total_rows} "
+                    f"({existing_rows} existing + {len(filtered_data)} new)"
                 )
-                
-                # Convert Time column to string for parquet compatibility
-                combined_df_write = combined_df.copy()
-                if 'Time' in combined_df_write.columns:
-                    combined_df_write['Time'] = combined_df_write['Time'].apply(
-                        lambda x: x.strftime('%H:%M') if x is not None and hasattr(x, 'strftime') else x
-                    )
-                
-                # Write combined
-                combined_df_write.to_parquet(
-                    bond_config.RUNS_PARQUET, index=False, engine='pyarrow'
-                )
-                self.logger.info(
-                    f"Successfully appended to {bond_config.RUNS_PARQUET}"
-                )
-                
+
+                write_df = combined_df
             else:
-                # Convert Time column to string for parquet compatibility
-                data_write = data.copy()
-                if 'Time' in data_write.columns:
-                    data_write['Time'] = data_write['Time'].apply(
-                        lambda x: x.strftime('%H:%M') if x is not None and hasattr(x, 'strftime') else x
-                    )
-                
-                # Create new
-                data_write.to_parquet(bond_config.RUNS_PARQUET, index=False, engine='pyarrow')
+                write_df = filtered_data
                 self.logger.info(
-                    f"Created new parquet: {bond_config.RUNS_PARQUET} ({len(data)} rows)"
+                    f"Creating new runs parquet with {len(filtered_data)} rows"
                 )
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error writing parquet: {str(e)}", exc_info=True)
-            return False
+
+            write_df = write_df.copy()
+            if 'Time' in write_df.columns:
+                write_df['Time'] = write_df['Time'].apply(
+                    lambda x: x.strftime('%H:%M')
+                    if x is not None and hasattr(x, 'strftime')
+                    else x
+                )
+
+            write_df.to_parquet(
+                bond_config.RUNS_PARQUET,
+                index=False,
+                engine='pyarrow',
+            )
+            self.logger.info(
+                f"Successfully wrote runs parquet: {bond_config.RUNS_PARQUET}"
+            )
+
+            return LoadResult(
+                success=True,
+                new_rows=len(filtered_data),
+                skipped_rows=skipped_rows,
+                existing_rows=existing_rows,
+                total_rows=total_rows,
+                new_dates=new_dates,
+                new_cusips=new_cusips,
+                new_dealers=new_dealers,
+            )
+
+        except Exception as exc:
+            self.logger.error(
+                f"Error writing runs parquet in append mode: {exc}",
+                exc_info=True,
+            )
+            return LoadResult(success=False, skipped_rows=skipped_rows)
     
-    def load_override(self, data: pd.DataFrame) -> bool:
+    def load_override(self, data: pd.DataFrame) -> LoadResult:
         """
         Override runs_timeseries.parquet with all data.
         Delete existing file and write new one.
@@ -257,44 +334,62 @@ class RunsLoader:
             data: DataFrame with all data to write
         
         Returns:
-            True if successful
+            LoadResult containing success flag and metrics.
         """
         if data is None or len(data) == 0:
-            self.logger.error("No data to write")
-            return False
-        
-        # Validate primary key
+            self.logger.error("No data to write in override mode")
+            return LoadResult(success=False)
+
         if not self.validate_primary_key(data):
-            return False
-        
+            return LoadResult(success=False)
+
         self.logger.info(
             f"Override mode: Writing {len(data)} rows to runs_timeseries.parquet"
         )
-        
+
+        new_dates = self._normalize_dates(data.get('Date'))
+        new_cusips = data['CUSIP'].nunique() if 'CUSIP' in data.columns else 0
+        new_dealers = data['Dealer'].nunique() if 'Dealer' in data.columns else 0
+
         try:
-            # Delete existing if present
             if bond_config.RUNS_PARQUET.exists():
                 bond_config.RUNS_PARQUET.unlink()
-                self.logger.info("Deleted existing runs parquet")
-            
-            # Convert Time column to string for parquet compatibility
+                self.logger.info("Deleted existing runs parquet before overwrite")
+
             data_write = data.copy()
             if 'Time' in data_write.columns:
                 data_write['Time'] = data_write['Time'].apply(
-                    lambda x: x.strftime('%H:%M') if x is not None and hasattr(x, 'strftime') else x
+                    lambda x: x.strftime('%H:%M')
+                    if x is not None and hasattr(x, 'strftime')
+                    else x
                 )
-            
-            # Write new
-            data_write.to_parquet(bond_config.RUNS_PARQUET, index=False, engine='pyarrow')
-            self.logger.info(
-                f"Successfully created {bond_config.RUNS_PARQUET} ({len(data)} rows)"
+
+            data_write.to_parquet(
+                bond_config.RUNS_PARQUET,
+                index=False,
+                engine='pyarrow',
             )
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error writing parquet: {str(e)}", exc_info=True)
-            return False
+            self.logger.info(
+                f"Successfully wrote override parquet: {bond_config.RUNS_PARQUET}"
+            )
+
+            return LoadResult(
+                success=True,
+                new_rows=len(data),
+                skipped_rows=0,
+                existing_rows=0,
+                total_rows=len(data),
+                new_dates=new_dates,
+                new_cusips=new_cusips,
+                new_dealers=new_dealers,
+            )
+
+        except Exception as exc:
+            self.logger.error(
+                f"Error writing runs parquet in override mode: {exc}",
+                exc_info=True,
+            )
+            return LoadResult(success=False)
     
     def get_summary_stats(self) -> dict:
         """
@@ -330,7 +425,10 @@ class RunsLoader:
                 if len(date_col) > 0:
                     min_date = date_col.min()
                     max_date = date_col.max()
-                    stats['runs_date_range'] = (min_date, max_date)  # Fixed: was 'date_range'
+                    stats['runs_date_range'] = (min_date, max_date)
+                    stats['date_range'] = (min_date, max_date)
+                    stats['runs_min_date'] = min_date
+                    stats['runs_max_date'] = max_date
             
         except Exception as e:
             self.logger.error(f"Error reading parquet stats: {str(e)}")

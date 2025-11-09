@@ -6,6 +6,7 @@ Handles file reading, date/time parsing, and initial data loading.
 import pandas as pd
 from pathlib import Path
 from typing import Optional, List
+from datetime import datetime
 import logging
 import re
 
@@ -151,6 +152,42 @@ class RunsExtractor:
         except Exception as e:
             self.logger.error(f"  Error reading file {filename}: {str(e)}", exc_info=True)
             return None
+
+    def peek_file_dates(self, file_path: Path) -> set[datetime]:
+        """
+        Quickly inspect a RUNS Excel file to determine the set of dates it contains.
+
+        Args:
+            file_path: Path to the Excel file.
+
+        Returns:
+            Set of datetime objects representing dates present in the file.
+        """
+        try:
+            date_series = pd.read_excel(
+                file_path,
+                header=RUNS_HEADER_ROW,
+                usecols=['Date'],
+            )['Date']
+        except ValueError:
+            self.logger.warning(
+                f"  Unable to isolate Date column in {file_path.name}; "
+                "will process file fully."
+            )
+            return set()
+        except Exception as exc:
+            self.logger.warning(
+                f"  Failed to peek dates for {file_path.name}: {exc}"
+            )
+            return set()
+
+        dates: set[datetime] = set()
+        for value in date_series.dropna():
+            parsed = parse_runs_date(value)
+            if parsed:
+                dates.add(parsed)
+
+        return dates
     
     def extract_all_files(self, file_paths: List[Path]) -> List[pd.DataFrame]:
         """

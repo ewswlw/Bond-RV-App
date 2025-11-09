@@ -83,6 +83,7 @@ LOG_FILE_PROCESSING = LOGS_DIR / "processing.log"
 LOG_FILE_DUPLICATES = LOGS_DIR / "duplicates.log"
 LOG_FILE_VALIDATION = LOGS_DIR / "validation.log"
 LOG_FILE_SUMMARY = LOGS_DIR / "summary.log"
+LOG_FILE_PARQUET_STATS = LOGS_DIR / "parquet_stats.log"
 
 # Enhanced logging configuration
 LOG_ROTATION_RUNS = 10  # Keep last N runs in active log files

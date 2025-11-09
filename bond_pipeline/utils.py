@@ -23,9 +23,11 @@ from .config import (
     BQL_VALUE_COLUMN_NAME,
     CUSIP_LENGTH,
     FILE_PATTERN,
+    HISTORICAL_PARQUET,
     LOG_ARCHIVE_DIR,
     LOG_METADATA_FILE,
     LOG_ROTATION_RUNS,
+    LOG_FILE_PARQUET_STATS,
     NA_VALUES,
     RUNS_DATE_FORMAT,
     RUNS_KNOWN_DEALERS,
@@ -36,6 +38,8 @@ from .config import (
     RUNS_VALIDATE_SPREADS_REASONABLE,
     RUNS_VALIDATE_TIME_FORMAT,
     UNIVERSE_PARQUET,
+    BQL_PARQUET,
+    RUNS_PARQUET,
 )
 
 
@@ -689,6 +693,115 @@ def log_with_timestamp(logger: logging.Logger, level: str, message: str):
         logger.warning(formatted_msg)
     else:
         logger.info(formatted_msg)
+
+
+def log_parquet_diagnostics(log_file: Optional[Path] = None) -> None:
+    """
+    Capture diagnostics for core parquet datasets and append them to a log file.
+
+    Args:
+        log_file: Optional path override for the parquet diagnostics log.
+    """
+    target_log = log_file or LOG_FILE_PARQUET_STATS
+    logger = setup_logging(
+        target_log,
+        name='parquet_stats',
+        console_level=logging.CRITICAL,
+    )
+
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    logger.info("=" * 80)
+    logger.info(f"PARQUET DATASET DIAGNOSTICS @ {timestamp}")
+
+    datasets = [
+        ("historical_bond_details.parquet", HISTORICAL_PARQUET),
+        ("universe.parquet", UNIVERSE_PARQUET),
+        ("bql.parquet", BQL_PARQUET),
+        ("runs_timeseries.parquet", RUNS_PARQUET),
+    ]
+
+    def _sanitize_text(text: str) -> str:
+        """Ensure log output stays ASCII-friendly on Windows consoles."""
+        if isinstance(text, str):
+            return text.encode('ascii', 'replace').decode('ascii')
+        return str(text).encode('ascii', 'replace').decode('ascii')
+
+    def _log_info(message: str) -> None:
+        """Log ASCII-sanitized info messages."""
+        logger.info(_sanitize_text(message))
+
+    def _log_multiline(section_title: str, content: str) -> None:
+        """Helper to log multi-line content with a section header."""
+        _log_info(section_title)
+        for line in content.strip().splitlines():
+            _log_info(f"    {line}")
+
+    for friendly_name, parquet_path in datasets:
+        _log_info("-" * 80)
+        _log_info(f"Dataset: {friendly_name}")
+        _log_info(f"Path: {parquet_path}")
+
+        if not parquet_path.exists():
+            logger.warning(
+                _sanitize_text(
+                    f"File not found; skipping diagnostics for {friendly_name}"
+                )
+            )
+            continue
+
+        try:
+            df = pd.read_parquet(parquet_path)
+        except Exception as exc:
+            logger.error(
+                _sanitize_text(
+                    f"Failed to read parquet '{friendly_name}': {exc}"
+                )
+            )
+            continue
+
+        row_count = len(df)
+        column_count = len(df.columns)
+        _log_info(
+            f"Shape: {row_count:,} rows x {column_count} columns"
+        )
+
+        info_buffer = StringIO()
+        df.info(buf=info_buffer)
+        _log_multiline("DataFrame info():", info_buffer.getvalue())
+
+        try:
+            describe_df = df.describe(include='all', datetime_is_numeric=True)
+        except TypeError:
+            describe_df = df.describe(include='all')
+
+        if not describe_df.empty:
+            _log_multiline(
+                "DataFrame describe():",
+                describe_df.to_string(),
+            )
+        else:
+            _log_info("DataFrame describe(): <empty>")
+
+        head_df = df.head(3)
+        tail_df = df.tail(3)
+
+        if not head_df.empty:
+            _log_multiline(
+                "Head (3 rows):",
+                head_df.to_string(index=False),
+            )
+        else:
+            _log_info("Head (3 rows): <empty>")
+
+        if not tail_df.empty:
+            _log_multiline(
+                "Tail (3 rows):",
+                tail_df.to_string(index=False),
+            )
+        else:
+            _log_info("Tail (3 rows): <empty>")
+
+    _log_info("=" * 80)
 
 
 # ============================================================================

@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-07 16:45 ET - Poetry Environment Migration  
+**Last Updated**: 2025-11-09 13:30 ET - Runs Append Optimization & Parquet Diagnostics  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -163,13 +163,14 @@ Each pipeline stage is a class with clear responsibilities:
 **Runs Pipeline:**
 - **RunsExtractor**: RUNS Excel reading, Date/Time parsing (from columns, not filename)
 - **RunsTransformer**: End-of-day deduplication (vectorized, ~100x faster), CUSIP validation/orphan tracking (vectorized), schema alignment
-- **RunsLoader**: Runs parquet writing, Date+Dealer+CUSIP primary key enforcement
-- **RunsDataPipeline**: Orchestrates all components, CLI interface
+– **RunsLoader**: Runs parquet writing, Date+Dealer+CUSIP primary key enforcement, granular load metrics (new rows/dates/CUSIPs/Dealers)
+– **RunsDataPipeline**: Orchestrates all components, CLI interface, append-mode file selection + enhanced run summaries
 
 **Pipeline Orchestrator:**
 - **run_pipeline.py**: Unified entry point for both bond and runs pipelines
 - User can select: Bond only, Runs only, or Both pipelines
 - Shared mode selection (append/override) for selected pipelines
+- After successful runs, generates `bond_data/logs/parquet_stats.log` with dataset diagnostics (df.info/describe/head/tail)
 
 ---
 
@@ -256,6 +257,8 @@ Each pipeline stage is a class with clear responsibilities:
 - Invalid CUSIPs: Log summary warning but include in data (same as bond pipeline)
 - **Enhanced Orphan Tracking**: Log orphans with context (Security, Date, Dealer, Time, Ticker) to validation.log
 - Primary key enforcement: No duplicate Date+Dealer+CUSIP combinations (after deduplication)
+- Append mode inspects existing parquet dates, skips fully-loaded files, and filters mixed files down to unseen dates before extraction.
+- Pipeline summaries surface files processed/skipped plus new rows, dates, CUSIPs, and dealers added during each run.
 
 #### Schema Evolution
 - **Master schema**: 75 columns from latest files (set dynamically)
@@ -299,7 +302,8 @@ bond_data/logs/
 ├── processing.log      # File extraction and loading operations
 ├── duplicates.log      # All duplicate CUSIPs detected
 ├── validation.log      # CUSIP validation warnings
-└── summary.log         # Pipeline execution summary (run headers, stats)
+├── summary.log         # Pipeline execution summary (run headers, stats)
+└── parquet_stats.log   # Snapshot diagnostics for each parquet dataset (df.info/describe/head/tail)
 ```
 
 ### Logging Levels
@@ -723,7 +727,7 @@ pytest tests/unit/test_utils.py -v
 
 ### Quality Standards
 19. **Use pathlib.Path** for all path operations
-20. **Avoid unicode issues** on Windows
+20. **Avoid unicode issues** on Windows; all console/log output must remain ASCII-safe
 21. **Modular design** following industry best practices
 22. **Keep documentation current** when creating new docs
 
@@ -773,4 +777,5 @@ pytest tests/unit/test_utils.py -v
 - **2025-11-08 11:20 ET**: Added `nbconvert` dev dependency to support automated notebook execution for testing kernels
 - **2025-11-08 11:30 ET**: Added VS Code workspace settings to pin notebooks to the Poetry-managed `.venv` interpreter
 - **2025-11-08 11:35 ET**: Added `notebook` dev dependency to ensure VS Code can start a local Jupyter server from the Poetry environment
+- **2025-11-09 13:30 ET**: Optimized RUNS append flow (skip fully loaded files, new load metrics), enhanced run summaries, and introduced `parquet_stats.log` diagnostics
 

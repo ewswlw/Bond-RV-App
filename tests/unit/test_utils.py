@@ -25,6 +25,7 @@ from bond_pipeline.load import ParquetLoader
 from bond_pipeline.utils import (
     clean_na_values,
     extract_date_from_filename,
+    log_parquet_diagnostics,
     normalize_bql_cusip,
     reshape_bql_to_long,
     setup_logging,
@@ -324,6 +325,61 @@ class TestBQLUtilities:
             "Bond B",
         }
         assert not artifacts.issues
+
+
+class TestParquetDiagnostics:
+    """Tests for parquet diagnostics logging helper."""
+
+    def test_log_parquet_diagnostics_generates_report(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Diagnostics log captures available datasets and notes missing files."""
+        log_file = tmp_path / "parquet_stats.log"
+
+        historical_path = tmp_path / "historical_bond_details.parquet"
+        runs_path = tmp_path / "runs_timeseries.parquet"
+        missing_universe = tmp_path / "universe_missing.parquet"
+        missing_bql = tmp_path / "bql_missing.parquet"
+
+        historical_df = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2025-01-01", "2025-01-02", "2025-01-03"]),
+                "CUSIP": ["AAA000AAA", "BBB000BBB", "CCC000CCC"],
+                "Value": [101.2, 102.5, 103.1],
+            }
+        )
+        historical_df.to_parquet(historical_path, index=False)
+
+        runs_df = pd.DataFrame(
+            {
+                "Date": pd.to_datetime(["2025-02-01", "2025-02-01", "2025-02-01"]),
+                "Dealer": ["D1", "D2", "D3"],
+                "CUSIP": ["AAA000AAA", "BBB000BBB", "DDD000DDD"],
+                "Bid Price": [99.1, 100.3, 101.7],
+            }
+        )
+        runs_df.to_parquet(runs_path, index=False)
+
+        monkeypatch.setattr("bond_pipeline.utils.HISTORICAL_PARQUET", historical_path)
+        monkeypatch.setattr("bond_pipeline.utils.RUNS_PARQUET", runs_path)
+        monkeypatch.setattr("bond_pipeline.utils.UNIVERSE_PARQUET", missing_universe)
+        monkeypatch.setattr("bond_pipeline.utils.BQL_PARQUET", missing_bql)
+
+        log_parquet_diagnostics(log_file=log_file)
+
+        assert log_file.exists()
+        content = log_file.read_text()
+
+        assert "Dataset: historical_bond_details.parquet" in content
+        assert "Dataset: runs_timeseries.parquet" in content
+        assert "Shape: 3 rows x 3 columns" in content
+        assert "Bid Price" in content
+        assert "File not found; skipping diagnostics for universe.parquet" in content
+        assert "File not found; skipping diagnostics for bql.parquet" in content
+        assert "Head (3 rows):" in content
+        assert "Tail (3 rows):" in content
 
 
 class TestParquetLoaderBQL:
