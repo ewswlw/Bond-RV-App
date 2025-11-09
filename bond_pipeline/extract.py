@@ -102,12 +102,19 @@ class ExcelExtractor:
     def read_bql_workbook(self, workbook_path: Optional[Path] = None) -> Optional[pd.DataFrame]:
         """
         Read the BQL Excel workbook and return the raw wide DataFrame.
+        
+        The workbook has a 4-row multi-index header:
+        - Row 0 (index 0): Ignored
+        - Row 1 (index 1): Name (1st level)
+        - Row 2 (index 2): CUSIP (2nd level)
+        - Row 3 (index 3): Ignored
+        - Row 4 (index 4): Data starts here
 
         Args:
             workbook_path: Optional explicit workbook path. Defaults to config path.
 
         Returns:
-            DataFrame containing the raw BQL data, or None if read fails.
+            DataFrame containing the raw BQL data with multi-index columns, or None if read fails.
         """
         path = workbook_path or BQL_EXCEL_PATH
         self.logger.info(f"Processing BQL workbook: {path}")
@@ -117,7 +124,8 @@ class ExcelExtractor:
             return None
 
         try:
-            df = pd.read_excel(path, sheet_name=BQL_SHEET_NAME)
+            # Read with 4-row multi-index header (rows 0-3)
+            df = pd.read_excel(path, sheet_name=BQL_SHEET_NAME, header=[0, 1, 2, 3])
         except Exception as exc:
             self.logger.error(f"Failed to read BQL workbook: {exc}")
             return None
@@ -126,12 +134,14 @@ class ExcelExtractor:
             self.logger.warning("BQL workbook is empty.")
             return df
 
+        # Check first column label (should be "CUSIPs" at some level)
         first_column_label = df.columns[0]
-        if str(first_column_label).strip() != BQL_HEADER_LABEL:
+        first_col_str = str(first_column_label[0] if isinstance(first_column_label, tuple) else first_column_label).strip()
+        if first_col_str != BQL_HEADER_LABEL:
             self.logger.warning(
                 "Unexpected BQL header label. Expected '%s', found '%s' (path=%s)",
                 BQL_HEADER_LABEL,
-                first_column_label,
+                first_col_str,
                 path,
             )
 

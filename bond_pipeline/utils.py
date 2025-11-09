@@ -93,9 +93,16 @@ def normalize_bql_cusip(header_value: str) -> Tuple[Optional[str], Optional[str]
 def reshape_bql_to_long(raw_df: pd.DataFrame) -> BQLTransformArtifacts:
     """
     Convert the wide BQL workbook DataFrame into long-form layout.
+    
+    The DataFrame has a 4-level multi-index header:
+    - Level 0 (row 0): Ignored
+    - Level 1 (row 1): Name (1st level)
+    - Level 2 (row 2): CUSIP (2nd level)
+    - Level 3 (row 3): Ignored
+    - Row 4+: Data rows
 
     Args:
-        raw_df: DataFrame loaded directly from the BQL workbook.
+        raw_df: DataFrame loaded directly from the BQL workbook with multi-index columns.
 
     Returns:
         BQLTransformArtifacts with long-form data, CUSIP-name mapping, and issues.
@@ -111,13 +118,19 @@ def reshape_bql_to_long(raw_df: pd.DataFrame) -> BQLTransformArtifacts:
 
     issues: List[str] = []
 
-    header_label = str(raw_df.columns[0]).strip()
-    if header_label != BQL_HEADER_LABEL:
+    # Check first column label (should be "CUSIPs" at level 0)
+    first_column_label = raw_df.columns[0]
+    if isinstance(first_column_label, tuple):
+        first_col_str = str(first_column_label[0]).strip()
+    else:
+        first_col_str = str(first_column_label).strip()
+    
+    if first_col_str != BQL_HEADER_LABEL:
         issues.append(
-            f"Unexpected first column label: expected '{BQL_HEADER_LABEL}', found '{header_label}'",
+            f"Unexpected first column label: expected '{BQL_HEADER_LABEL}', found '{first_col_str}'",
         )
 
-    if raw_df.shape[0] <= 1 or raw_df.shape[1] <= 1:
+    if raw_df.shape[0] < 1 or raw_df.shape[1] <= 1:
         issues.append("BQL DataFrame missing required rows or columns.")
         return BQLTransformArtifacts(
             dataframe=pd.DataFrame(columns=BQL_OUTPUT_COLUMNS),
@@ -125,15 +138,48 @@ def reshape_bql_to_long(raw_df: pd.DataFrame) -> BQLTransformArtifacts:
             issues=issues,
         )
 
-    name_row = raw_df.iloc[0].copy()
-    data_df = raw_df.iloc[1:].copy()
-    data_df = data_df.reset_index(drop=True)
-
+    # Extract names from level 1 (row 1) and CUSIPs from level 2 (row 2) of multi-index
+    # Data starts immediately (row 4 in Excel = index 0 in DataFrame after header)
+    data_df = raw_df.copy()
+    
+    # Get the date column (first column) and convert to Date
     original_date_column = raw_df.columns[0]
-    data_df[BQL_DATE_COLUMN_NAME] = pd.to_datetime(data_df[original_date_column], errors="coerce")
+    # Convert date column values to datetime
+    date_values = pd.to_datetime(data_df[original_date_column], errors="coerce")
+    # Create the Date column - pandas will create it as a multi-index tuple
+    data_df[BQL_DATE_COLUMN_NAME] = date_values
+    
+    # Now drop the original date column
     data_df = data_df.drop(columns=[original_date_column])
-    data_df = data_df.dropna(subset=[BQL_DATE_COLUMN_NAME])
-    data_df[BQL_DATE_COLUMN_NAME] = data_df[BQL_DATE_COLUMN_NAME].dt.normalize()
+    
+    # Find the actual Date column name (may be a tuple due to multi-index)
+    date_col_name = None
+    for col in data_df.columns:
+        if isinstance(col, tuple) and col[0] == BQL_DATE_COLUMN_NAME:
+            date_col_name = col
+            break
+        elif col == BQL_DATE_COLUMN_NAME:
+            date_col_name = col
+            break
+    
+    if date_col_name is None:
+        issues.append("Failed to create Date column in BQL data.")
+        return BQLTransformArtifacts(
+            dataframe=pd.DataFrame(columns=BQL_OUTPUT_COLUMNS),
+            cusip_to_name={},
+            issues=issues,
+        )
+    
+    # Reset index after column operations
+    data_df = data_df.reset_index(drop=True)
+    
+    # Drop rows with invalid dates using the actual column name
+    data_df = data_df.dropna(subset=[date_col_name])
+    data_df[date_col_name] = data_df[date_col_name].dt.normalize()
+    
+    # Rename the date column to the standard name for consistency
+    if date_col_name != BQL_DATE_COLUMN_NAME:
+        data_df = data_df.rename(columns={date_col_name: BQL_DATE_COLUMN_NAME})
 
     if data_df.empty:
         issues.append("No valid dates found in BQL data after parsing.")
@@ -147,8 +193,24 @@ def reshape_bql_to_long(raw_df: pd.DataFrame) -> BQLTransformArtifacts:
     cusip_to_name: Dict[str, str] = {}
     seen_cusips: set[str] = set()
 
+    # Process each column (skip first column which is dates)
     for column_label in raw_df.columns[1:]:
-        cleaned_cusip, error = normalize_bql_cusip(column_label)
+        # Extract Name from Level 1 (Excel row 2) and CUSIP from Level 2 (Excel row 3)
+        if isinstance(column_label, tuple):
+            # Multi-index: (level0, level1, level2, level3)
+            # Level 0 (Excel row 1) = CUSIP (also appears here)
+            # Level 1 (Excel row 2) = Name
+            # Level 2 (Excel row 3) = CUSIP (use this one per user requirement)
+            raw_cusip = str(column_label[2]) if len(column_label) > 2 else ""
+            raw_name = str(column_label[1]) if len(column_label) > 1 else ""
+        else:
+            # Fallback: treat as single-level header
+            raw_cusip = str(column_label)
+            raw_name = ""
+            issues.append(f"Column '{column_label}' is not multi-index. Using column name as CUSIP.")
+
+        # Normalize CUSIP
+        cleaned_cusip, error = normalize_bql_cusip(raw_cusip)
         if error:
             issues.append(f"Skipped column '{column_label}': {error}")
             continue
@@ -159,8 +221,8 @@ def reshape_bql_to_long(raw_df: pd.DataFrame) -> BQLTransformArtifacts:
 
         seen_cusips.add(cleaned_cusip)
 
-        security_name_value = name_row[column_label] if column_label in name_row.index else ""
-        security_name = str(security_name_value).strip() if pd.notna(security_name_value) else ""
+        # Extract security name from level 1 (row 1)
+        security_name = raw_name.strip() if raw_name and pd.notna(raw_name) else ""
 
         if column_label not in data_df.columns:
             issues.append(f"BQL data missing expected column '{column_label}'. Skipping.")
@@ -205,6 +267,21 @@ def reshape_bql_to_long(raw_df: pd.DataFrame) -> BQLTransformArtifacts:
     )
 
 
+def sanitize_log_message(message: str) -> str:
+    """
+    Sanitize log message to be ASCII-safe for Windows console/file encoding.
+    
+    Args:
+        message: Log message that may contain Unicode characters.
+    
+    Returns:
+        ASCII-safe string with Unicode characters replaced or removed.
+    """
+    if not isinstance(message, str):
+        message = str(message)
+    return message.encode('ascii', errors='replace').decode('ascii')
+
+
 def setup_logging(log_file: Path, name: str = None, console_level: int = logging.WARNING) -> logging.Logger:
     """
     Set up logging to both file and console with separate levels.
@@ -225,7 +302,7 @@ def setup_logging(log_file: Path, name: str = None, console_level: int = logging
         return logger
 
     # File handler - captures ALL detail
-    fh = logging.FileHandler(log_file, mode='a')
+    fh = logging.FileHandler(log_file, mode='a', encoding='utf-8', errors='replace')
     fh.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     fh.setFormatter(file_formatter)

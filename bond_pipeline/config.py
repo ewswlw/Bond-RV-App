@@ -26,7 +26,9 @@ BQL_EXCEL_PATH = Path(
 )
 BQL_SHEET_NAME = "bql"
 BQL_HEADER_LABEL = "CUSIPs"
-BQL_NAME_ROW_INDEX = 0  # First row contains security names
+BQL_NAME_ROW_INDEX = 1  # Name is on level 1 (row 1) of multi-index header
+BQL_CUSIP_ROW_INDEX = 2  # CUSIP is on level 2 (row 2) of multi-index header
+BQL_DATA_START_ROW = 4  # Data starts at row 4 (0-indexed: row 4 = index 4)
 BQL_DATE_COLUMN_NAME = "Date"
 BQL_VALUE_COLUMN_NAME = "Value"
 BQL_NAME_COLUMN_NAME = "Name"

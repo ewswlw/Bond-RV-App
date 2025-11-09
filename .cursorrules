@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-09 13:30 ET - Runs Append Optimization & Parquet Diagnostics  
+**Last Updated**: 2025-11-09 14:00 ET - Individual Parquet Regeneration & Unicode Logging Fixes  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -168,7 +168,11 @@ Each pipeline stage is a class with clear responsibilities:
 
 **Pipeline Orchestrator:**
 - **run_pipeline.py**: Unified entry point for both bond and runs pipelines
-- User can select: Bond only, Runs only, or Both pipelines
+- User can select: Bond only, Runs only, Both pipelines, or Individual Parquet Files
+- Individual Parquet Files option allows regenerating specific parquet outputs:
+  - `historical_bond_details.parquet` (also regenerates universe)
+  - `bql.parquet` (standalone BQL processing)
+  - `runs_timeseries.parquet` (standalone runs processing)
 - Shared mode selection (append/override) for selected pipelines
 - After successful runs, generates `bond_data/logs/parquet_stats.log` with dataset diagnostics (df.info/describe/head/tail)
 
@@ -185,8 +189,15 @@ Each pipeline stage is a class with clear responsibilities:
 ### BQL Workbook Input Data Format
 - **Excel file**: Fixed workbook `bql.xlsx` located in Support Files directory
 - **Sheet**: `bql`
-- **Structure**: Column 0 labelled `CUSIPs`; row 0 contains security names; remaining rows store daily timestamps and numeric spreads
-- **Header cleaning**: Strip whitespace, remove trailing `Corp`, enforce 9-character uppercase CUSIP
+- **Multi-index header**: 4-row column header structure:
+  - Row 0 (index 0): Ignored
+  - Row 1 (index 1): Security names (1st level)
+  - Row 2 (index 2): CUSIPs (2nd level)
+  - Row 3 (index 3): Ignored
+  - Row 4 (index 4): Data rows start here
+- **Column 0**: First column labelled `CUSIPs` contains daily timestamps
+- **Header processing**: Extract names from level 1 (row 1) and CUSIPs from level 2 (row 2) of multi-index columns
+- **CUSIP cleaning**: Strip whitespace, remove trailing `Corp`, enforce 9-character uppercase CUSIP
 - **Output expectation**: Long-form DataFrame with columns `Date`, `Name`, `CUSIP`, `Value`
 
 ### Runs Pipeline Input Data Format
@@ -286,7 +297,9 @@ Each pipeline stage is a class with clear responsibilities:
 - Preserve all other values as-is
 
 #### BQL Pipeline
-- Normalize header row to derive security names and enforce 9-character CUSIPs
+- Read Excel workbook with 4-row multi-index header (`header=[0,1,2,3]`)
+- Extract security names from level 1 (row 1) and CUSIPs from level 2 (row 2) of multi-index columns
+- Normalize header values to derive security names and enforce 9-character CUSIPs
 - Reshape wide workbook to long-form dataset (`Date`, `Name`, `CUSIP`, `Value`)
 - Skip duplicate/invalid CUSIP columns and log issues for traceability
 - Drop rows with non-numeric values before persisting
@@ -320,6 +333,8 @@ bond_data/logs/
 4. **Log rotation**: Archive logs after N runs (currently 10)
 5. **Structured info**: Include Date, CUSIP, file path in log messages
 6. **BQL ingestion**: Log unique CUSIP/date counts and orphan CUSIPs with security names
+7. **Unicode encoding**: File handlers use UTF-8 encoding with `errors='replace'` to handle Unicode characters in bond names
+8. **ASCII-safe logging**: Use `sanitize_log_message()` function to convert Unicode characters to ASCII-safe replacements before logging (prevents Windows console encoding errors)
 
 ### Example Logging Pattern
 ```python
@@ -418,7 +433,8 @@ Bond-RV-App/
 ├── poetry.lock            # Locked dependency versions
 ├── requirements.txt       # Legacy dependency snapshot (reference only)
 ├── README.md              # Project overview
-└── run_pipeline.py        # Simple pipeline runner
+├── run_pipeline.py        # Simple pipeline runner
+└── cr01_comb.py           # CR01 pair analytics (BQL universe vs holdings table)
 ```
 
 ### File Naming Conventions
@@ -524,7 +540,7 @@ poetry shell
 
 # 2. Run automated pipeline runner
 poetry run python run_pipeline.py
-# Prompts: 1) Pipeline selection, 2) Mode (override/append), 3) (Bond) Include BQL workbook
+# Prompts: 1) Pipeline selection (1=Bond, 2=Runs, 3=Both, 4=Individual Parquet), 2) Mode (override/append), 3) (Bond) Include BQL workbook
 
 # 3. Or use direct CLI (Bond Pipeline)
 cd bond_pipeline
@@ -540,7 +556,8 @@ poetry run python -m runs_pipeline.pipeline -i "Historical Runs/" -m override
 
 # 6. Unified Pipeline Orchestrator (Recommended)
 poetry run python run_pipeline.py
-# Prompts: Select pipeline(s), choose mode, decide on BQL ingestion when running Bond pipeline
+# Prompts: Select pipeline(s) or individual parquet files, choose mode, decide on BQL ingestion when running Bond pipeline
+# Option 4 allows regenerating individual parquet files (historical_bond_details, bql, or runs_timeseries)
 ```
 
 ### Pipeline Modes
@@ -778,4 +795,20 @@ pytest tests/unit/test_utils.py -v
 - **2025-11-08 11:30 ET**: Added VS Code workspace settings to pin notebooks to the Poetry-managed `.venv` interpreter
 - **2025-11-08 11:35 ET**: Added `notebook` dev dependency to ensure VS Code can start a local Jupyter server from the Poetry environment
 - **2025-11-09 13:30 ET**: Optimized RUNS append flow (skip fully loaded files, new load metrics), enhanced run summaries, and introduced `parquet_stats.log` diagnostics
+- **2025-11-09 07:25 ET**: Added `cr01_comb.py` CR01 pair analytics script (BQL universe vs holdings spreads) exporting CSVs to `bond_data/one off csvs/`
+  - Exports single CSV file `cr01_pair_analytics.csv` that overwrites on each run (no timestamps)
+  - Computes pairwise spreads (universe minus holdings) with statistical metrics (Last, Avg, vs Avg, Z Score, Percentile)
+- **2025-11-09 13:30 ET**: Updated BQL workbook processing to handle 4-row multi-index header:
+  - Modified `read_bql_workbook` to read with `header=[0,1,2,3]` for multi-index columns
+  - Updated `reshape_bql_to_long` to extract names from level 1 (row 1) and CUSIPs from level 2 (row 2)
+  - Data rows start at row 4 (index 4) after header rows 0-3
+  - Updated config constants (`BQL_NAME_ROW_INDEX`, `BQL_CUSIP_ROW_INDEX`, `BQL_DATA_START_ROW`)
+  - Fixed Date column handling for multi-index DataFrames (find tuple column name, rename to standard)
+  - Updated `.cursorrules` documentation to reflect new header structure
+- **2025-11-09 14:00 ET**: Enhanced logging and pipeline features:
+  - Added `sanitize_log_message()` function for ASCII-safe log output (prevents Unicode encoding errors on Windows)
+  - Updated file handlers to use UTF-8 encoding with `errors='replace'` for Unicode character handling
+  - Added individual parquet file regeneration option (option 4) to `run_pipeline.py`:
+    - Allows regenerating `historical_bond_details.parquet`, `bql.parquet`, or `runs_timeseries.parquet` independently
+    - Useful for quick fixes or testing without running full pipelines
 

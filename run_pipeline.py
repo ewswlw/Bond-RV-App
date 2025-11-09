@@ -5,6 +5,7 @@ Run this from the project root directory.
 This script orchestrates both:
 1. Bond Pipeline - Processes API Historical Excel files
 2. Runs Pipeline - Processes Historical Runs Excel files
+3. Individual Parquet Files - Regenerate specific parquet outputs
 """
 
 import sys
@@ -20,8 +21,15 @@ from bond_pipeline.config import (
     RUNS_PARQUET,
     UNIVERSE_PARQUET,
     BQL_PARQUET,
+    LOG_FILE_PROCESSING,
+    LOG_FILE_DUPLICATES,
+    LOG_FILE_VALIDATION,
+    LOG_FILE_SUMMARY,
 )
 from bond_pipeline.pipeline import BondDataPipeline
+from bond_pipeline.extract import ExcelExtractor
+from bond_pipeline.transform import DataTransformer
+from bond_pipeline.load import ParquetLoader
 from bond_pipeline.utils import log_parquet_diagnostics
 from runs_pipeline.pipeline import RunsDataPipeline
 
@@ -87,6 +95,129 @@ def run_runs_pipeline(mode: str) -> bool:
         return False
 
 
+def run_bql_only() -> bool:
+    """Run only BQL parquet generation."""
+    print("\n" + "=" * 70)
+    print("  BQL PARQUET GENERATION")
+    print("=" * 70)
+    print("\n>> Processing BQL workbook...")
+    
+    try:
+        extractor = ExcelExtractor(LOG_FILE_PROCESSING)
+        transformer = DataTransformer(LOG_FILE_DUPLICATES, LOG_FILE_VALIDATION)
+        loader = ParquetLoader(LOG_FILE_PROCESSING)
+        
+        # Read BQL workbook
+        bql_raw_df = extractor.read_bql_workbook()
+        if bql_raw_df is None or bql_raw_df.empty:
+            print("   [FAIL] Failed to load BQL workbook or workbook is empty.")
+            return False
+        
+        # Transform BQL data
+        bql_artifacts = transformer.transform_bql_data(bql_raw_df)
+        if bql_artifacts.dataframe.empty:
+            print("   [FAIL] BQL transformation produced no rows.")
+            return False
+        
+        # Write BQL dataset
+        success = loader.write_bql_dataset(
+            bql_artifacts.dataframe,
+            bql_artifacts.cusip_to_name,
+        )
+        
+        if success:
+            print("\n" + "-" * 70)
+            print("   [OK] BQL parquet generated successfully")
+            print(f"   Output: {BQL_PARQUET}")
+            print("-" * 70)
+        else:
+            print("\n" + "-" * 70)
+            print("   [FAIL] Failed to write BQL parquet")
+            print("-" * 70)
+        
+        return success
+    except Exception as e:
+        print(f"\n[ERROR] BQL processing error: {str(e)}")
+        return False
+
+
+def run_historical_only(mode: str) -> bool:
+    """Run only historical bond details parquet generation (also regenerates universe)."""
+    print("\n" + "=" * 70)
+    print("  HISTORICAL BOND DETAILS PARQUET GENERATION")
+    print("=" * 70)
+    print(f"\n>> Starting Historical Bond Pipeline in {mode.upper()} mode...")
+    print(f"   Input: {DEFAULT_INPUT_DIR}")
+    print("   Note: This will also regenerate universe.parquet")
+    
+    try:
+        pipeline = BondDataPipeline(DEFAULT_INPUT_DIR, mode, process_bql=False)
+        success = pipeline.run()
+        
+        if success:
+            print("\n" + "-" * 70)
+            print("   [OK] Historical Bond Details parquet generated successfully")
+            print(f"   Output: {HISTORICAL_PARQUET}")
+            print(f"   Universe: {UNIVERSE_PARQUET}")
+            print("-" * 70)
+        else:
+            print("\n" + "-" * 70)
+            print("   [FAIL] Historical Bond Pipeline failed")
+            print(f"   Logs: {HISTORICAL_PARQUET.parent.parent / 'logs'}")
+            print("-" * 70)
+        
+        return success
+    except Exception as e:
+        print(f"\n[ERROR] Historical Bond Pipeline error: {str(e)}")
+        return False
+
+
+def run_individual_parquet() -> bool:
+    """Run individual parquet file regeneration."""
+    print("\n" + "=" * 70)
+    print("  INDIVIDUAL PARQUET REGENERATION")
+    print("=" * 70)
+    
+    parquet_options = {
+        '1': ('historical_bond_details.parquet', 'Historical Bond Details (also regenerates universe)', run_historical_only),
+        '2': ('bql.parquet', 'BQL Dataset', run_bql_only),
+        '3': ('runs_timeseries.parquet', 'Runs Timeseries', None),  # Handled separately
+    }
+    
+    print("\nSelect parquet file to regenerate:")
+    for key, (filename, description, _) in parquet_options.items():
+        print(f"  [{key}] {filename}")
+        print(f"       {description}")
+    
+    choice = input("\nChoice (1, 2, or 3): ").strip()
+    
+    if choice not in parquet_options:
+        print("Invalid choice.")
+        return False
+    
+    filename, description, func = parquet_options[choice]
+    
+    if choice == '3':
+        # Runs pipeline needs mode selection
+        print("\nSelect processing mode:")
+        print("  [1] Override - Rebuild everything from scratch")
+        print("  [2] Append   - Add only new dates (default)")
+        mode_choice = input("\nChoice (1 or 2): ").strip() or "2"
+        mode = 'override' if mode_choice == '1' else 'append'
+        return run_runs_pipeline(mode)
+    elif choice == '1':
+        # Historical needs mode selection
+        print("\nSelect processing mode:")
+        print("  [1] Override - Rebuild everything from scratch")
+        print("  [2] Append   - Add only new dates (default)")
+        mode_choice = input("\nChoice (1 or 2): ").strip() or "2"
+        mode = 'override' if mode_choice == '1' else 'append'
+        return func(mode)
+    else:
+        # BQL doesn't need mode (always override)
+        return func()
+
+
 def main():
     """Run the pipeline(s) with user selection."""
     
@@ -99,12 +230,25 @@ def main():
     print("  [1] Bond Pipeline only")
     print("  [2] Runs Pipeline only")
     print("  [3] Both Pipelines (default)")
+    print("  [4] Individual Parquet Files")
     
-    pipeline_choice = input("\nChoice (1, 2, or 3): ").strip() or "3"
+    pipeline_choice = input("\nChoice (1, 2, 3, or 4): ").strip() or "3"
     
-    if pipeline_choice not in ['1', '2', '3']:
+    if pipeline_choice not in ['1', '2', '3', '4']:
         print("Invalid choice. Using default: Both Pipelines")
         pipeline_choice = '3'
+    
+    # Handle individual parquet selection
+    if pipeline_choice == '4':
+        result = run_individual_parquet()
+        try:
+            log_parquet_diagnostics()
+        except Exception as exc:
+            print(
+                "\nWarning: Unable to log parquet diagnostics "
+                f"({exc})"
+            )
+        return 0 if result else 1
     
     # Ask user for mode
     print("\nSelect processing mode:")

@@ -1,18 +1,8 @@
 {
-  "last_run_id": 114,
-  "last_run_time": "2025-11-08T21:49:34.960116",
+  "last_run_id": 116,
+  "last_run_time": "2025-11-09T08:35:41.929800",
   "last_run_mode": "append",
   "run_history": [
-    {
-      "run_id": 105,
-      "timestamp": "2025-11-07T16:14:03.022114",
-      "mode": "append"
-    },
-    {
-      "run_id": 106,
-      "timestamp": "2025-11-07T16:14:16.100519",
-      "mode": "append"
-    },
     {
       "run_id": 107,
       "timestamp": "2025-11-08T21:23:33.233086",
@@ -51,6 +41,16 @@
     {
       "run_id": 114,
       "timestamp": "2025-11-08T21:49:34.960116",
+      "mode": "append"
+    },
+    {
+      "run_id": 115,
+      "timestamp": "2025-11-09T08:35:29.791955",
+      "mode": "append"
+    },
+    {
+      "run_id": 116,
+      "timestamp": "2025-11-09T08:35:41.929800",
       "mode": "append"
     }
   ]

@@ -26,7 +26,8 @@ from .utils import (
     clean_na_values,
     align_to_master_schema,
     format_date_string,
-    format_section_header
+    format_section_header,
+    sanitize_log_message,
 )
 
 
@@ -237,7 +238,7 @@ class DataTransformer:
 
         if artifacts.issues:
             for issue in artifacts.issues:
-                self.logger_valid.warning(f"BQL transform issue: {issue}")
+                self.logger_valid.warning(f"BQL transform issue: {sanitize_log_message(issue)}")
         else:
             self.logger_valid.info("BQL transform completed with no issues detected.")
 
