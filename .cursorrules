@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-09 15:30 ET - Analytics Folder Structure & All Combinations Script  
+**Last Updated**: 2025-11-09 16:00 ET - Dealer Filtering & Numeric Column Conversion  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -237,10 +237,11 @@ Each pipeline stage is a class with clear responsibilities:
 - **Logging**: Warn when `bql` CUSIPs are missing from `universe.parquet`
 
 #### `runs_timeseries.parquet`
-- **Purpose**: Time series of all dealer quotes over time (end-of-day snapshots)
+- **Purpose**: Time series of dealer quotes over time (end-of-day snapshots)
 - **Primary Key**: `Date + Dealer + CUSIP` (unique combination, enforced after deduplication)
 - **Schema**: All 30 columns with Date and Time as first columns
-- **Row count**: ~130,000+ rows (after deduplication) spanning 2022-2025
+- **Dealer Filtering**: Only includes dealers: BMO, NBF, RBC, TD (other dealers filtered out during load)
+- **Row count**: ~19,000+ rows (after deduplication and dealer filtering) spanning 2022-2025
 - **Storage**: `bond_data/parquet/runs_timeseries.parquet`
 - **Deduplication**: Keep latest Time per Date+Dealer+CUSIP (end-of-day snapshot)
 
@@ -267,6 +268,7 @@ Each pipeline stage is a class with clear responsibilities:
 - **Optimized**: Vectorized CUSIP validation (~100x faster than row-by-row iteration)
 - Invalid CUSIPs: Log summary warning but include in data (same as bond pipeline)
 - **Enhanced Orphan Tracking**: Log orphans with context (Security, Date, Dealer, Time, Ticker) to validation.log
+- **Dealer Filtering**: Only dealers BMO, NBF, RBC, TD are stored in `runs_timeseries.parquet` (other dealers filtered out during load)
 - Primary key enforcement: No duplicate Date+Dealer+CUSIP combinations (after deduplication)
 - Append mode inspects existing parquet dates, skips fully-loaded files, and filters mixed files down to unseen dates before extraction.
 - Pipeline summaries surface files processed/skipped plus new rows, dates, CUSIPs, and dealers added during each run.
@@ -295,6 +297,15 @@ Each pipeline stage is a class with clear responsibilities:
 - Convert NA values to NULL: `#N/A Field Not Applicable`, `#N/A Invalid Security`, `N/A`, etc.
 - Empty cells → NULL/NaN
 - Preserve all other values as-is
+
+#### Numeric Column Conversion
+- **Years columns**: `Yrs Since Issue`, `Yrs (Worst)`, and `Yrs (Cvn)` are automatically converted to numeric (`float64`) during transformation
+- **Conversion points**: 
+  - Transform step: Converts during `transform_single_file()` processing
+  - Load step (append): Converts new data and existing data for compatibility
+  - Load step (override): Converts all data before writing
+- **Result**: These columns are always stored as numeric in parquet files, enabling proper binning and statistical analysis
+- **Error handling**: Non-numeric values are coerced to NaN (errors='coerce')
 
 #### BQL Pipeline
 - Read Excel workbook with 4-row multi-index header (`header=[0,1,2,3]`)
@@ -827,4 +838,10 @@ pytest tests/unit/test_utils.py -v
     - Outputs top 80 pairs sorted by Z Score to `all_comb.csv`
     - Column names: `Bond_1`, `Bond_2`, `cusip_1`, `cusip_2` (instead of universe/holdings naming)
   - Both scripts use script-relative path resolution for portability
+- **2025-11-09 16:00 ET**: Enhanced data processing and statistics:
+  - Added dealer filtering for runs_timeseries.parquet (only BMO, NBF, RBC, TD dealers stored)
+  - Added numeric conversion for years columns: `Yrs Since Issue`, `Yrs (Worst)`, and `Yrs (Cvn)` are always stored as numeric (`float64`) in parquet files
+  - Conversion happens at multiple points (transform and load) to ensure consistency
+  - Updated enhanced statistics to use `Yrs (Cvn)` instead of `Yrs (Worst)` for binning analysis
+  - Statistics now include proper binning with `<1` bin to capture negative and small values
 
