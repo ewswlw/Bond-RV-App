@@ -120,7 +120,14 @@ class ParquetLoader:
         # Combine new data
         new_df = pd.concat(non_empty_dfs, ignore_index=True)
 
-        # Convert all object columns to string to avoid type inference issues
+        # Convert years columns to numeric FIRST (before general object conversion)
+        years_columns = ['Yrs Since Issue', 'Yrs (Worst)', 'Yrs (Cvn)']
+        for col in years_columns:
+            if col in new_df.columns:
+                new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
+                self.logger.info(f"Converted new data '{col}' to numeric in append mode")
+
+        # Convert all other object columns to string to avoid type inference issues
         for col in new_df.columns:
             if new_df[col].dtype == 'object':
                 new_df[col] = new_df[col].astype(str).replace(['nan', '<NA>', 'None'], pd.NA)
@@ -146,6 +153,14 @@ class ParquetLoader:
                         )
                         # Remove any None values (unparseable strings)
                         existing_df = existing_df[existing_df[DATE_COLUMN].notna()]
+                
+                # Convert years columns to numeric if they exist (for compatibility with new numeric format)
+                years_columns = ['Yrs Since Issue', 'Yrs (Worst)', 'Yrs (Cvn)']
+                for col in years_columns:
+                    if col in existing_df.columns:
+                        if existing_df[col].dtype == 'object':
+                            existing_df[col] = pd.to_numeric(existing_df[col], errors='coerce')
+                            self.logger.info(f"Converted existing '{col}' to numeric for compatibility")
                 
                 # Combine
                 combined_df = pd.concat([existing_df, new_df], ignore_index=True)
@@ -197,7 +212,14 @@ class ParquetLoader:
         # Combine all data
         combined_df = pd.concat(non_empty_dfs, ignore_index=True)
         
-        # Convert all object columns to string to avoid type inference issues
+        # Convert years columns to numeric FIRST (before general object conversion)
+        years_columns = ['Yrs Since Issue', 'Yrs (Worst)', 'Yrs (Cvn)']
+        for col in years_columns:
+            if col in combined_df.columns:
+                combined_df[col] = pd.to_numeric(combined_df[col], errors='coerce')
+                self.logger.info(f"Converted '{col}' to numeric in override mode")
+        
+        # Convert all other object columns to string to avoid type inference issues
         for col in combined_df.columns:
             if combined_df[col].dtype == 'object':
                 combined_df[col] = combined_df[col].astype(str).replace(['nan', '<NA>', 'None'], pd.NA)

@@ -22,6 +22,7 @@ from .config import (
     BQL_OUTPUT_COLUMNS,
     BQL_VALUE_COLUMN_NAME,
     CUSIP_LENGTH,
+    DATE_COLUMN,
     FILE_PATTERN,
     HISTORICAL_PARQUET,
     LOG_ARCHIVE_DIR,
@@ -29,6 +30,7 @@ from .config import (
     LOG_ROTATION_RUNS,
     LOG_FILE_PARQUET_STATS,
     NA_VALUES,
+    PARQUET_DIR,
     RUNS_DATE_FORMAT,
     RUNS_KNOWN_DEALERS,
     RUNS_TIME_FORMAT,
@@ -879,6 +881,438 @@ def log_parquet_diagnostics(log_file: Optional[Path] = None) -> None:
             _log_info("Tail (3 rows): <empty>")
 
     _log_info("=" * 80)
+    
+    # Generate enhanced statistics
+    log_enhanced_parquet_stats(logger, _sanitize_text, _log_info)
+
+
+def log_enhanced_parquet_stats(
+    logger: logging.Logger,
+    sanitize_func,
+    log_func
+) -> None:
+    """
+    Generate and log enhanced statistics for parquet datasets.
+    
+    Args:
+        logger: Logger instance for warnings/errors
+        sanitize_func: Function to sanitize text for ASCII compatibility
+        log_func: Function to log info messages
+    """
+    log_func("")
+    log_func("=" * 80)
+    log_func("ENHANCED PARQUET STATISTICS")
+    log_func("=" * 80)
+    
+    try:
+        # Helper function to format numbers with commas
+        def fmt_num(n):
+            return f"{int(n):,}" if pd.notna(n) else "0"
+        
+        # Helper function to format percentages
+        def fmt_pct(n, total):
+            if total == 0 or pd.isna(n) or pd.isna(total):
+                return "0.00%"
+            return f"{(n / total * 100):.2f}%"
+        
+        # Helper function to create CSV-like table
+        def create_table(headers, rows):
+            """Create a CSV-like formatted table."""
+            if not rows:
+                return "No data"
+            
+            # Calculate column widths
+            col_widths = [len(str(h)) for h in headers]
+            for row in rows:
+                for i, val in enumerate(row):
+                    if i < len(col_widths):
+                        col_widths[i] = max(col_widths[i], len(str(val)))
+            
+            # Create header row
+            header_row = " | ".join(str(h).ljust(col_widths[i]) for i, h in enumerate(headers))
+            separator = "-" * len(header_row)
+            
+            # Create data rows
+            data_rows = []
+            for row in rows:
+                data_row = " | ".join(str(val).ljust(col_widths[i]) for i, val in enumerate(row))
+                data_rows.append(data_row)
+            
+            return "\n".join([header_row, separator] + data_rows)
+        
+        # ========================================================================
+        # BQL Statistics
+        # ========================================================================
+        log_func("")
+        log_func("-" * 80)
+        log_func("BQL PARQUET STATISTICS")
+        log_func("-" * 80)
+        
+        if BQL_PARQUET.exists():
+            try:
+                df_bql = pd.read_parquet(BQL_PARQUET)
+                
+                # 1. Total unique CUSIPs
+                unique_cusips = df_bql['CUSIP'].nunique() if 'CUSIP' in df_bql.columns else 0
+                log_func(f"1) Total # of unique CUSIP: {fmt_num(unique_cusips)}")
+                
+                # 2. % of Value with NA's and which Name had the most
+                if 'Value' in df_bql.columns:
+                    total_rows = len(df_bql)
+                    na_rows = df_bql['Value'].isna().sum()
+                    na_pct = fmt_pct(na_rows, total_rows)
+                    log_func(f"2) % of Value with NA's: {na_pct} ({fmt_num(na_rows)} out of {fmt_num(total_rows)})")
+                    
+                    # Find Name with most NA values
+                    if 'Name' in df_bql.columns:
+                        name_na_counts = df_bql[df_bql['Value'].isna()].groupby('Name').size()
+                        if len(name_na_counts) > 0:
+                            name_with_most = name_na_counts.idxmax()
+                            count_most = name_na_counts.max()
+                            log_func(f"   Name with most NA values: {sanitize_func(str(name_with_most))} ({fmt_num(count_most)} NA values)")
+                        else:
+                            log_func("   Name with most NA values: None (no NA values)")
+                    else:
+                        logger.warning("   'Name' column not found in bql.parquet")
+                else:
+                    logger.warning("   'Value' column not found in bql.parquet")
+                    
+            except Exception as exc:
+                logger.error(f"Failed to read bql.parquet for enhanced stats: {exc}")
+        else:
+            logger.warning("bql.parquet not found, skipping BQL statistics")
+        
+        # ========================================================================
+        # Historical Bond Details Statistics
+        # ========================================================================
+        log_func("")
+        log_func("-" * 80)
+        log_func("HISTORICAL BOND DETAILS STATISTICS")
+        log_func("-" * 80)
+        
+        if HISTORICAL_PARQUET.exists():
+            try:
+                df_hist = pd.read_parquet(HISTORICAL_PARQUET)
+                
+                # 1. Total unique CUSIPs
+                unique_cusips = df_hist['CUSIP'].nunique() if 'CUSIP' in df_hist.columns else 0
+                log_func(f"1) Total # of unique CUSIP: {fmt_num(unique_cusips)}")
+                
+                # 2. List all unique values of Custom_Sector
+                if 'Custom_Sector' in df_hist.columns:
+                    sectors = df_hist['Custom_Sector'].dropna().unique()
+                    sectors_sorted = sorted([str(s) for s in sectors])
+                    log_func(f"2) Unique values of 'Custom_Sector': {len(sectors_sorted)}")
+                    log_func(f"   {', '.join([sanitize_func(s) for s in sectors_sorted])}")
+                else:
+                    logger.warning("   'Custom_Sector' column not found in historical_bond_details.parquet")
+                
+                # 3. On last Date, show CUSIP counts by Yrs Since Issue bins
+                if DATE_COLUMN in df_hist.columns:
+                    max_date = df_hist[DATE_COLUMN].max()
+                    last_date_df = df_hist[df_hist[DATE_COLUMN] == max_date].copy()
+                    
+                    log_func(f"3) Statistics for last Date: {max_date}")
+                    
+                    if 'Yrs Since Issue' in last_date_df.columns:
+                        # Convert to numeric if not already
+                        last_date_df['Yrs Since Issue'] = pd.to_numeric(
+                            last_date_df['Yrs Since Issue'], errors='coerce'
+                        )
+                        
+                        # Filter to rows with valid values
+                        valid_df = last_date_df[last_date_df['Yrs Since Issue'].notna()].copy()
+                        
+                        bins = [
+                            (float('-inf'), 1, "<1"),
+                            (1, 2, "1-2"),
+                            (2, 3, "2-3"),
+                            (3, 4, "3-4"),
+                            (4, 5, "4-5"),
+                            (5, float('inf'), ">5")
+                        ]
+                        
+                        log_func("   Yrs Since Issue bins (unique CUSIPs):")
+                        for min_val, max_val, label in bins:
+                            if min_val == float('-inf'):
+                                filtered_df = valid_df[valid_df['Yrs Since Issue'] < max_val]
+                            elif max_val == float('inf'):
+                                filtered_df = valid_df[valid_df['Yrs Since Issue'] > min_val]
+                            else:
+                                filtered_df = valid_df[
+                                    (valid_df['Yrs Since Issue'] >= min_val) & 
+                                    (valid_df['Yrs Since Issue'] < max_val)
+                                ]
+                            count = filtered_df['CUSIP'].nunique()
+                            log_func(f"     {label}: {fmt_num(count)}")
+                    else:
+                        logger.warning("   'Yrs Since Issue' column not found")
+                    
+                    # 4. On last Date, show CUSIP counts by Yrs (Cvn) bins
+                    if 'Yrs (Cvn)' in last_date_df.columns:
+                        # Convert to numeric if not already
+                        last_date_df['Yrs (Cvn)'] = pd.to_numeric(
+                            last_date_df['Yrs (Cvn)'], errors='coerce'
+                        )
+                        
+                        # Filter to rows with valid values
+                        valid_df = last_date_df[last_date_df['Yrs (Cvn)'].notna()].copy()
+                        
+                        bins = [
+                            (float('-inf'), 1, "<1"),
+                            (1, 2, "1-2"),
+                            (2, 3, "2-3"),
+                            (3, 4, "3-4"),
+                            (4, 5, "4-5"),
+                            (5, float('inf'), ">5")
+                        ]
+                        
+                        log_func("   Yrs (Cvn) bins (unique CUSIPs):")
+                        for min_val, max_val, label in bins:
+                            if min_val == float('-inf'):
+                                filtered_df = valid_df[valid_df['Yrs (Cvn)'] < max_val]
+                            elif max_val == float('inf'):
+                                filtered_df = valid_df[valid_df['Yrs (Cvn)'] > min_val]
+                            else:
+                                filtered_df = valid_df[
+                                    (valid_df['Yrs (Cvn)'] >= min_val) & 
+                                    (valid_df['Yrs (Cvn)'] < max_val)
+                                ]
+                            count = filtered_df['CUSIP'].nunique()
+                            log_func(f"     {label}: {fmt_num(count)}")
+                    else:
+                        logger.warning("   'Yrs (Cvn)' column not found")
+                else:
+                    logger.warning("   'Date' column not found in historical_bond_details.parquet")
+                    
+            except Exception as exc:
+                logger.error(f"Failed to read historical_bond_details.parquet for enhanced stats: {exc}")
+        else:
+            logger.warning("historical_bond_details.parquet not found, skipping historical statistics")
+        
+        # ========================================================================
+        # Runs Timeseries Statistics
+        # ========================================================================
+        log_func("")
+        log_func("-" * 80)
+        log_func("RUNS TIMESERIES STATISTICS")
+        log_func("-" * 80)
+        
+        if RUNS_PARQUET.exists():
+            try:
+                df_runs = pd.read_parquet(RUNS_PARQUET)
+                
+                # 1. List all unique values for Date
+                if 'Date' in df_runs.columns:
+                    unique_dates = sorted(df_runs['Date'].dropna().unique())
+                    log_func(f"1) Unique values for Date: {len(unique_dates)} dates")
+                    date_strs = [str(d) for d in unique_dates]
+                    # Split into chunks for readability
+                    chunk_size = 10
+                    for i in range(0, len(date_strs), chunk_size):
+                        chunk = date_strs[i:i+chunk_size]
+                        log_func(f"   {', '.join(chunk)}")
+                else:
+                    logger.warning("   'Date' column not found in runs_timeseries.parquet")
+                
+                # 2. List all unique values for Dealer
+                if 'Dealer' in df_runs.columns:
+                    unique_dealers = sorted(df_runs['Dealer'].dropna().unique())
+                    log_func(f"2) Unique values for Dealer: {len(unique_dealers)} dealers")
+                    log_func(f"   {', '.join([sanitize_func(str(d)) for d in unique_dealers])}")
+                else:
+                    logger.warning("   'Dealer' column not found in runs_timeseries.parquet")
+                
+                # 3. Table: Total # of unique CUSIP by each Dealer on each Date (wide format)
+                if 'Date' in df_runs.columns and 'Dealer' in df_runs.columns and 'CUSIP' in df_runs.columns:
+                    # Create pivot table: Date (rows) x Dealer (columns) = unique CUSIP count
+                    pivot_data = df_runs.groupby(['Date', 'Dealer'])['CUSIP'].nunique().reset_index()
+                    pivot_table = pivot_data.pivot(index='Date', columns='Dealer', values='CUSIP').fillna(0)
+                    
+                    # Sort dates
+                    pivot_table = pivot_table.sort_index()
+                    
+                    # Format as CSV-like table
+                    log_func("3) Unique CUSIP count by Dealer and Date (wide format):")
+                    
+                    # Get all dealers (columns)
+                    dealers = sorted(pivot_table.columns.tolist())
+                    headers = ['Date'] + [sanitize_func(str(d)) for d in dealers]
+                    
+                    # Build rows
+                    rows = []
+                    for date in pivot_table.index:
+                        row = [str(date)]
+                        for dealer in dealers:
+                            count = int(pivot_table.loc[date, dealer])
+                            row.append(fmt_num(count))
+                        rows.append(row)
+                    
+                    # Create and log table
+                    table_str = create_table(headers, rows)
+                    for line in table_str.splitlines():
+                        log_func(f"   {line}")
+                else:
+                    logger.warning("   Required columns (Date, Dealer, CUSIP) not found for pivot table")
+                    
+            except Exception as exc:
+                logger.error(f"Failed to read runs_timeseries.parquet for enhanced stats: {exc}")
+        else:
+            logger.warning("runs_timeseries.parquet not found, skipping runs statistics")
+        
+        # ========================================================================
+        # Universe Statistics
+        # ========================================================================
+        log_func("")
+        log_func("-" * 80)
+        log_func("UNIVERSE PARQUET STATISTICS")
+        log_func("-" * 80)
+        
+        if UNIVERSE_PARQUET.exists():
+            try:
+                df_univ = pd.read_parquet(UNIVERSE_PARQUET)
+                
+                # 1. Total unique CUSIPs
+                unique_cusips = df_univ['CUSIP'].nunique() if 'CUSIP' in df_univ.columns else 0
+                log_func(f"1) Total # of unique CUSIP: {fmt_num(unique_cusips)}")
+                
+                # 2. List all unique values of Custom_Sector
+                if 'Custom_Sector' in df_univ.columns:
+                    sectors = df_univ['Custom_Sector'].dropna().unique()
+                    sectors_sorted = sorted([str(s) for s in sectors])
+                    log_func(f"2) Unique values of 'Custom_Sector': {len(sectors_sorted)}")
+                    log_func(f"   {', '.join([sanitize_func(s) for s in sectors_sorted])}")
+                else:
+                    logger.warning("   'Custom_Sector' column not found in universe.parquet")
+                
+                # 3. Table: Custom_Sector and total # of unique CUSIP by Custom_Sector
+                if 'Custom_Sector' in df_univ.columns and 'CUSIP' in df_univ.columns:
+                    sector_counts = df_univ.groupby('Custom_Sector')['CUSIP'].nunique().reset_index()
+                    sector_counts.columns = ['Custom_Sector', 'Unique_CUSIP_Count']
+                    sector_counts = sector_counts.sort_values('Custom_Sector')
+                    
+                    log_func("3) Unique CUSIP count by Custom_Sector:")
+                    headers = ['Custom_Sector', 'Unique_CUSIP_Count']
+                    rows = [
+                        [sanitize_func(str(row['Custom_Sector'])), fmt_num(row['Unique_CUSIP_Count'])]
+                        for _, row in sector_counts.iterrows()
+                    ]
+                    table_str = create_table(headers, rows)
+                    for line in table_str.splitlines():
+                        log_func(f"   {line}")
+                else:
+                    logger.warning("   Required columns (Custom_Sector, CUSIP) not found for sector table")
+                    
+            except Exception as exc:
+                logger.error(f"Failed to read universe.parquet for enhanced stats: {exc}")
+        else:
+            logger.warning("universe.parquet not found, skipping universe statistics")
+        
+        # ========================================================================
+        # Orphan CUSIP Detection
+        # ========================================================================
+        log_func("")
+        log_func("-" * 80)
+        log_func("ORPHAN CUSIP DETECTION")
+        log_func("-" * 80)
+        log_func("Checking all parquet files with CUSIP columns against universe.parquet")
+        
+        if not UNIVERSE_PARQUET.exists():
+            logger.warning("universe.parquet not found, cannot check for orphan CUSIPs")
+        else:
+            try:
+                # Read universe CUSIPs
+                df_univ = pd.read_parquet(UNIVERSE_PARQUET, columns=['CUSIP'])
+                universe_cusips = set(df_univ['CUSIP'].dropna().unique())
+                log_func(f"Universe contains {fmt_num(len(universe_cusips))} unique CUSIPs")
+                
+                # Find all parquet files with CUSIP columns
+                parquet_dir = PARQUET_DIR
+                parquet_files = list(parquet_dir.glob("*.parquet"))
+                
+                all_orphans = []
+                
+                for parquet_file in parquet_files:
+                    # Skip universe itself
+                    if parquet_file.name == "universe.parquet":
+                        continue
+                    
+                    try:
+                        # Read parquet file to check columns
+                        df_full = pd.read_parquet(parquet_file)
+                        
+                        # Check for CUSIP column (case-insensitive)
+                        cusip_col = None
+                        for col in df_full.columns:
+                            if col.lower() in ['cusip', 'cusips']:
+                                cusip_col = col
+                                break
+                        
+                        if cusip_col:
+                            file_cusips = set(df_full[cusip_col].dropna().unique())
+                            orphans_in_file = file_cusips - universe_cusips
+                            
+                            if orphans_in_file:
+                                log_func(f"\nFound {fmt_num(len(orphans_in_file))} orphan CUSIPs in {parquet_file.name}")
+                                
+                                # Get name/security column
+                                name_col = None
+                                for col in df_full.columns:
+                                    if col.lower() in ['name', 'security']:
+                                        name_col = col
+                                        break
+                                
+                                # Get orphan rows
+                                orphan_df = df_full[df_full[cusip_col].isin(orphans_in_file)]
+                                
+                                # Group by CUSIP and get first occurrence
+                                orphan_summary = orphan_df.groupby(cusip_col).first().reset_index()
+                                
+                                # Create table
+                                table_headers = ['Table', 'CUSIP']
+                                if name_col:
+                                    table_headers.append('Name/Security')
+                                
+                                table_rows = []
+                                for _, row in orphan_summary.iterrows():
+                                    table_row = [parquet_file.name, str(row[cusip_col])]
+                                    if name_col:
+                                        name_val = row[name_col]
+                                        if pd.notna(name_val):
+                                            table_row.append(sanitize_func(str(name_val)))
+                                        else:
+                                            table_row.append("N/A")
+                                    table_rows.append(table_row)
+                                
+                                # Log table
+                                table_str = create_table(table_headers, table_rows)
+                                for line in table_str.splitlines():
+                                    log_func(f"   {line}")
+                                
+                                all_orphans.extend(orphans_in_file)
+                            else:
+                                log_func(f"{parquet_file.name}: No orphan CUSIPs found")
+                        else:
+                            log_func(f"{parquet_file.name}: No CUSIP column found, skipping")
+                            
+                    except Exception as exc:
+                        logger.warning(f"Failed to check {parquet_file.name} for orphans: {exc}")
+                
+                if all_orphans:
+                    log_func(f"\nTotal unique orphan CUSIPs across all files: {fmt_num(len(set(all_orphans)))}")
+                else:
+                    log_func("\nNo orphan CUSIPs found in any parquet files")
+                    
+            except Exception as exc:
+                logger.error(f"Failed to check for orphan CUSIPs: {exc}")
+        
+        log_func("")
+        log_func("=" * 80)
+        log_func("END OF ENHANCED STATISTICS")
+        log_func("=" * 80)
+        
+    except Exception as exc:
+        logger.error(f"Error generating enhanced statistics: {exc}")
 
 
 # ============================================================================

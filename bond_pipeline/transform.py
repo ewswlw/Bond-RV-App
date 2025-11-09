@@ -172,6 +172,31 @@ class DataTransformer:
         
         return df_deduped
     
+    def convert_years_to_numeric(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert 'Yrs Since Issue', 'Yrs (Worst)', and 'Yrs (Cvn)' columns to numeric.
+        
+        Args:
+            df: DataFrame to convert
+        
+        Returns:
+            DataFrame with numeric years columns
+        """
+        years_columns = ['Yrs Since Issue', 'Yrs (Worst)', 'Yrs (Cvn)']
+        
+        for col in years_columns:
+            if col in df.columns:
+                # Convert to numeric, coercing errors to NaN
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+                converted_count = df[col].notna().sum()
+                self.logger_valid.info(
+                    f"Converted '{col}' to numeric: {converted_count} valid values out of {len(df)}"
+                )
+            else:
+                self.logger_valid.debug(f"Column '{col}' not found, skipping numeric conversion")
+        
+        return df
+    
     def clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Clean data by replacing NA values.
@@ -219,7 +244,10 @@ class DataTransformer:
         # 3. Clean NA values
         df = self.clean_data(df)
         
-        # 4. Align to master schema
+        # 4. Convert years columns to numeric
+        df = self.convert_years_to_numeric(df)
+        
+        # 5. Align to master schema
         df = self.align_schema(df)
         
         return df

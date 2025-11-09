@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-09 14:00 ET - Individual Parquet Regeneration & Unicode Logging Fixes  
+**Last Updated**: 2025-11-09 15:30 ET - Analytics Folder Structure & All Combinations Script  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -414,6 +414,12 @@ poetry run pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_c
 ### Directory Structure
 ```
 Bond-RV-App/
+├── analytics/             # Analytics scripts and processed outputs
+│   ├── cr01_comb.py      # CR01 pair analytics (BQL universe vs holdings spreads)
+│   ├── all_comb.py       # All combinations pair analytics (all CAD CUSIPs)
+│   └── processed_data/   # CSV outputs from analytics scripts
+│       ├── cr01_pair_analytics.csv
+│       └── all_comb.csv
 ├── bond_pipeline/          # Pipeline code (7 modules)
 ├── bond_data/              # Data directory (local only, git-ignored)
 │   ├── parquet/           # Output parquet files
@@ -433,8 +439,7 @@ Bond-RV-App/
 ├── poetry.lock            # Locked dependency versions
 ├── requirements.txt       # Legacy dependency snapshot (reference only)
 ├── README.md              # Project overview
-├── run_pipeline.py        # Simple pipeline runner
-└── cr01_comb.py           # CR01 pair analytics (BQL universe vs holdings table)
+└── run_pipeline.py        # Simple pipeline runner
 ```
 
 ### File Naming Conventions
@@ -795,8 +800,8 @@ pytest tests/unit/test_utils.py -v
 - **2025-11-08 11:30 ET**: Added VS Code workspace settings to pin notebooks to the Poetry-managed `.venv` interpreter
 - **2025-11-08 11:35 ET**: Added `notebook` dev dependency to ensure VS Code can start a local Jupyter server from the Poetry environment
 - **2025-11-09 13:30 ET**: Optimized RUNS append flow (skip fully loaded files, new load metrics), enhanced run summaries, and introduced `parquet_stats.log` diagnostics
-- **2025-11-09 07:25 ET**: Added `cr01_comb.py` CR01 pair analytics script (BQL universe vs holdings spreads) exporting CSVs to `bond_data/one off csvs/`
-  - Exports single CSV file `cr01_pair_analytics.csv` that overwrites on each run (no timestamps)
+- **2025-11-09 07:25 ET**: Added `cr01_comb.py` CR01 pair analytics script (BQL universe vs holdings spreads) - **MOVED to `analytics/cr01_comb.py` on 2025-11-09 15:30 ET**
+  - Exports single CSV file `cr01_pair_analytics.csv` to `analytics/processed_data/` (overwrites on each run, no timestamps)
   - Computes pairwise spreads (universe minus holdings) with statistical metrics (Last, Avg, vs Avg, Z Score, Percentile)
 - **2025-11-09 13:30 ET**: Updated BQL workbook processing to handle 4-row multi-index header:
   - Modified `read_bql_workbook` to read with `header=[0,1,2,3]` for multi-index columns
@@ -811,4 +816,15 @@ pytest tests/unit/test_utils.py -v
   - Added individual parquet file regeneration option (option 4) to `run_pipeline.py`:
     - Allows regenerating `historical_bond_details.parquet`, `bql.parquet`, or `runs_timeseries.parquet` independently
     - Useful for quick fixes or testing without running full pipelines
+- **2025-11-09 15:30 ET**: Created analytics folder structure and pair analytics scripts:
+  - Created `analytics/` folder with `processed_data/` subfolder for CSV outputs
+  - Moved `cr01_comb.py` from root to `analytics/cr01_comb.py` with updated paths (script-relative path resolution)
+  - Created `analytics/all_comb.py` - all combinations pair analytics script:
+    - Computes all pairwise spreads from BQL parquet data (all CAD CUSIPs)
+    - Filters to CAD CUSIPs from `historical_bond_details.parquet` (Currency="CAD" on last date)
+    - Filters to CUSIPs present in most recent 75% of dates with complete data
+    - Uses vectorized numpy operations for performance optimization
+    - Outputs top 80 pairs sorted by Z Score to `all_comb.csv`
+    - Column names: `Bond_1`, `Bond_2`, `cusip_1`, `cusip_2` (instead of universe/holdings naming)
+  - Both scripts use script-relative path resolution for portability
 

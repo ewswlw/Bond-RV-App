@@ -17,6 +17,9 @@ from bond_pipeline.utils import (
     format_date_string
 )
 
+# Allowed dealers for runs_timeseries.parquet
+ALLOWED_DEALERS = ['BMO', 'NBF', 'RBC', 'TD']
+
 
 @dataclass
 class LoadResult:
@@ -254,9 +257,20 @@ class RunsLoader:
 
             if bond_config.RUNS_PARQUET.exists():
                 existing_df = pd.read_parquet(bond_config.RUNS_PARQUET)
+                
+                # Filter existing data to only allowed dealers
+                if 'Dealer' in existing_df.columns:
+                    before_filter = len(existing_df)
+                    existing_df = existing_df[existing_df['Dealer'].isin(ALLOWED_DEALERS)].copy()
+                    filtered_existing = before_filter - len(existing_df)
+                    if filtered_existing > 0:
+                        self.logger.info(
+                            f"Filtered out {filtered_existing} existing rows from dealers not in {ALLOWED_DEALERS}"
+                        )
+                
                 existing_rows = len(existing_df)
                 self.logger.info(
-                    f"Loaded existing parquet: {existing_rows} rows"
+                    f"Loaded existing parquet: {existing_rows} rows (after dealer filter)"
                 )
 
                 existing_dupes = existing_df.duplicated(
@@ -291,6 +305,17 @@ class RunsLoader:
                 )
 
             write_df = write_df.copy()
+            
+            # Filter to only allowed dealers
+            if 'Dealer' in write_df.columns:
+                before_filter = len(write_df)
+                write_df = write_df[write_df['Dealer'].isin(ALLOWED_DEALERS)].copy()
+                filtered_out = before_filter - len(write_df)
+                if filtered_out > 0:
+                    self.logger.info(
+                        f"Filtered out {filtered_out} rows from dealers not in {ALLOWED_DEALERS}"
+                    )
+            
             if 'Time' in write_df.columns:
                 write_df['Time'] = write_df['Time'].apply(
                     lambda x: x.strftime('%H:%M')
@@ -357,6 +382,17 @@ class RunsLoader:
                 self.logger.info("Deleted existing runs parquet before overwrite")
 
             data_write = data.copy()
+            
+            # Filter to only allowed dealers
+            if 'Dealer' in data_write.columns:
+                before_filter = len(data_write)
+                data_write = data_write[data_write['Dealer'].isin(ALLOWED_DEALERS)].copy()
+                filtered_out = before_filter - len(data_write)
+                if filtered_out > 0:
+                    self.logger.info(
+                        f"Filtered out {filtered_out} rows from dealers not in {ALLOWED_DEALERS}"
+                    )
+            
             if 'Time' in data_write.columns:
                 data_write['Time'] = data_write['Time'].apply(
                     lambda x: x.strftime('%H:%M')

@@ -1,48 +1,8 @@
 {
-  "last_run_id": 116,
-  "last_run_time": "2025-11-09T08:35:41.929800",
-  "last_run_mode": "append",
+  "last_run_id": 124,
+  "last_run_time": "2025-11-09T12:21:07.592760",
+  "last_run_mode": "override",
   "run_history": [
-    {
-      "run_id": 107,
-      "timestamp": "2025-11-08T21:23:33.233086",
-      "mode": "append"
-    },
-    {
-      "run_id": 108,
-      "timestamp": "2025-11-08T21:23:45.996915",
-      "mode": "append"
-    },
-    {
-      "run_id": 109,
-      "timestamp": "2025-11-08T21:43:49.519623",
-      "mode": "append"
-    },
-    {
-      "run_id": 110,
-      "timestamp": "2025-11-08T21:44:01.661504",
-      "mode": "append"
-    },
-    {
-      "run_id": 111,
-      "timestamp": "2025-11-08T21:46:37.200746",
-      "mode": "append"
-    },
-    {
-      "run_id": 112,
-      "timestamp": "2025-11-08T21:46:57.132191",
-      "mode": "append"
-    },
-    {
-      "run_id": 113,
-      "timestamp": "2025-11-08T21:47:45.648610",
-      "mode": "append"
-    },
-    {
-      "run_id": 114,
-      "timestamp": "2025-11-08T21:49:34.960116",
-      "mode": "append"
-    },
     {
       "run_id": 115,
       "timestamp": "2025-11-09T08:35:29.791955",
@@ -52,6 +12,46 @@
       "run_id": 116,
       "timestamp": "2025-11-09T08:35:41.929800",
       "mode": "append"
+    },
+    {
+      "run_id": 117,
+      "timestamp": "2025-11-09T12:01:36.142850",
+      "mode": "append"
+    },
+    {
+      "run_id": 118,
+      "timestamp": "2025-11-09T12:01:48.387348",
+      "mode": "append"
+    },
+    {
+      "run_id": 119,
+      "timestamp": "2025-11-09T12:04:25.378000",
+      "mode": "override"
+    },
+    {
+      "run_id": 120,
+      "timestamp": "2025-11-09T12:04:40.498358",
+      "mode": "override"
+    },
+    {
+      "run_id": 121,
+      "timestamp": "2025-11-09T12:14:28.324203",
+      "mode": "override"
+    },
+    {
+      "run_id": 122,
+      "timestamp": "2025-11-09T12:14:43.369392",
+      "mode": "override"
+    },
+    {
+      "run_id": 123,
+      "timestamp": "2025-11-09T12:20:52.342565",
+      "mode": "override"
+    },
+    {
+      "run_id": 124,
+      "timestamp": "2025-11-09T12:21:07.592760",
+      "mode": "override"
     }
   ]
 }
