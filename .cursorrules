@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-09 16:00 ET - Dealer Filtering & Numeric Column Conversion  
+**Last Updated**: 2025-11-09 17:00 ET - Runs Adjusted Timeseries Analytics Script  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -428,9 +428,11 @@ Bond-RV-App/
 ├── analytics/             # Analytics scripts and processed outputs
 │   ├── cr01_comb.py      # CR01 pair analytics (BQL universe vs holdings spreads)
 │   ├── all_comb.py       # All combinations pair analytics (all CAD CUSIPs)
+│   ├── runs-adjusted_ts.py  # Runs adjusted timeseries analytics (Date+CUSIP+Benchmark aggregation)
 │   └── processed_data/   # CSV outputs from analytics scripts
 │       ├── cr01_pair_analytics.csv
-│       └── all_comb.csv
+│       ├── all_comb.csv
+│       └── runs_adjusted_ts.csv
 ├── bond_pipeline/          # Pipeline code (7 modules)
 ├── bond_data/              # Data directory (local only, git-ignored)
 │   ├── parquet/           # Output parquet files
@@ -844,4 +846,20 @@ pytest tests/unit/test_utils.py -v
   - Conversion happens at multiple points (transform and load) to ensure consistency
   - Updated enhanced statistics to use `Yrs (Cvn)` instead of `Yrs (Worst)` for binning analysis
   - Statistics now include proper binning with `<1` bin to capture negative and small values
+- **2025-11-09 17:00 ET**: Created runs adjusted timeseries analytics script:
+  - Created `analytics/runs-adjusted_ts.py` - runs timeseries aggregation script:
+    - Reads `runs_timeseries.parquet` and groups by Date, CUSIP, and Benchmark
+    - Computes 23 aggregated metrics including:
+      - Basic columns: Date, CUSIP, Time (latest), Bid Workout Risk (average), Security
+      - Spread metrics: Tight Bid >3mm, Wide Offer >3mm, Tight Bid, Wide Offer
+      - Dealer and size columns for >3mm metrics
+      - CR01 calculations: CR01 @ Tight Bid, CR01 @ Wide Offer (using Bid Workout Risk avg * Size / 10000)
+      - Cumulative sizes: Cumm. Bid Size, Cumm. Offer Size
+      - Counts: # of Bids >3mm, # of Offers >3mm (unique dealers)
+      - RBC dealer columns: Bid RBC, Ask RBC, Bid Size RBC, Offer Size RBC
+    - All numeric columns properly typed as `float64`
+    - Sorts by Date (earliest to latest)
+    - Exports to `runs_adjusted_ts.csv` in `analytics/processed_data/`
+    - Displays table preview and `df.info()` for validation
+    - Uses script-relative path resolution for portability
 
