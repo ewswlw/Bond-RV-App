@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-07 15:30 ET - Cursor AI Configuration  
+**Last Updated**: 2025-11-07 16:45 ET - Poetry Environment Migration  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -14,6 +14,7 @@
 - **Use judgment** when interpreting prompts (e.g., if algo trading prompt mentions volume but raw data only has price, ignore volume requirement)
 - **Always notify** user when ignoring requirements or using judgment in interpretation
 - **Always ask clarifying questions** in planning mode; keep asking until all possible questions covering virtually any ambiguity are answered
+- **Execute all project commands via** `poetry run ...` **(or inside an active** `poetry shell` **) to ensure the Poetry environment is used**
 
 ### File Change Summary
 - **After finishing requests** that add/edit files, show summary of:
@@ -77,12 +78,16 @@ This is a **modular data engineering pipeline** for processing bond data for rel
 - `pandas>=2.0.0` - Data manipulation
 - `pyarrow>=12.0.0` - Parquet I/O
 - `openpyxl>=3.1.0` - Excel reading
+- `ipykernel>=7.1.0` (dev) - Jupyter kernel integration for notebooks (added 2025-11-08 11:05 ET)
+- `nbconvert>=7.16.6` (dev) - Automated notebook execution (added 2025-11-08 11:20 ET)
+- `notebook>=7.4.7` (dev) - Local Jupyter server for VS Code kernel selection (added 2025-11-08 11:35 ET)
 - `pytest>=7.0.0` - Testing framework
 
 ### Environment Management
-- **Virtual environment**: `Bond-RV-App/` folder
-- **ALWAYS execute code in the current virtual environment**
-- **Install dependencies** via `pip install -r requirements.txt`
+- **Environment manager**: Poetry (`pyproject.toml`, `poetry.lock`)
+- **Virtual environment location**: `.venv/` (created via `poetry config virtualenvs.in-project true`)
+- **ALWAYS execute code with** `poetry run ...` or inside `poetry shell`
+- **Install dependencies** via `poetry install`
 
 ---
 
@@ -367,20 +372,20 @@ tests/
 
 ### Running Tests
 ```bash
-# Activate virtual environment
-Bond-RV-App\Scripts\activate  # Windows
+# Install dependencies (first run or after updates)
+poetry install
 
 # Run all tests
-pytest
+poetry run pytest
 
 # Run specific file
-pytest tests/unit/test_utils.py
+poetry run pytest tests/unit/test_utils.py
 
 # Run with coverage
-pytest --cov=bond_pipeline --cov-report=html
+poetry run pytest --cov=bond_pipeline --cov-report=html
 
 # Run specific test
-pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_cusip_valid
+poetry run pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_cusip_valid
 ```
 
 ---
@@ -394,6 +399,7 @@ Bond-RV-App/
 ├── bond_data/              # Data directory (local only, git-ignored)
 │   ├── parquet/           # Output parquet files
 │   └── logs/              # Processing logs
+├── .venv/                 # Poetry-managed virtual environment (git-ignored)
 ├── Documentation/          # Complete documentation
 │   ├── Setup/             # Getting started guides
 │   ├── Workflows/         # Step-by-step procedures
@@ -404,7 +410,9 @@ Bond-RV-App/
 ├── utils/                 # Utility scripts
 ├── .cursorrules           # This file
 ├── .cursorignore          # Files to ignore
-├── requirements.txt       # Python dependencies
+├── pyproject.toml         # Poetry project configuration
+├── poetry.lock            # Locked dependency versions
+├── requirements.txt       # Legacy dependency snapshot (reference only)
 ├── README.md              # Project overview
 └── run_pipeline.py        # Simple pipeline runner
 ```
@@ -435,7 +443,7 @@ Bond-RV-App/
 ### Git-Ignored Files
 - Excel files: `*.xlsx`, `*.xls`
 - Log files: `bond_data/logs/*.log`
-- Virtual environment: `Bond-RV-App/`
+- Virtual environment: `.venv/`
 - Python cache: `__pycache__/`, `*.pyc`
 - Test output: `tests/test_output/`
 - References folder: `References and Documentation/` (in .cursorignore)
@@ -445,7 +453,7 @@ Bond-RV-App/
 - Source code: `bond_pipeline/`, `utils/`
 - Tests: `tests/`
 - Documentation: `Documentation/`
-- Config: `requirements.txt`, `.cursorrules`, `.cursorignore`
+- Config: `pyproject.toml`, `poetry.lock`, `requirements.txt`, `.cursorrules`, `.cursorignore`
 - Scripts: `run_pipeline.py`
 
 ### Git Commit Protocol
@@ -507,28 +515,27 @@ Bond-RV-App/
 
 ### Running the Pipeline
 ```bash
-# 1. Activate virtual environment
-Bond-RV-App\Scripts\activate  # Windows
-source Bond-RV-App/bin/activate  # Mac/Linux
+# 1. Optionally enter Poetry shell
+poetry shell
 
 # 2. Run automated pipeline runner
-python run_pipeline.py
+poetry run python run_pipeline.py
 # Prompts: 1) Pipeline selection, 2) Mode (override/append), 3) (Bond) Include BQL workbook
 
 # 3. Or use direct CLI (Bond Pipeline)
 cd bond_pipeline
-python pipeline.py -i "../Raw Data/" -m append --process-bql
-python pipeline.py -i "../Raw Data/" -m override --process-bql
+poetry run python pipeline.py -i "../Raw Data/" -m append --process-bql
+poetry run python pipeline.py -i "../Raw Data/" -m override --process-bql
 
 # 4. Or use Python module (Bond Pipeline)
-python -m bond_pipeline.pipeline -i "Raw Data/" -m append
+poetry run python -m bond_pipeline.pipeline -i "Raw Data/" -m append
 
 # 5. Runs Pipeline CLI
-python -m runs_pipeline.pipeline -i "Historical Runs/" -m append
-python -m runs_pipeline.pipeline -i "Historical Runs/" -m override
+poetry run python -m runs_pipeline.pipeline -i "Historical Runs/" -m append
+poetry run python -m runs_pipeline.pipeline -i "Historical Runs/" -m override
 
 # 6. Unified Pipeline Orchestrator (Recommended)
-python run_pipeline.py
+poetry run python run_pipeline.py
 # Prompts: Select pipeline(s), choose mode, decide on BQL ingestion when running Bond pipeline
 ```
 
@@ -656,7 +663,7 @@ df_new.to_parquet(HISTORICAL_PARQUET, mode='overwrite', index=False)
 ```bash
 # Make sure you're in project root and virtual environment is activated
 cd Bond-RV-App
-Bond-RV-App\Scripts\activate
+poetry shell
 
 # Use module syntax for imports
 python -m bond_pipeline.pipeline
@@ -665,11 +672,10 @@ python -m bond_pipeline.pipeline
 ### Virtual Environment Issues
 ```bash
 # Reinstall dependencies
-pip install -r requirements.txt
+poetry install
 
-# Activate virtual environment if needed
-Bond-RV-App\Scripts\activate  # Windows
-source Bond-RV-App/bin/activate  # Mac/Linux
+# Spawn a Poetry-managed shell if needed
+poetry shell
 ```
 
 ### Test Discovery Issues
@@ -724,7 +730,7 @@ pytest tests/unit/test_utils.py -v
 ---
 
 **File Created**: January 2025  
-**Last Major Update**: 2025-11-07 15:30 ET  
+**Last Major Update**: 2025-11-08 11:30 ET  
 **Project**: Bond RV App - Data Pipeline  
 **Version**: 1.0
 
@@ -761,4 +767,10 @@ pytest tests/unit/test_utils.py -v
   - Updated CLI/orchestrator guidance with `--process-bql` flag and prompt
   - Captured orphan logging requirements (CUSIP + Name) for BQL dataset
   - Added testing coverage notes for BQL helpers in `tests/unit/test_utils.py`
+- **2025-11-07 16:20 ET**: Created/activated standard `Bond-RV-App` virtual environment and installed dependencies from `requirements.txt`
+- **2025-11-07 16:45 ET**: Migrated to Poetry-based workflow (`pyproject.toml`, `poetry.lock`, in-project `.venv`), updated execution/testing instructions, and removed legacy `Bond-RV-App/` virtualenv
+- **2025-11-08 11:05 ET**: Added `ipykernel` dev dependency and registered `Bond RV App (.venv)` Jupyter kernel for notebook execution
+- **2025-11-08 11:20 ET**: Added `nbconvert` dev dependency to support automated notebook execution for testing kernels
+- **2025-11-08 11:30 ET**: Added VS Code workspace settings to pin notebooks to the Poetry-managed `.venv` interpreter
+- **2025-11-08 11:35 ET**: Added `notebook` dev dependency to ensure VS Code can start a local Jupyter server from the Poetry environment
 

@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "bond-rv-app"
+version = "0.1.0"
+description = "Bond relative value data pipelines for bond and runs processing."
+authors = ["Eddy Winiarz"]
+readme = "README.md"
+packages = [
+    { include = "bond_pipeline" },
+    { include = "runs_pipeline" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pandas = ">=2.0.0"
+pyarrow = ">=12.0.0"
+openpyxl = ">=3.1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.0.0"
+pytest-cov = ">=4.0.0"
+pytest-mock = ">=3.10.0"
+ipykernel = "^7.1.0"
+nbconvert = "^7.16.6"
+notebook = "^7.4.7"
+
+[tool.poetry.scripts]
+run-pipeline = "run_pipeline:main"
+
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"
+
