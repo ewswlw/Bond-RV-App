@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-09 17:00 ET - Runs Adjusted Timeseries Analytics Script  
+**Last Updated**: 2025-11-09 18:00 ET - Runs Today Analytics Script  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -429,10 +429,12 @@ Bond-RV-App/
 │   ├── cr01_comb.py      # CR01 pair analytics (BQL universe vs holdings spreads)
 │   ├── all_comb.py       # All combinations pair analytics (all CAD CUSIPs)
 │   ├── runs-adjusted_ts.py  # Runs adjusted timeseries analytics (Date+CUSIP+Benchmark aggregation)
+│   ├── runs_today.py     # Runs today analytics (last date with DoD changes)
 │   └── processed_data/   # CSV outputs from analytics scripts
 │       ├── cr01_pair_analytics.csv
 │       ├── all_comb.csv
-│       └── runs_adjusted_ts.csv
+│       ├── runs_adjusted_ts.csv
+│       └── runs_today.csv
 ├── bond_pipeline/          # Pipeline code (7 modules)
 ├── bond_data/              # Data directory (local only, git-ignored)
 │   ├── parquet/           # Output parquet files
@@ -860,6 +862,23 @@ pytest tests/unit/test_utils.py -v
     - All numeric columns properly typed as `float64`
     - Sorts by Date (earliest to latest)
     - Exports to `runs_adjusted_ts.csv` in `analytics/processed_data/`
+    - Displays table preview and `df.info()` for validation
+    - Uses script-relative path resolution for portability
+- **2025-11-09 18:00 ET**: Created runs today analytics script:
+  - Created `analytics/runs_today.py` - daily runs analytics with Day-over-Day changes:
+    - Reads `runs_adjusted_ts.csv` and filters to most recent date
+    - Only includes CUSIPs present on both last date and second-to-last date
+    - Computes 41 columns including:
+      - Basic columns: CUSIP, Security, Bid Workout Risk
+      - Spread metrics: Tight Bid >3mm, Wide Offer >3mm, Bid/Offer>3mm, Tight Bid, Wide Offer, Bid/Offer
+      - Dealer columns: Current dealers and T-1 dealers (from second-to-last date)
+      - Size, CR01, cumulative, and count metrics
+      - RBC dealer columns
+      - 16 Day-over-Day (DoD) change columns (Last Date - Second Last Date)
+    - Bid/Offer calculations only populate when both source columns have values
+    - All DoD columns properly typed as `float64` (including integer columns)
+    - Sorts by CUSIP
+    - Exports to `runs_today.csv` in `analytics/processed_data/`
     - Displays table preview and `df.info()` for validation
     - Uses script-relative path resolution for portability
 
