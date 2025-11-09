@@ -17,9 +17,10 @@ from typing import Dict, Iterable, List, Optional
 import numpy as np
 import pandas as pd
 
-
-BQL_PARQUET_PATH = Path("bond_data/parquet/bql.parquet")
-OUTPUT_DIR = Path("bond_data/one off csvs")
+# Get script directory and build paths relative to it
+SCRIPT_DIR = Path(__file__).parent.resolve()
+BQL_PARQUET_PATH = SCRIPT_DIR.parent / "bond_data" / "parquet" / "bql.parquet"
+OUTPUT_DIR = SCRIPT_DIR / "processed_data"
 
 CR01_HOLDINGS_RAW: List[str] = [
     "13607PXH2 Corp",
