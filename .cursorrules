@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-XX XX:XX ET - CAD vs USD Pair Analytics Scripts (port_executable, cad_cheap_vs_usd, cad_rich_vs_usd)  
+**Last Updated**: 2025-01-XX XX:XX ET - Pair Analytics Scripts (term_comb, ticker_comb, custom_sector, custom_bond_comb)  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -428,6 +428,10 @@ Bond-RV-App/
 ├── analytics/             # Analytics scripts and processed outputs
 │   ├── cr01_comb.py      # CR01 pair analytics (BQL universe vs holdings spreads)
 │   ├── all_comb.py       # All combinations pair analytics (all CAD CUSIPs)
+│   ├── term_comb.py      # Term combinations pair analytics (filters pairs where abs(Yrs (Cvn) difference) <= 0.8)
+│   ├── ticker_comb.py    # Ticker combinations pair analytics (filters pairs where Ticker values match exactly)
+│   ├── custom_sector.py  # Custom sector combinations pair analytics (filters pairs where Custom_Sector values match exactly)
+│   ├── custom_bond_comb.py  # Custom bond combinations pair analytics (pairs all CAD CUSIPs with fixed target bond, configurable by Ticker or Security)
 │   ├── port_comb.py      # Portfolio combinations pair analytics (filters to portfolio CUSIPs as cusip_2)
 │   ├── port_executable.py  # Portfolio executable combinations pair analytics (filters cusip_1 by CR01 @ Wide Offer >= 2000, cusip_2 by portfolio)
 │   ├── cad_cheap_vs_usd.py  # CAD cheap vs USD pair analytics (CAD/USD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
@@ -437,6 +441,10 @@ Bond-RV-App/
 │   └── processed_data/   # CSV outputs from analytics scripts
 │       ├── cr01_pair_analytics.csv
 │       ├── all_comb.csv
+│       ├── term_comb.csv
+│       ├── ticker_comb.csv
+│       ├── custom_sector_comb.csv
+│       ├── custom_bond_comb.csv
 │       ├── port_comb.csv
 │       ├── port_executable.csv
 │       ├── cad_cheap_vs_usd.csv
@@ -929,4 +937,41 @@ pytest tests/unit/test_utils.py -v
     - Excludes CUSIPs with missing/null Currency, Ticker, Custom_Sector, or Yrs (Cvn)
     - Outputs top 80 pairs sorted by Z Score to `cad_rich_vs_usd.csv`
     - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created term combinations pair analytics script:
+  - Created `analytics/term_comb.py` - term combinations pair analytics script:
+    - Based on `all_comb.py` but adds pre-filtering by "Yrs (Cvn)" difference
+    - Filters pairs where `abs(yrs_cvn_1 - yrs_cvn_2) <= 0.8` before computing spreads
+    - Filters to CAD CUSIPs with valid "Yrs (Cvn)" data on last date
+    - Excludes CUSIPs without "Yrs (Cvn)" data
+    - Outputs top 80 pairs sorted by Z Score to `term_comb.csv`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created ticker combinations pair analytics script:
+  - Created `analytics/ticker_comb.py` - ticker combinations pair analytics script:
+    - Based on `all_comb.py` but adds pre-filtering by matching Ticker values
+    - Filters pairs where `ticker_1 == ticker_2` (exact match, case-sensitive) before computing spreads
+    - Filters to CAD CUSIPs with valid Ticker data on last date
+    - Excludes CUSIPs without Ticker data
+    - Outputs top 80 pairs sorted by Z Score to `ticker_comb.csv`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created custom sector combinations pair analytics script:
+  - Created `analytics/custom_sector.py` - custom sector combinations pair analytics script:
+    - Based on `all_comb.py` but adds pre-filtering by matching Custom_Sector values
+    - Filters pairs where `custom_sector_1 == custom_sector_2` (exact match, case-sensitive) before computing spreads
+    - Filters to CAD CUSIPs with valid Custom_Sector data on last date
+    - Excludes CUSIPs without Custom_Sector data
+    - Outputs top 80 pairs sorted by Z Score to `custom_sector_comb.csv`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created custom bond combinations pair analytics script:
+  - Created `analytics/custom_bond_comb.py` - custom bond combinations pair analytics script:
+    - Pairs all CAD CUSIPs (cusip_1) with a fixed target bond (cusip_2)
+    - Target bond configurable via `TARGET_BOND_TICKER` (takes precedence) or `TARGET_BOND_SECURITY`
+    - Searches `universe.parquet` for target bond(s) by Ticker (exact match) or Security name
+    - If Ticker specified and multiple bonds match, uses all matching CUSIPs (creates pairs for each)
+    - Falls back to Security name if Ticker not found (with warning)
+    - Displays Security name in Bond_2 column
+    - Filters to CAD CUSIPs present in most recent 75% of dates
+    - Validates target bond(s) have BQL data and are in recent dates
+    - Outputs all pairs sorted by Z Score to `custom_bond_comb.csv`
+    - Uses script-relative path resolution for portability
+    - Configuration section at top: `TARGET_BOND_TICKER`, `TARGET_BOND_SECURITY`, `RECENT_DATE_PERCENT`, `TOP_N_PAIRS`
 

@@ -5,8 +5,8 @@ This module reads `bond_data/parquet/bql.parquet`, filters CUSIPs present in the
 recent dates, computes all pairwise spreads, filters to pairs where cusip_1 has
 Currency="CAD" and cusip_2 has Currency="USD" with matching Ticker and Custom_Sector
 values and absolute difference in Yrs (Cvn) <= 2 (from the last date in
-historical_bond_details.parquet), and exports top 80 pairs sorted by Z Score for
-monitoring relative value opportunities.
+historical_bond_details.parquet), and exports all pairs sorted by Z Score to CSV.
+The top 80 pairs are displayed to console for monitoring relative value opportunities.
 """
 
 from __future__ import annotations
@@ -390,23 +390,24 @@ def run_analysis(
     if results_df.empty:
         raise ValueError("No pairs remaining after CAD/USD/Ticker/Custom_Sector/Yrs (Cvn) filtering!")
     
-    # Sort by Z Score descending, take top N
+    # Sort by Z Score descending
     print("Sorting results...")
     results_df = results_df.sort_values("Z Score", ascending=False, na_position="last")
-    top_results = results_df.head(top_n).copy()
     
-    # Ensure ASCII-safe names
+    # Ensure ASCII-safe names for all rows
     for column in ["Bond_1", "Bond_2"]:
-        top_results[column] = top_results[column].map(ensure_ascii)
+        results_df[column] = results_df[column].map(ensure_ascii)
     
-    # Write to CSV
+    # Write all rows to CSV
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "cad_cheap_vs_usd.csv"
-    top_results.to_csv(output_path, index=False)
+    results_df.to_csv(output_path, index=False)
     
+    # Display top N to console
+    top_results = results_df.head(top_n).copy()
     print(f"\nTop {len(top_results)} CAD vs USD Pair Analytics (by Z Score):")
     print(top_results.to_string(index=False))
-    print(f"\nCSV written to: {output_path}")
+    print(f"\nCSV written to: {output_path} (all {len(results_df):,} rows)")
     
     return top_results
 

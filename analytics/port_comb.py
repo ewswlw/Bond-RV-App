@@ -2,9 +2,9 @@
 Portfolio combinations pair analytics script.
 
 This module reads `bond_data/parquet/bql.parquet`, filters CUSIPs present in the most
-recent dates, computes all pairwise spreads, and exports top 80 pairs sorted by
-Z Score. After selecting top N pairs, filters to only pairs where cusip_2 is in
-the portfolio CUSIP list for monitoring relative value opportunities.
+recent dates, computes all pairwise spreads, filters to only pairs where cusip_2 is in
+the portfolio CUSIP list, and exports all pairs sorted by Z Score to CSV.
+The top 80 pairs are displayed to console for monitoring relative value opportunities.
 """
 
 from __future__ import annotations
@@ -442,23 +442,24 @@ def run_analysis(
     if results_df.empty:
         raise ValueError("No pairs remaining after portfolio filtering!")
     
-    # Sort by Z Score descending, take top N
+    # Sort by Z Score descending
     print("Sorting results...")
     results_df = results_df.sort_values("Z Score", ascending=False, na_position="last")
-    top_results = results_df.head(top_n).copy()
     
-    # Ensure ASCII-safe names
+    # Ensure ASCII-safe names for all rows
     for column in ["Bond_1", "Bond_2"]:
-        top_results[column] = top_results[column].map(ensure_ascii)
+        results_df[column] = results_df[column].map(ensure_ascii)
     
-    # Write to CSV
+    # Write all rows to CSV
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "port_comb.csv"
-    top_results.to_csv(output_path, index=False)
+    results_df.to_csv(output_path, index=False)
     
+    # Display top N to console
+    top_results = results_df.head(top_n).copy()
     print(f"\nTop {len(top_results)} Portfolio Pair Analytics (by Z Score):")
     print(top_results.to_string(index=False))
-    print(f"\nCSV written to: {output_path}")
+    print(f"\nCSV written to: {output_path} (all {len(results_df):,} rows)")
     
     return top_results
 

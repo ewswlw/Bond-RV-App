@@ -1,12 +1,10 @@
 """
-CAD rich vs USD pair analytics script.
+Custom sector combinations pair analytics script.
 
 This module reads `bond_data/parquet/bql.parquet`, filters CUSIPs present in the most
-recent dates, computes all pairwise spreads, filters to pairs where cusip_1 has
-Currency="USD" and cusip_2 has Currency="CAD" with matching Ticker and Custom_Sector
-values and absolute difference in Yrs (Cvn) <= 2 (from the last date in
-historical_bond_details.parquet), and exports all pairs sorted by Z Score to CSV.
-The top 80 pairs are displayed to console for monitoring relative value opportunities.
+recent dates, filters pairs where Custom_Sector values match exactly, computes pairwise spreads,
+and exports all pairs sorted by Z Score to CSV. The top 80 pairs are displayed to console
+for monitoring relative value opportunities.
 """
 
 from __future__ import annotations
@@ -62,18 +60,19 @@ def ensure_ascii(value: Optional[str]) -> str:
     return value.encode("ascii", errors="replace").decode("ascii")
 
 
-def get_currency_ticker_sector_mappings(historical_path: Path) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, float]]:
+def get_cad_cusips_with_custom_sector(historical_path: Path) -> Tuple[Set[str], Dict[str, str]]:
     """
-    Get Currency, Ticker, Custom_Sector, and Yrs (Cvn) mappings from the last date in historical_bond_details.parquet.
+    Get CAD CUSIPs and Custom_Sector mapping from the last date in historical_bond_details.parquet.
 
     Args:
         historical_path: Path to historical_bond_details.parquet file.
 
     Returns:
-        Tuple of (currency_mapping, ticker_mapping, sector_mapping, yrs_cvn_mapping) dictionaries mapping CUSIP to Currency/Ticker/Custom_Sector/Yrs (Cvn).
-        CUSIPs with missing/null Currency, Ticker, Custom_Sector, or Yrs (Cvn) are excluded.
+        Tuple of (cad_cusips_set, custom_sector_mapping) where:
+        - cad_cusips_set: Set of CUSIPs with Currency="CAD" on the last date
+        - custom_sector_mapping: Dictionary mapping CUSIP to Custom_Sector value (only includes CUSIPs with valid Custom_Sector)
     """
-    print("Loading historical bond details to get Currency, Ticker, Custom_Sector, and Yrs (Cvn) mappings...")
+    print("Loading historical bond details to filter CAD CUSIPs and get Custom_Sector mappings...")
     historical_df = pd.read_parquet(historical_path)
     
     # Get the last date
@@ -83,26 +82,25 @@ def get_currency_ticker_sector_mappings(historical_path: Path) -> Tuple[Dict[str
     # Filter to last date
     last_date_df = historical_df[historical_df["Date"] == last_date].copy()
     
-    # Filter out rows with missing Currency, Ticker, Custom_Sector, or Yrs (Cvn)
-    valid_df = last_date_df[
-        last_date_df["Currency"].notna() &
-        last_date_df["Ticker"].notna() &
-        last_date_df["Custom_Sector"].notna() &
-        last_date_df["Yrs (Cvn)"].notna()
-    ].copy()
+    # Filter to CAD CUSIPs
+    cad_df = last_date_df[last_date_df["Currency"] == "CAD"].copy()
+    cad_cusips = set(cad_df["CUSIP"].unique())
     
-    # Create mappings
-    currency_mapping = dict(zip(valid_df["CUSIP"], valid_df["Currency"]))
-    ticker_mapping = dict(zip(valid_df["CUSIP"], valid_df["Ticker"]))
-    sector_mapping = dict(zip(valid_df["CUSIP"], valid_df["Custom_Sector"]))
-    yrs_cvn_mapping = dict(zip(valid_df["CUSIP"], valid_df["Yrs (Cvn)"].astype(float)))
+    print(f"Found {len(cad_cusips)} CAD CUSIPs on last date")
     
-    print(
-        f"Found {len(currency_mapping)} CUSIPs with valid Currency, Ticker, Custom_Sector, and Yrs (Cvn) "
-        f"(excluded {len(last_date_df) - len(valid_df)} with missing values)"
-    )
+    # Filter to CAD CUSIPs with valid Custom_Sector data
+    valid_df = cad_df[cad_df["Custom_Sector"].notna()].copy()
     
-    return currency_mapping, ticker_mapping, sector_mapping, yrs_cvn_mapping
+    # Create mapping
+    custom_sector_mapping = dict(zip(valid_df["CUSIP"], valid_df["Custom_Sector"].astype(str)))
+    
+    excluded_count = len(cad_cusips) - len(custom_sector_mapping)
+    if excluded_count > 0:
+        print(f"Excluded {excluded_count} CAD CUSIPs with missing/invalid Custom_Sector data")
+    
+    print(f"Found {len(custom_sector_mapping)} CAD CUSIPs with valid Custom_Sector data")
+    
+    return cad_cusips, custom_sector_mapping
 
 
 def filter_recent_cusips(data: pd.DataFrame, percent: float = RECENT_DATE_PERCENT) -> pd.DataFrame:
@@ -208,7 +206,7 @@ def run_analysis(
     top_n: int = 80,
 ) -> pd.DataFrame:
     """
-    Execute the CAD rich vs USD pair analytics workflow.
+    Execute the custom sector combinations pair analytics workflow.
 
     Args:
         bql_path: Path to the BQL parquet file.
@@ -217,15 +215,27 @@ def run_analysis(
         top_n: Number of top pairs to return (default 80).
 
     Returns:
-        DataFrame containing top N pair analytics filtered to USD/CAD pairs
-        with matching Tickers, Custom_Sectors, and Yrs (Cvn) difference <= 2,
-        sorted by Z Score.
+        DataFrame containing top N pair analytics sorted by Z Score.
     """
+    # Get CAD CUSIPs and Custom_Sector mapping from historical data
+    cad_cusips, custom_sector_mapping = get_cad_cusips_with_custom_sector(historical_path)
+    
+    if not cad_cusips:
+        raise ValueError("No CAD CUSIPs found in historical data")
+    
+    if not custom_sector_mapping:
+        raise ValueError("No CAD CUSIPs with valid Custom_Sector data found")
+    
     print("Loading BQL data...")
     data = pd.read_parquet(bql_path)
     
+    # Filter to only CAD CUSIPs that have Custom_Sector data
+    valid_cusips = set(custom_sector_mapping.keys())
+    print(f"Filtering BQL data to {len(valid_cusips)} CAD CUSIPs with valid Custom_Sector data...")
+    data = data[data["CUSIP"].isin(valid_cusips)].copy()
+    
     if data.empty:
-        raise ValueError("No BQL data found")
+        raise ValueError("No BQL data found for CAD CUSIPs with valid Custom_Sector data")
     
     # Ensure all columns have complete data - drop any rows with missing values
     print("Filtering for complete data...")
@@ -260,13 +270,41 @@ def run_analysis(
     
     # Get list of CUSIPs
     cusips = wide_values.columns.tolist()
-    num_cusips = len(cusips)
-    num_pairs = num_cusips * (num_cusips - 1) // 2
     
-    print(f"Computing {num_pairs:,} pairwise combinations...")
+    # Filter CUSIPs to only those with Custom_Sector data (should already be filtered, but double-check)
+    cusips = [c for c in cusips if c in custom_sector_mapping]
+    
+    if not cusips:
+        raise ValueError("No CUSIPs remaining after Custom_Sector filtering")
+    
+    num_cusips = len(cusips)
+    
+    # Pre-filter pairs based on matching Custom_Sector values
+    print("Pre-filtering pairs where Custom_Sector values match exactly...")
+    valid_pairs: List[Tuple[int, int]] = []
+    for i, j in combinations(range(num_cusips), 2):
+        cusip_1 = cusips[i]
+        cusip_2 = cusips[j]
+        
+        custom_sector_1 = custom_sector_mapping.get(cusip_1)
+        custom_sector_2 = custom_sector_mapping.get(cusip_2)
+        
+        # Both should be in mapping (already filtered), but check anyway
+        if custom_sector_1 is None or custom_sector_2 is None:
+            continue
+        
+        # Check if Custom_Sectors match exactly (case-sensitive)
+        if custom_sector_1 == custom_sector_2:
+            valid_pairs.append((i, j))
+    
+    num_pairs = len(valid_pairs)
+    print(f"Found {num_pairs:,} valid pairs (out of {num_cusips * (num_cusips - 1) // 2:,} possible)")
+    
+    if num_pairs == 0:
+        raise ValueError("No pairs found with matching Custom_Sector values")
     
     # Convert to numpy array for faster operations
-    values_array = wide_values.values  # Shape: (num_dates, num_cusips)
+    values_array = wide_values[cusips].values  # Shape: (num_dates, num_cusips)
     dates_index = wide_values.index
     
     # Pre-allocate results list
@@ -276,7 +314,7 @@ def run_analysis(
     batch_size = max(1000, num_pairs // 100)  # Show progress every ~1%
     processed = 0
     
-    for idx, (i, j) in enumerate(combinations(range(num_cusips), 2)):
+    for idx, (i, j) in enumerate(valid_pairs):
         cusip_1 = cusips[i]
         cusip_2 = cusips[j]
         
@@ -325,8 +363,8 @@ def run_analysis(
     
     print(f"Computed {len(summaries):,} valid pairs")
     
-    # Convert to DataFrame
-    print("Converting to DataFrame...")
+    # Convert to DataFrame and sort by Z Score descending
+    print("Sorting results...")
     results_df = pd.DataFrame(
         [
             {
@@ -344,54 +382,7 @@ def run_analysis(
         ]
     )
     
-    # Get Currency, Ticker, Custom_Sector, and Yrs (Cvn) mappings from historical data
-    currency_mapping, ticker_mapping, sector_mapping, yrs_cvn_mapping = get_currency_ticker_sector_mappings(historical_path)
-    
-    # Filter to pairs where:
-    # 1. cusip_1 has Currency="USD"
-    # 2. cusip_2 has Currency="CAD"
-    # 3. Both have the same Ticker value
-    # 4. Both have the same Custom_Sector value
-    # 5. Absolute difference in Yrs (Cvn) <= 2
-    print("\nFiltering to USD/CAD pairs with matching Tickers, Custom_Sectors, and Yrs (Cvn) difference <= 2...")
-    before_filter_count = len(results_df)
-    
-    # Filter to pairs where both CUSIPs exist in mappings
-    results_df = results_df[
-        results_df["cusip_1"].isin(currency_mapping.keys()) &
-        results_df["cusip_2"].isin(currency_mapping.keys())
-    ].copy()
-    
-    # Add Currency, Ticker, Custom_Sector, and Yrs (Cvn) columns for filtering
-    results_df["currency_1"] = results_df["cusip_1"].map(currency_mapping)
-    results_df["currency_2"] = results_df["cusip_2"].map(currency_mapping)
-    results_df["ticker_1"] = results_df["cusip_1"].map(ticker_mapping)
-    results_df["ticker_2"] = results_df["cusip_2"].map(ticker_mapping)
-    results_df["sector_1"] = results_df["cusip_1"].map(sector_mapping)
-    results_df["sector_2"] = results_df["cusip_2"].map(sector_mapping)
-    results_df["yrs_cvn_1"] = results_df["cusip_1"].map(yrs_cvn_mapping)
-    results_df["yrs_cvn_2"] = results_df["cusip_2"].map(yrs_cvn_mapping)
-    
-    # Apply filters
-    results_df = results_df[
-        (results_df["currency_1"] == "USD") &
-        (results_df["currency_2"] == "CAD") &
-        (results_df["ticker_1"] == results_df["ticker_2"]) &
-        (results_df["sector_1"] == results_df["sector_2"]) &
-        ((results_df["yrs_cvn_1"] - results_df["yrs_cvn_2"]).abs() <= 2.0)
-    ].copy()
-    
-    # Drop temporary columns
-    results_df = results_df.drop(columns=["currency_1", "currency_2", "ticker_1", "ticker_2", "sector_1", "sector_2", "yrs_cvn_1", "yrs_cvn_2"])
-    
-    after_filter_count = len(results_df)
-    print(f"Filtered from {before_filter_count:,} to {after_filter_count:,} pairs")
-    
-    if results_df.empty:
-        raise ValueError("No pairs remaining after USD/CAD/Ticker/Custom_Sector/Yrs (Cvn) filtering!")
-    
     # Sort by Z Score descending
-    print("Sorting results...")
     results_df = results_df.sort_values("Z Score", ascending=False, na_position="last")
     
     # Ensure ASCII-safe names for all rows
@@ -400,12 +391,12 @@ def run_analysis(
     
     # Write all rows to CSV
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "cad_rich_vs_usd.csv"
+    output_path = output_dir / "custom_sector_comb.csv"
     results_df.to_csv(output_path, index=False)
     
     # Display top N to console
     top_results = results_df.head(top_n).copy()
-    print(f"\nTop {len(top_results)} USD vs CAD Pair Analytics (by Z Score):")
+    print(f"\nTop {top_n} Pair Analytics (by Z Score):")
     print(top_results.to_string(index=False))
     print(f"\nCSV written to: {output_path} (all {len(results_df):,} rows)")
     
@@ -413,7 +404,7 @@ def run_analysis(
 
 
 def main() -> None:
-    """Entry point for running the CAD rich vs USD pair analytics script."""
+    """Entry point for running the custom sector combinations pair analytics script."""
     run_analysis()
 
 
