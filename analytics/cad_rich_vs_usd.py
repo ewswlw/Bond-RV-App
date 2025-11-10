@@ -12,7 +12,6 @@ The top 80 pairs are displayed to console for monitoring relative value opportun
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import combinations
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -258,16 +257,82 @@ def run_analysis(
         aggfunc="last",
     ).sort_index()
     
+    # Get Currency, Ticker, Custom_Sector, and Yrs (Cvn) mappings from historical data
+    currency_mapping, ticker_mapping, sector_mapping, yrs_cvn_mapping = get_currency_ticker_sector_mappings(historical_path)
+    
     # Get list of CUSIPs
     cusips = wide_values.columns.tolist()
-    num_cusips = len(cusips)
-    num_pairs = num_cusips * (num_cusips - 1) // 2
     
-    print(f"Computing {num_pairs:,} pairwise combinations...")
+    # Pre-filter CUSIPs to only those with valid mappings (Currency, Ticker, Custom_Sector, Yrs (Cvn))
+    valid_cusips = [
+        cusip for cusip in cusips
+        if cusip in currency_mapping
+        and cusip in ticker_mapping
+        and cusip in sector_mapping
+        and cusip in yrs_cvn_mapping
+    ]
+    
+    print(f"Pre-filtering: {len(valid_cusips)} CUSIPs with valid Currency, Ticker, Custom_Sector, and Yrs (Cvn) data")
+    
+    if len(valid_cusips) < 2:
+        raise ValueError("Need at least 2 CUSIPs with valid Currency, Ticker, Custom_Sector, and Yrs (Cvn) data")
+    
+    # Separate into USD and CAD CUSIPs (swapped from cad_cheap_vs_usd.py)
+    usd_cusips = [c for c in valid_cusips if currency_mapping.get(c) == "USD"]
+    cad_cusips = [c for c in valid_cusips if currency_mapping.get(c) == "CAD"]
+    
+    print(f"Found {len(usd_cusips)} USD CUSIPs and {len(cad_cusips)} CAD CUSIPs with valid data")
+    
+    if not usd_cusips:
+        raise ValueError("No USD CUSIPs found with valid Currency, Ticker, Custom_Sector, and Yrs (Cvn) data")
+    
+    if not cad_cusips:
+        raise ValueError("No CAD CUSIPs found with valid Currency, Ticker, Custom_Sector, and Yrs (Cvn) data")
+    
+    # Create mapping from CUSIP to its index in the pivoted table
+    cusip_to_idx = {cusip: i for i, cusip in enumerate(cusips)}
+    
+    # Pre-filter pairs based on matching criteria:
+    # 1. cusip_1 has Currency="USD"
+    # 2. cusip_2 has Currency="CAD"
+    # 3. Both have the same Ticker value
+    # 4. Both have the same Custom_Sector value
+    # 5. Absolute difference in Yrs (Cvn) <= 2
+    print("Pre-filtering pairs where USD/CAD pairs have matching Tickers, Custom_Sectors, and Yrs (Cvn) difference <= 2...")
+    valid_pairs: List[Tuple[int, int]] = []
+    
+    for cusip_1 in usd_cusips:
+        idx_1 = cusip_to_idx[cusip_1]
+        ticker_1 = ticker_mapping.get(cusip_1)
+        sector_1 = sector_mapping.get(cusip_1)
+        yrs_cvn_1 = yrs_cvn_mapping.get(cusip_1)
+        
+        if ticker_1 is None or sector_1 is None or yrs_cvn_1 is None:
+            continue
+        
+        for cusip_2 in cad_cusips:
+            idx_2 = cusip_to_idx[cusip_2]
+            ticker_2 = ticker_mapping.get(cusip_2)
+            sector_2 = sector_mapping.get(cusip_2)
+            yrs_cvn_2 = yrs_cvn_mapping.get(cusip_2)
+            
+            if ticker_2 is None or sector_2 is None or yrs_cvn_2 is None:
+                continue
+            
+            # Check matching criteria
+            if (ticker_1 == ticker_2 and
+                sector_1 == sector_2 and
+                abs(yrs_cvn_1 - yrs_cvn_2) <= 2.0):
+                valid_pairs.append((idx_1, idx_2))
+    
+    num_pairs = len(valid_pairs)
+    print(f"Found {num_pairs:,} valid pairs (out of {len(usd_cusips) * len(cad_cusips):,} possible USD/CAD combinations)")
+    
+    if num_pairs == 0:
+        raise ValueError("No pairs found with matching Ticker, Custom_Sector, and Yrs (Cvn) difference <= 2")
     
     # Convert to numpy array for faster operations
     values_array = wide_values.values  # Shape: (num_dates, num_cusips)
-    dates_index = wide_values.index
     
     # Pre-allocate results list
     summaries: List[PairSummary] = []
@@ -276,13 +341,13 @@ def run_analysis(
     batch_size = max(1000, num_pairs // 100)  # Show progress every ~1%
     processed = 0
     
-    for idx, (i, j) in enumerate(combinations(range(num_cusips), 2)):
-        cusip_1 = cusips[i]
-        cusip_2 = cusips[j]
+    for idx_1, idx_2 in valid_pairs:
+        cusip_1 = cusips[idx_1]
+        cusip_2 = cusips[idx_2]
         
         # Get aligned values (handling NaN alignment)
-        cusip_1_vals = values_array[:, i]
-        cusip_2_vals = values_array[:, j]
+        cusip_1_vals = values_array[:, idx_1]
+        cusip_2_vals = values_array[:, idx_2]
         
         # Find dates where both have values
         both_valid = ~(np.isnan(cusip_1_vals) | np.isnan(cusip_2_vals))
@@ -343,52 +408,6 @@ def run_analysis(
             for pair in summaries
         ]
     )
-    
-    # Get Currency, Ticker, Custom_Sector, and Yrs (Cvn) mappings from historical data
-    currency_mapping, ticker_mapping, sector_mapping, yrs_cvn_mapping = get_currency_ticker_sector_mappings(historical_path)
-    
-    # Filter to pairs where:
-    # 1. cusip_1 has Currency="USD"
-    # 2. cusip_2 has Currency="CAD"
-    # 3. Both have the same Ticker value
-    # 4. Both have the same Custom_Sector value
-    # 5. Absolute difference in Yrs (Cvn) <= 2
-    print("\nFiltering to USD/CAD pairs with matching Tickers, Custom_Sectors, and Yrs (Cvn) difference <= 2...")
-    before_filter_count = len(results_df)
-    
-    # Filter to pairs where both CUSIPs exist in mappings
-    results_df = results_df[
-        results_df["cusip_1"].isin(currency_mapping.keys()) &
-        results_df["cusip_2"].isin(currency_mapping.keys())
-    ].copy()
-    
-    # Add Currency, Ticker, Custom_Sector, and Yrs (Cvn) columns for filtering
-    results_df["currency_1"] = results_df["cusip_1"].map(currency_mapping)
-    results_df["currency_2"] = results_df["cusip_2"].map(currency_mapping)
-    results_df["ticker_1"] = results_df["cusip_1"].map(ticker_mapping)
-    results_df["ticker_2"] = results_df["cusip_2"].map(ticker_mapping)
-    results_df["sector_1"] = results_df["cusip_1"].map(sector_mapping)
-    results_df["sector_2"] = results_df["cusip_2"].map(sector_mapping)
-    results_df["yrs_cvn_1"] = results_df["cusip_1"].map(yrs_cvn_mapping)
-    results_df["yrs_cvn_2"] = results_df["cusip_2"].map(yrs_cvn_mapping)
-    
-    # Apply filters
-    results_df = results_df[
-        (results_df["currency_1"] == "USD") &
-        (results_df["currency_2"] == "CAD") &
-        (results_df["ticker_1"] == results_df["ticker_2"]) &
-        (results_df["sector_1"] == results_df["sector_2"]) &
-        ((results_df["yrs_cvn_1"] - results_df["yrs_cvn_2"]).abs() <= 2.0)
-    ].copy()
-    
-    # Drop temporary columns
-    results_df = results_df.drop(columns=["currency_1", "currency_2", "ticker_1", "ticker_2", "sector_1", "sector_2", "yrs_cvn_1", "yrs_cvn_2"])
-    
-    after_filter_count = len(results_df)
-    print(f"Filtered from {before_filter_count:,} to {after_filter_count:,} pairs")
-    
-    if results_df.empty:
-        raise ValueError("No pairs remaining after USD/CAD/Ticker/Custom_Sector/Yrs (Cvn) filtering!")
     
     # Sort by Z Score descending
     print("Sorting results...")

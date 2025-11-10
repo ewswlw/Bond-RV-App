@@ -10,7 +10,6 @@ The top 80 pairs are displayed to console for monitoring relative value opportun
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import combinations
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -347,14 +346,28 @@ def run_analysis(
     
     # Get list of CUSIPs
     cusips = wide_values.columns.tolist()
-    num_cusips = len(cusips)
-    num_pairs = num_cusips * (num_cusips - 1) // 2
     
-    print(f"Computing {num_pairs:,} pairwise combinations...")
+    # Pre-filter: Only include pairs where cusip_2 is in portfolio
+    portfolio_cusips_in_data = PORTFOLIO_CUSIPS & set(cusips)
+    print(f"Pre-filtering: {len(portfolio_cusips_in_data)} portfolio CUSIPs found in data")
+    
+    if not portfolio_cusips_in_data:
+        raise ValueError("No portfolio CUSIPs found in filtered BQL data")
+    
+    # Create mapping from CUSIP to its index in the pivoted table
+    cusip_to_idx = {cusip: i for i, cusip in enumerate(cusips)}
+    
+    # Get indices of portfolio CUSIPs for cusip_2
+    portfolio_indices_2 = [cusip_to_idx[cusip] for cusip in cusips if cusip in portfolio_cusips_in_data]
+    
+    num_cusips_1 = len(cusips)
+    num_cusips_2 = len(portfolio_indices_2)
+    num_pairs = num_cusips_1 * num_cusips_2
+    
+    print(f"Pre-filtered to {num_pairs:,} pairs ({num_cusips_1} CAD CUSIPs × {num_cusips_2} portfolio CUSIPs)")
     
     # Convert to numpy array for faster operations
     values_array = wide_values.values  # Shape: (num_dates, num_cusips)
-    dates_index = wide_values.index
     
     # Pre-allocate results list
     summaries: List[PairSummary] = []
@@ -363,54 +376,57 @@ def run_analysis(
     batch_size = max(1000, num_pairs // 100)  # Show progress every ~1%
     processed = 0
     
-    for idx, (i, j) in enumerate(combinations(range(num_cusips), 2)):
-        cusip_1 = cusips[i]
-        cusip_2 = cusips[j]
-        
-        # Get aligned values (handling NaN alignment)
+    # Iterate over all CAD CUSIPs (cusip_1) paired with portfolio CUSIPs (cusip_2)
+    for i, cusip_1 in enumerate(cusips):
         cusip_1_vals = values_array[:, i]
-        cusip_2_vals = values_array[:, j]
         
-        # Find dates where both have values
-        both_valid = ~(np.isnan(cusip_1_vals) | np.isnan(cusip_2_vals))
-        
-        if both_valid.sum() < 2:  # Need at least 2 overlapping dates
-            continue
-        
-        # Extract valid values
-        valid_1 = cusip_1_vals[both_valid]
-        valid_2 = cusip_2_vals[both_valid]
-        
-        # Compute statistics
-        stats = compute_pair_stats_vectorized(valid_1, valid_2)
-        if stats is None:
-            continue
-        
-        last_value, average_value, vs_average, z_score, percentile = stats
-        
-        # Only include pairs with valid Z scores (for sorting)
-        if z_score is None:
-            continue
-        
-        summaries.append(
-            PairSummary(
-                Bond_1=name_lookup.get(cusip_1, cusip_1),
-                Bond_2=name_lookup.get(cusip_2, cusip_2),
-                last_value=last_value,
-                average_value=average_value,
-                vs_average=vs_average,
-                z_score=z_score,
-                percentile=percentile,
-                cusip_1=cusip_1,
-                cusip_2=cusip_2,
+        for j_idx in portfolio_indices_2:
+            cusip_2 = cusips[j_idx]
+            cusip_2_vals = values_array[:, j_idx]
+            
+            # Find dates where both have values
+            both_valid = ~(np.isnan(cusip_1_vals) | np.isnan(cusip_2_vals))
+            
+            if both_valid.sum() < 2:  # Need at least 2 overlapping dates
+                continue
+            
+            # Extract valid values
+            valid_1 = cusip_1_vals[both_valid]
+            valid_2 = cusip_2_vals[both_valid]
+            
+            # Compute statistics
+            stats = compute_pair_stats_vectorized(valid_1, valid_2)
+            if stats is None:
+                continue
+            
+            last_value, average_value, vs_average, z_score, percentile = stats
+            
+            # Only include pairs with valid Z scores (for sorting)
+            if z_score is None:
+                continue
+            
+            summaries.append(
+                PairSummary(
+                    Bond_1=name_lookup.get(cusip_1, cusip_1),
+                    Bond_2=name_lookup.get(cusip_2, cusip_2),
+                    last_value=last_value,
+                    average_value=average_value,
+                    vs_average=vs_average,
+                    z_score=z_score,
+                    percentile=percentile,
+                    cusip_1=cusip_1,
+                    cusip_2=cusip_2,
+                )
             )
-        )
-        
-        processed += 1
-        if processed % batch_size == 0:
-            print(f"  Processed {processed:,} / {num_pairs:,} pairs ({processed*100/num_pairs:.1f}%)...")
+            
+            processed += 1
+            if processed % batch_size == 0:
+                print(f"  Processed {processed:,} / {num_pairs:,} pairs ({processed*100/num_pairs:.1f}%)...")
     
     print(f"Computed {len(summaries):,} valid pairs")
+    
+    if len(summaries) == 0:
+        raise ValueError("No pairs remaining after portfolio filtering!")
     
     # Convert to DataFrame
     print("Converting to DataFrame...")
@@ -430,17 +446,6 @@ def run_analysis(
             for pair in summaries
         ]
     )
-    
-    # Filter to only pairs where cusip_2 is in portfolio
-    portfolio_cusips_in_data = PORTFOLIO_CUSIPS & set(cusips)
-    print(f"\nFiltering to pairs where cusip_2 is in portfolio ({len(portfolio_cusips_in_data)} portfolio CUSIPs)...")
-    before_filter_count = len(results_df)
-    results_df = results_df[results_df["cusip_2"].isin(portfolio_cusips_in_data)].copy()
-    after_filter_count = len(results_df)
-    print(f"Filtered from {before_filter_count:,} to {after_filter_count:,} pairs")
-    
-    if results_df.empty:
-        raise ValueError("No pairs remaining after portfolio filtering!")
     
     # Sort by Z Score descending
     print("Sorting results...")
