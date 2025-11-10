@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-XX XX:XX ET - Pair Analytics Scripts (term_comb, ticker_comb, custom_sector, custom_bond_comb)  
+**Last Updated**: 2025-01-XX XX:XX ET - Runs Today Analytics (MTD, YTD, 1yr changes)  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -437,7 +437,7 @@ Bond-RV-App/
 │   ├── cad_cheap_vs_usd.py  # CAD cheap vs USD pair analytics (CAD/USD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
 │   ├── cad_rich_vs_usd.py   # CAD rich vs USD pair analytics (USD/CAD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
 │   ├── runs-adjusted_ts.py  # Runs adjusted timeseries analytics (Date+CUSIP+Benchmark aggregation)
-│   ├── runs_today.py     # Runs today analytics (last date with DoD changes)
+│   ├── runs_today.py     # Runs today analytics (last date with DoD, MTD, YTD, 1yr changes)
 │   └── processed_data/   # CSV outputs from analytics scripts
 │       ├── cr01_pair_analytics.csv
 │       ├── all_comb.csv
@@ -897,6 +897,15 @@ pytest tests/unit/test_utils.py -v
     - Exports to `runs_today.csv` in `analytics/processed_data/`
     - Displays table preview and `df.info()` for validation
     - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Enhanced runs today analytics with MTD, YTD, and 1yr changes:
+  - Added Month-to-Date (MTD) change columns for all DoD columns (compares last date with first available date of current month)
+  - Added Year-to-Date (YTD) change columns for all DoD columns (compares last date with first available date of current year)
+  - Added 1-year (1yr) change columns for all DoD columns (compares last date with closest available date approximately 1 year ago)
+  - Naming convention: `DoD Chg {column}` → `MTD Chg {column}`, `YTD Chg {column}`, `1yr Chg {column}`
+  - All MTD, YTD, and 1yr columns properly typed as `float64`
+  - Column ordering: DoD columns first, then MTD, then YTD, then 1yr (grouped by change type)
+  - Handles cases where reference dates don't exist (returns NA values)
+  - Updated module and function docstrings to reflect new change calculations
 - **2025-01-XX XX:XX ET**: Created portfolio combinations pair analytics script:
   - Created `analytics/port_comb.py` - portfolio pair analytics script:
     - Similar to `all_comb.py` but filters pairs where `cusip_2` is in portfolio CUSIP list

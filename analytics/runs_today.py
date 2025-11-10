@@ -2,8 +2,9 @@
 Runs today analytics script.
 
 This module reads `analytics/processed_data/runs_adjusted_ts.csv`, filters to the most
-recent date, computes Day-over-Day (DoD) changes by comparing the last date with the
-second-to-last date, and exports the results to CSV for daily monitoring.
+recent date, computes Day-over-Day (DoD), Month-to-Date (MTD), Year-to-Date (YTD), and
+1-year (1yr) changes by comparing the last date with reference dates, and exports the
+results to CSV for daily monitoring.
 """
 
 from __future__ import annotations
@@ -69,7 +70,7 @@ def run_analysis(
         output_dir: Directory for CSV export.
 
     Returns:
-        DataFrame containing today's data with DoD changes.
+        DataFrame containing today's data with DoD, MTD, YTD, and 1yr changes.
     """
     print("Loading runs_adjusted_ts.csv...")
     df = pd.read_csv(csv_path)
@@ -158,6 +159,108 @@ def run_analysis(
         
         result_df[dod_col_name] = dod_values
     
+    # Find reference dates for MTD, YTD, and 1yr calculations
+    print("\nFinding reference dates for MTD, YTD, and 1yr calculations...")
+    
+    # MTD: First date of current month
+    mtd_ref_date = pd.Timestamp(last_date.year, last_date.month, 1)
+    mtd_dates = [d for d in unique_dates if d >= mtd_ref_date and d < last_date]
+    mtd_ref_date = mtd_dates[0] if mtd_dates else None
+    
+    # YTD: First date of current year
+    ytd_ref_date = pd.Timestamp(last_date.year, 1, 1)
+    ytd_dates = [d for d in unique_dates if d >= ytd_ref_date and d < last_date]
+    ytd_ref_date = ytd_dates[0] if ytd_dates else None
+    
+    # 1yr: Approximately 1 year ago (closest available date)
+    one_year_ago = last_date - pd.DateOffset(years=1)
+    one_yr_dates = [d for d in unique_dates if d <= one_year_ago]
+    one_yr_ref_date = one_yr_dates[-1] if one_yr_dates else None
+    
+    print(f"  MTD reference date: {mtd_ref_date}")
+    print(f"  YTD reference date: {ytd_ref_date}")
+    print(f"  1yr reference date: {one_yr_ref_date}")
+    
+    # Create lookup dictionaries for MTD, YTD, and 1yr
+    mtd_lookup = {}
+    ytd_lookup = {}
+    one_yr_lookup = {}
+    
+    if mtd_ref_date:
+        mtd_df = df[df["Date"] == mtd_ref_date].copy()
+        if mtd_df["CUSIP"].duplicated().any():
+            mtd_df = mtd_df.drop_duplicates(subset=["CUSIP"], keep="first")
+        for idx, row in mtd_df.iterrows():
+            mtd_lookup[row["CUSIP"]] = row
+    
+    if ytd_ref_date:
+        ytd_df = df[df["Date"] == ytd_ref_date].copy()
+        if ytd_df["CUSIP"].duplicated().any():
+            ytd_df = ytd_df.drop_duplicates(subset=["CUSIP"], keep="first")
+        for idx, row in ytd_df.iterrows():
+            ytd_lookup[row["CUSIP"]] = row
+    
+    if one_yr_ref_date:
+        one_yr_df = df[df["Date"] == one_yr_ref_date].copy()
+        if one_yr_df["CUSIP"].duplicated().any():
+            one_yr_df = one_yr_df.drop_duplicates(subset=["CUSIP"], keep="first")
+        for idx, row in one_yr_df.iterrows():
+            one_yr_lookup[row["CUSIP"]] = row
+    
+    # Calculate MTD, YTD, and 1yr changes
+    print("\nCalculating MTD, YTD, and 1yr changes...")
+    for col in DOD_COLUMNS:
+        if col not in result_df.columns:
+            continue
+        
+        # MTD changes
+        mtd_col_name = f"MTD Chg {col}"
+        mtd_values = []
+        for idx, row in result_df.iterrows():
+            cusip = row["CUSIP"]
+            last_value = row[col]
+            if cusip in mtd_lookup:
+                mtd_value = mtd_lookup[cusip][col]
+                if pd.notna(last_value) and pd.notna(mtd_value):
+                    mtd_values.append(float(last_value) - float(mtd_value))
+                else:
+                    mtd_values.append(pd.NA)
+            else:
+                mtd_values.append(pd.NA)
+        result_df[mtd_col_name] = mtd_values
+        
+        # YTD changes
+        ytd_col_name = f"YTD Chg {col}"
+        ytd_values = []
+        for idx, row in result_df.iterrows():
+            cusip = row["CUSIP"]
+            last_value = row[col]
+            if cusip in ytd_lookup:
+                ytd_value = ytd_lookup[cusip][col]
+                if pd.notna(last_value) and pd.notna(ytd_value):
+                    ytd_values.append(float(last_value) - float(ytd_value))
+                else:
+                    ytd_values.append(pd.NA)
+            else:
+                ytd_values.append(pd.NA)
+        result_df[ytd_col_name] = ytd_values
+        
+        # 1yr changes
+        one_yr_col_name = f"1yr Chg {col}"
+        one_yr_values = []
+        for idx, row in result_df.iterrows():
+            cusip = row["CUSIP"]
+            last_value = row[col]
+            if cusip in one_yr_lookup:
+                one_yr_value = one_yr_lookup[cusip][col]
+                if pd.notna(last_value) and pd.notna(one_yr_value):
+                    one_yr_values.append(float(last_value) - float(one_yr_value))
+                else:
+                    one_yr_values.append(pd.NA)
+            else:
+                one_yr_values.append(pd.NA)
+        result_df[one_yr_col_name] = one_yr_values
+    
     # Calculate Bid/Offer spread columns
     print("\nCalculating Bid/Offer spreads...")
     # Bid/Offer>3mm = Tight Bid >3mm - Wide Offer >3mm (only if both have values)
@@ -235,6 +338,24 @@ def run_analysis(
         if dod_col_name in result_df.columns:
             column_order.append(dod_col_name)
     
+    # Add MTD columns after DoD columns
+    for col in DOD_COLUMNS:
+        mtd_col_name = f"MTD Chg {col}"
+        if mtd_col_name in result_df.columns:
+            column_order.append(mtd_col_name)
+    
+    # Add YTD columns after MTD columns
+    for col in DOD_COLUMNS:
+        ytd_col_name = f"YTD Chg {col}"
+        if ytd_col_name in result_df.columns:
+            column_order.append(ytd_col_name)
+    
+    # Add 1yr columns after YTD columns
+    for col in DOD_COLUMNS:
+        one_yr_col_name = f"1yr Chg {col}"
+        if one_yr_col_name in result_df.columns:
+            column_order.append(one_yr_col_name)
+    
     # Ensure all columns exist (fill missing with NaN)
     for col in column_order:
         if col not in result_df.columns:
@@ -252,6 +373,24 @@ def run_analysis(
         dod_col_name = f"DoD Chg {col}"
         if dod_col_name in result_df.columns:
             result_df[dod_col_name] = pd.to_numeric(result_df[dod_col_name], errors="coerce")
+    
+    # Convert MTD columns to float64
+    for col in DOD_COLUMNS:
+        mtd_col_name = f"MTD Chg {col}"
+        if mtd_col_name in result_df.columns:
+            result_df[mtd_col_name] = pd.to_numeric(result_df[mtd_col_name], errors="coerce")
+    
+    # Convert YTD columns to float64
+    for col in DOD_COLUMNS:
+        ytd_col_name = f"YTD Chg {col}"
+        if ytd_col_name in result_df.columns:
+            result_df[ytd_col_name] = pd.to_numeric(result_df[ytd_col_name], errors="coerce")
+    
+    # Convert 1yr columns to float64
+    for col in DOD_COLUMNS:
+        one_yr_col_name = f"1yr Chg {col}"
+        if one_yr_col_name in result_df.columns:
+            result_df[one_yr_col_name] = pd.to_numeric(result_df[one_yr_col_name], errors="coerce")
     
     # Ensure ASCII-safe Security and Dealer columns
     if "Security" in result_df.columns:
