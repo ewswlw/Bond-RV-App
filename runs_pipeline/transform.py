@@ -273,6 +273,35 @@ class RunsTransformer:
         
         return df_aligned
     
+    def normalize_dealer_names(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Normalize dealer names by replacing "SCM" with "BNS".
+        
+        This replacement happens before deduplication since Dealer is part
+        of the primary key (Date+Dealer+CUSIP).
+        
+        Args:
+            df: DataFrame with Dealer column
+        
+        Returns:
+            DataFrame with normalized dealer names
+        """
+        if 'Dealer' not in df.columns:
+            return df
+        
+        # Count SCM occurrences before replacement
+        scm_count = (df['Dealer'].astype(str) == 'SCM').sum()
+        
+        if scm_count > 0:
+            self.logger_valid.info(
+                f"Replacing {scm_count} instances of 'SCM' with 'BNS' in Dealer column"
+            )
+            # Replace SCM with BNS in Dealer column
+            df = df.copy()
+            df['Dealer'] = df['Dealer'].astype(str).replace('SCM', 'BNS')
+        
+        return df
+    
     def clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Clean data by replacing NA values with NaN.
@@ -290,10 +319,11 @@ class RunsTransformer:
         Apply all transformations to DataFrame.
         
         Order:
-        1. Deduplicate (end-of-day snapshots)
-        2. Clean NA values
-        3. Validate CUSIPs and track orphans
-        4. Align to master schema
+        1. Normalize dealer names (SCM → BNS)
+        2. Deduplicate (end-of-day snapshots)
+        3. Clean NA values
+        4. Validate CUSIPs and track orphans
+        5. Align to master schema
         
         Args:
             df: DataFrame to transform
@@ -302,19 +332,23 @@ class RunsTransformer:
         Returns:
             Transformed DataFrame
         """
-        # Step 1: Deduplicate (end-of-day snapshots)
+        # Step 1: Normalize dealer names (before deduplication since Dealer is part of primary key)
+        self.logger_valid.info("Normalizing dealer names...")
+        df = self.normalize_dealer_names(df)
+        
+        # Step 2: Deduplicate (end-of-day snapshots)
         self.logger_dupes.info("Starting end-of-day deduplication...")
         df = self.deduplicate_end_of_day(df)
         
-        # Step 2: Clean NA values
+        # Step 3: Clean NA values
         self.logger_valid.info("Cleaning NA values...")
         df = self.clean_data(df)
         
-        # Step 3: Validate CUSIPs and track orphans
+        # Step 4: Validate CUSIPs and track orphans
         self.logger_valid.info("Validating CUSIPs and checking orphans...")
         df = self.validate_cusips(df, universe_parquet)
         
-        # Step 4: Align to master schema
+        # Step 5: Align to master schema
         self.logger_valid.info("Aligning to master schema...")
         df = self.align_to_master_schema(df)
         

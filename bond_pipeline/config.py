@@ -160,7 +160,7 @@ RUNS_KNOWN_DEALERS = [
     'CIBC',
     'BMO',
     'NBF',
-    'SCM',
+    'BNS',
     'MS',
     'YTMC',
     'BBLP',

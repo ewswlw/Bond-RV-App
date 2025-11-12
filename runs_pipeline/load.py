@@ -18,7 +18,7 @@ from bond_pipeline.utils import (
 )
 
 # Allowed dealers for runs_timeseries.parquet
-ALLOWED_DEALERS = ['BMO', 'NBF', 'RBC', 'TD']
+ALLOWED_DEALERS = ['BMO', 'BNS', 'NBF', 'RBC', 'TD']
 
 
 @dataclass
@@ -258,6 +258,16 @@ class RunsLoader:
             if bond_config.RUNS_PARQUET.exists():
                 existing_df = pd.read_parquet(bond_config.RUNS_PARQUET)
                 
+                # Replace SCM with BNS in existing data
+                if 'Dealer' in existing_df.columns:
+                    scm_count = (existing_df['Dealer'].astype(str) == 'SCM').sum()
+                    if scm_count > 0:
+                        self.logger.info(
+                            f"Replacing {scm_count} instances of 'SCM' with 'BNS' in existing data"
+                        )
+                        existing_df = existing_df.copy()
+                        existing_df['Dealer'] = existing_df['Dealer'].astype(str).replace('SCM', 'BNS')
+                
                 # Filter existing data to only allowed dealers
                 if 'Dealer' in existing_df.columns:
                     before_filter = len(existing_df)
@@ -305,6 +315,15 @@ class RunsLoader:
                 )
 
             write_df = write_df.copy()
+            
+            # Replace SCM with BNS before filtering (in case any SCM values remain)
+            if 'Dealer' in write_df.columns:
+                scm_count = (write_df['Dealer'].astype(str) == 'SCM').sum()
+                if scm_count > 0:
+                    self.logger.info(
+                        f"Replacing {scm_count} instances of 'SCM' with 'BNS' before writing"
+                    )
+                    write_df['Dealer'] = write_df['Dealer'].astype(str).replace('SCM', 'BNS')
             
             # Filter to only allowed dealers
             if 'Dealer' in write_df.columns:
@@ -382,6 +401,15 @@ class RunsLoader:
                 self.logger.info("Deleted existing runs parquet before overwrite")
 
             data_write = data.copy()
+            
+            # Replace SCM with BNS before filtering
+            if 'Dealer' in data_write.columns:
+                scm_count = (data_write['Dealer'].astype(str) == 'SCM').sum()
+                if scm_count > 0:
+                    self.logger.info(
+                        f"Replacing {scm_count} instances of 'SCM' with 'BNS' before writing"
+                    )
+                    data_write['Dealer'] = data_write['Dealer'].astype(str).replace('SCM', 'BNS')
             
             # Filter to only allowed dealers
             if 'Dealer' in data_write.columns:

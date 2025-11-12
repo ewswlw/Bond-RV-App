@@ -240,7 +240,7 @@ Each pipeline stage is a class with clear responsibilities:
 - **Purpose**: Time series of dealer quotes over time (end-of-day snapshots)
 - **Primary Key**: `Date + Dealer + CUSIP` (unique combination, enforced after deduplication)
 - **Schema**: All 30 columns with Date and Time as first columns
-- **Dealer Filtering**: Only includes dealers: BMO, NBF, RBC, TD (other dealers filtered out during load)
+- **Dealer Filtering**: Only includes dealers: BMO, BNS, NBF, RBC, TD (other dealers filtered out during load)
 - **Row count**: ~19,000+ rows (after deduplication and dealer filtering) spanning 2022-2025
 - **Storage**: `bond_data/parquet/runs_timeseries.parquet`
 - **Deduplication**: Keep latest Time per Date+Dealer+CUSIP (end-of-day snapshot)
@@ -268,7 +268,7 @@ Each pipeline stage is a class with clear responsibilities:
 - **Optimized**: Vectorized CUSIP validation (~100x faster than row-by-row iteration)
 - Invalid CUSIPs: Log summary warning but include in data (same as bond pipeline)
 - **Enhanced Orphan Tracking**: Log orphans with context (Security, Date, Dealer, Time, Ticker) to validation.log
-- **Dealer Filtering**: Only dealers BMO, NBF, RBC, TD are stored in `runs_timeseries.parquet` (other dealers filtered out during load)
+- **Dealer Filtering**: Only dealers BMO, BNS, NBF, RBC, TD are stored in `runs_timeseries.parquet` (other dealers filtered out during load)
 - Primary key enforcement: No duplicate Date+Dealer+CUSIP combinations (after deduplication)
 - Append mode inspects existing parquet dates, skips fully-loaded files, and filters mixed files down to unseen dates before extraction.
 - Pipeline summaries surface files processed/skipped plus new rows, dates, CUSIPs, and dealers added during each run.
@@ -527,10 +527,11 @@ Bond-RV-App/
 ## Code Modification Guidelines
 
 ### Before Making Changes
-1. **Analyze entire codebase**: Understand dependencies and relationships
-2. **Map file impacts**: Identify ALL files that need modification
-3. **Check existing logic**: Extend or refactor before creating new code
-4. **Consider ripple effects**: Changes impact downstream modules
+1. **Search codebase first**: Always search within the codebase to see if any existing functions and/or classes can be used before building new logic
+2. **Analyze entire codebase**: Understand dependencies and relationships
+3. **Map file impacts**: Identify ALL files that need modification
+4. **Check existing logic**: Extend or refactor before creating new code
+5. **Consider ripple effects**: Changes impact downstream modules
 
 ### Coding Principles
 1. **Extend existing logic**: Never create new files when existing code can be extended
@@ -756,33 +757,34 @@ pytest tests/unit/test_utils.py -v
 ## Key Takeaways for AI Assistant
 
 ### Essential Rules
-1. **Always analyze entire codebase** before making changes
-2. **Execute all code in current virtual environment** (Bond-RV-App)
-3. **Create tests in tests/ folder** when applicable
-4. **Never create new files** unless explicitly required by user
-5. **List file names and paths** when creating new files
-6. **Include .cursorrules for context** in planning
-7. **Map dependencies** before suggesting edits
-8. **Extend existing logic** rather than duplicating
-9. **Follow modular architecture**: config → utils → extract → transform → load → pipeline
-10. **Respect logging patterns**: file logging (detailed) + console (minimal)
+1. **Search codebase first**: Always search within the codebase to see if any existing functions and/or classes can be used before building new logic
+2. **Always analyze entire codebase** before making changes
+3. **Execute all code in current virtual environment** (Bond-RV-App)
+4. **Create tests in tests/ folder** when applicable
+5. **Never create new files** unless explicitly required by user
+6. **List file names and paths** when creating new files
+7. **Include .cursorrules for context** in planning
+8. **Map dependencies** before suggesting edits
+9. **Extend existing logic** rather than duplicating
+10. **Follow modular architecture**: config → utils → extract → transform → load → pipeline
+11. **Respect logging patterns**: file logging (detailed) + console (minimal)
 
 ### Workflow Rules
-11. **Think deeply** about prompt applicability before acting
-12. **Use judgment** when interpreting conflicting requirements
-13. **Notify user** when ignoring requirements or using judgment
-14. **Ask clarifying questions** until all ambiguity is eliminated
-15. **Provide file change summary** after completing requests
-16. **ALWAYS clean up temporary files** created during chat sessions
-17. **Always update .cursorrules** after applicable changes
-18. **Include date/time stamps** in all documentation
-19. **Update .cursorrules before git commits**
+12. **Think deeply** about prompt applicability before acting
+13. **Use judgment** when interpreting conflicting requirements
+14. **Notify user** when ignoring requirements or using judgment
+15. **Ask clarifying questions** until all ambiguity is eliminated
+16. **Provide file change summary** after completing requests
+17. **ALWAYS clean up temporary files** created during chat sessions
+18. **Always update .cursorrules** after applicable changes
+19. **Include date/time stamps** in all documentation
+20. **Update .cursorrules before git commits**
 
 ### Quality Standards
-19. **Use pathlib.Path** for all path operations
-20. **Avoid unicode issues** on Windows; all console/log output must remain ASCII-safe
-21. **Modular design** following industry best practices
-22. **Keep documentation current** when creating new docs
+21. **Use pathlib.Path** for all path operations
+22. **Avoid unicode issues** on Windows; all console/log output must remain ASCII-safe
+23. **Modular design** following industry best practices
+24. **Keep documentation current** when creating new docs
 
 ---
 
@@ -859,7 +861,7 @@ pytest tests/unit/test_utils.py -v
     - Column names: `Bond_1`, `Bond_2`, `cusip_1`, `cusip_2` (instead of universe/holdings naming)
   - Both scripts use script-relative path resolution for portability
 - **2025-11-09 16:00 ET**: Enhanced data processing and statistics:
-  - Added dealer filtering for runs_timeseries.parquet (only BMO, NBF, RBC, TD dealers stored)
+  - Added dealer filtering for runs_timeseries.parquet (only BMO, BNS, NBF, RBC, TD dealers stored)
   - Added numeric conversion for years columns: `Yrs Since Issue`, `Yrs (Worst)`, and `Yrs (Cvn)` are always stored as numeric (`float64`) in parquet files
   - Conversion happens at multiple points (transform and load) to ensure consistency
   - Updated enhanced statistics to use `Yrs (Cvn)` instead of `Yrs (Worst)` for binning analysis
@@ -983,4 +985,14 @@ pytest tests/unit/test_utils.py -v
     - Outputs all pairs sorted by Z Score to `custom_bond_comb.csv`
     - Uses script-relative path resolution for portability
     - Configuration section at top: `TARGET_BOND_TICKER`, `TARGET_BOND_SECURITY`, `RECENT_DATE_PERCENT`, `TOP_N_PAIRS`
+- **2025-01-XX XX:XX ET**: Added codebase search requirement:
+  - Added rule to "Before Making Changes" section: Always search codebase first to see if existing functions/classes can be used before building new logic
+  - Added rule to "Essential Rules" section in Key Takeaways to reinforce this principle
+  - Ensures reuse of existing code and prevents unnecessary duplication
+- **2025-01-XX XX:XX ET**: Replaced SCM with BNS dealer name throughout runs pipeline:
+  - Added SCM to BNS replacement in transform step (before deduplication)
+  - Added SCM to BNS replacement in load step (when reading existing data and before writing)
+  - Updated ALLOWED_DEALERS to include BNS: ['BMO', 'BNS', 'NBF', 'RBC', 'TD']
+  - Updated RUNS_KNOWN_DEALERS to replace SCM with BNS for validation consistency
+  - Updated documentation to reflect BNS in allowed dealers list
 
