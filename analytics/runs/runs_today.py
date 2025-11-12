@@ -16,8 +16,8 @@ import pandas as pd
 
 # Get script directory and build paths relative to it
 SCRIPT_DIR = Path(__file__).parent.resolve()
-RUNS_ADJUSTED_TS_CSV = SCRIPT_DIR / "processed_data" / "runs_adjusted_ts.csv"
-OUTPUT_DIR = SCRIPT_DIR / "processed_data"
+RUNS_ADJUSTED_TS_CSV = SCRIPT_DIR.parent / "processed_data" / "runs_adjusted_ts.csv"
+OUTPUT_DIR = SCRIPT_DIR.parent / "processed_data"
 
 # Columns to calculate DoD changes for
 DOD_COLUMNS = [

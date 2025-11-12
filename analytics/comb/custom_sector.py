@@ -1,9 +1,10 @@
 """
-All combinations pair analytics script.
+Custom sector combinations pair analytics script.
 
 This module reads `bond_data/parquet/bql.parquet`, filters CUSIPs present in the most
-recent dates, computes all pairwise spreads, and exports all pairs sorted by
-Z Score to CSV. The top 80 pairs are displayed to console for monitoring relative value opportunities.
+recent dates, filters pairs where Custom_Sector values match exactly, computes pairwise spreads,
+and exports all pairs sorted by Z Score to CSV. The top 80 pairs are displayed to console
+for monitoring relative value opportunities.
 """
 
 from __future__ import annotations
@@ -18,9 +19,9 @@ import pandas as pd
 
 # Get script directory and build paths relative to it
 SCRIPT_DIR = Path(__file__).parent.resolve()
-BQL_PARQUET_PATH = SCRIPT_DIR.parent / "bond_data" / "parquet" / "bql.parquet"
-HISTORICAL_PARQUET_PATH = SCRIPT_DIR.parent / "bond_data" / "parquet" / "historical_bond_details.parquet"
-OUTPUT_DIR = SCRIPT_DIR / "processed_data"
+BQL_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "bql.parquet"
+HISTORICAL_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "historical_bond_details.parquet"
+OUTPUT_DIR = SCRIPT_DIR.parent / "processed_data"
 
 # Filter to CUSIPs present in most recent 75% of dates
 RECENT_DATE_PERCENT = 0.75
@@ -59,29 +60,47 @@ def ensure_ascii(value: Optional[str]) -> str:
     return value.encode("ascii", errors="replace").decode("ascii")
 
 
-def get_cad_cusips(historical_path: Path) -> Set[str]:
+def get_cad_cusips_with_custom_sector(historical_path: Path) -> Tuple[Set[str], Dict[str, str]]:
     """
-    Get CUSIPs with Currency="CAD" from the last date in historical_bond_details.parquet.
+    Get CAD CUSIPs and Custom_Sector mapping from the last date in historical_bond_details.parquet.
 
     Args:
         historical_path: Path to historical_bond_details.parquet file.
 
     Returns:
-        Set of CUSIPs with Currency="CAD" on the last date.
+        Tuple of (cad_cusips_set, custom_sector_mapping) where:
+        - cad_cusips_set: Set of CUSIPs with Currency="CAD" on the last date
+        - custom_sector_mapping: Dictionary mapping CUSIP to Custom_Sector value (only includes CUSIPs with valid Custom_Sector)
     """
-    print("Loading historical bond details to filter CAD CUSIPs...")
+    print("Loading historical bond details to filter CAD CUSIPs and get Custom_Sector mappings...")
     historical_df = pd.read_parquet(historical_path)
     
     # Get the last date
     last_date = historical_df["Date"].max()
     print(f"Last date in historical data: {last_date}")
     
-    # Filter to last date and Currency="CAD"
-    last_date_df = historical_df[historical_df["Date"] == last_date]
-    cad_cusips = set(last_date_df[last_date_df["Currency"] == "CAD"]["CUSIP"].unique())
+    # Filter to last date
+    last_date_df = historical_df[historical_df["Date"] == last_date].copy()
+    
+    # Filter to CAD CUSIPs
+    cad_df = last_date_df[last_date_df["Currency"] == "CAD"].copy()
+    cad_cusips = set(cad_df["CUSIP"].unique())
     
     print(f"Found {len(cad_cusips)} CAD CUSIPs on last date")
-    return cad_cusips
+    
+    # Filter to CAD CUSIPs with valid Custom_Sector data
+    valid_df = cad_df[cad_df["Custom_Sector"].notna()].copy()
+    
+    # Create mapping
+    custom_sector_mapping = dict(zip(valid_df["CUSIP"], valid_df["Custom_Sector"].astype(str)))
+    
+    excluded_count = len(cad_cusips) - len(custom_sector_mapping)
+    if excluded_count > 0:
+        print(f"Excluded {excluded_count} CAD CUSIPs with missing/invalid Custom_Sector data")
+    
+    print(f"Found {len(custom_sector_mapping)} CAD CUSIPs with valid Custom_Sector data")
+    
+    return cad_cusips, custom_sector_mapping
 
 
 def filter_recent_cusips(data: pd.DataFrame, percent: float = RECENT_DATE_PERCENT) -> pd.DataFrame:
@@ -187,7 +206,7 @@ def run_analysis(
     top_n: int = 80,
 ) -> pd.DataFrame:
     """
-    Execute the all combinations pair analytics workflow.
+    Execute the custom sector combinations pair analytics workflow.
 
     Args:
         bql_path: Path to the BQL parquet file.
@@ -198,21 +217,25 @@ def run_analysis(
     Returns:
         DataFrame containing top N pair analytics sorted by Z Score.
     """
-    # First, get CAD CUSIPs from historical data
-    cad_cusips = get_cad_cusips(historical_path)
+    # Get CAD CUSIPs and Custom_Sector mapping from historical data
+    cad_cusips, custom_sector_mapping = get_cad_cusips_with_custom_sector(historical_path)
     
     if not cad_cusips:
         raise ValueError("No CAD CUSIPs found in historical data")
     
+    if not custom_sector_mapping:
+        raise ValueError("No CAD CUSIPs with valid Custom_Sector data found")
+    
     print("Loading BQL data...")
     data = pd.read_parquet(bql_path)
     
-    # Filter to only CAD CUSIPs
-    print(f"Filtering BQL data to {len(cad_cusips)} CAD CUSIPs...")
-    data = data[data["CUSIP"].isin(cad_cusips)].copy()
+    # Filter to only CAD CUSIPs that have Custom_Sector data
+    valid_cusips = set(custom_sector_mapping.keys())
+    print(f"Filtering BQL data to {len(valid_cusips)} CAD CUSIPs with valid Custom_Sector data...")
+    data = data[data["CUSIP"].isin(valid_cusips)].copy()
     
     if data.empty:
-        raise ValueError("No BQL data found for CAD CUSIPs")
+        raise ValueError("No BQL data found for CAD CUSIPs with valid Custom_Sector data")
     
     # Ensure all columns have complete data - drop any rows with missing values
     print("Filtering for complete data...")
@@ -247,13 +270,41 @@ def run_analysis(
     
     # Get list of CUSIPs
     cusips = wide_values.columns.tolist()
-    num_cusips = len(cusips)
-    num_pairs = num_cusips * (num_cusips - 1) // 2
     
-    print(f"Computing {num_pairs:,} pairwise combinations...")
+    # Filter CUSIPs to only those with Custom_Sector data (should already be filtered, but double-check)
+    cusips = [c for c in cusips if c in custom_sector_mapping]
+    
+    if not cusips:
+        raise ValueError("No CUSIPs remaining after Custom_Sector filtering")
+    
+    num_cusips = len(cusips)
+    
+    # Pre-filter pairs based on matching Custom_Sector values
+    print("Pre-filtering pairs where Custom_Sector values match exactly...")
+    valid_pairs: List[Tuple[int, int]] = []
+    for i, j in combinations(range(num_cusips), 2):
+        cusip_1 = cusips[i]
+        cusip_2 = cusips[j]
+        
+        custom_sector_1 = custom_sector_mapping.get(cusip_1)
+        custom_sector_2 = custom_sector_mapping.get(cusip_2)
+        
+        # Both should be in mapping (already filtered), but check anyway
+        if custom_sector_1 is None or custom_sector_2 is None:
+            continue
+        
+        # Check if Custom_Sectors match exactly (case-sensitive)
+        if custom_sector_1 == custom_sector_2:
+            valid_pairs.append((i, j))
+    
+    num_pairs = len(valid_pairs)
+    print(f"Found {num_pairs:,} valid pairs (out of {num_cusips * (num_cusips - 1) // 2:,} possible)")
+    
+    if num_pairs == 0:
+        raise ValueError("No pairs found with matching Custom_Sector values")
     
     # Convert to numpy array for faster operations
-    values_array = wide_values.values  # Shape: (num_dates, num_cusips)
+    values_array = wide_values[cusips].values  # Shape: (num_dates, num_cusips)
     dates_index = wide_values.index
     
     # Pre-allocate results list
@@ -263,7 +314,7 @@ def run_analysis(
     batch_size = max(1000, num_pairs // 100)  # Show progress every ~1%
     processed = 0
     
-    for idx, (i, j) in enumerate(combinations(range(num_cusips), 2)):
+    for idx, (i, j) in enumerate(valid_pairs):
         cusip_1 = cusips[i]
         cusip_2 = cusips[j]
         
@@ -340,7 +391,7 @@ def run_analysis(
     
     # Write all rows to CSV
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "all_comb.csv"
+    output_path = output_dir / "custom_sector_comb.csv"
     results_df.to_csv(output_path, index=False)
     
     # Display top N to console
@@ -353,7 +404,7 @@ def run_analysis(
 
 
 def main() -> None:
-    """Entry point for running the all combinations pair analytics script."""
+    """Entry point for running the custom sector combinations pair analytics script."""
     run_analysis()
 
 

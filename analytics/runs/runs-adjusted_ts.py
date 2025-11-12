@@ -15,8 +15,8 @@ import pandas as pd
 
 # Get script directory and build paths relative to it
 SCRIPT_DIR = Path(__file__).parent.resolve()
-RUNS_PARQUET_PATH = SCRIPT_DIR.parent / "bond_data" / "parquet" / "runs_timeseries.parquet"
-OUTPUT_DIR = SCRIPT_DIR / "processed_data"
+RUNS_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "runs_timeseries.parquet"
+OUTPUT_DIR = SCRIPT_DIR.parent / "processed_data"
 
 # Size threshold for >3mm filters
 SIZE_THRESHOLD = 3000000

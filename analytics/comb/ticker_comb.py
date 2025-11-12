@@ -1,10 +1,10 @@
 """
-Term combinations pair analytics script.
+Ticker combinations pair analytics script.
 
 This module reads `bond_data/parquet/bql.parquet`, filters CUSIPs present in the most
-recent dates, filters pairs where "Yrs (Cvn)" values are within 0.8 years of each other,
-computes pairwise spreads, and exports all pairs sorted by Z Score to CSV. The top 80
-pairs are displayed to console for monitoring relative value opportunities.
+recent dates, filters pairs where Ticker values match exactly, computes pairwise spreads,
+and exports all pairs sorted by Z Score to CSV. The top 80 pairs are displayed to console
+for monitoring relative value opportunities.
 """
 
 from __future__ import annotations
@@ -19,15 +19,12 @@ import pandas as pd
 
 # Get script directory and build paths relative to it
 SCRIPT_DIR = Path(__file__).parent.resolve()
-BQL_PARQUET_PATH = SCRIPT_DIR.parent / "bond_data" / "parquet" / "bql.parquet"
-HISTORICAL_PARQUET_PATH = SCRIPT_DIR.parent / "bond_data" / "parquet" / "historical_bond_details.parquet"
-OUTPUT_DIR = SCRIPT_DIR / "processed_data"
+BQL_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "bql.parquet"
+HISTORICAL_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "historical_bond_details.parquet"
+OUTPUT_DIR = SCRIPT_DIR.parent / "processed_data"
 
 # Filter to CUSIPs present in most recent 75% of dates
 RECENT_DATE_PERCENT = 0.75
-
-# Maximum absolute difference in "Yrs (Cvn)" for pair filtering
-MAX_YRS_CVN_DIFF = 0.8
 
 
 @dataclass
@@ -63,19 +60,19 @@ def ensure_ascii(value: Optional[str]) -> str:
     return value.encode("ascii", errors="replace").decode("ascii")
 
 
-def get_cad_cusips_with_yrs_cvn(historical_path: Path) -> Tuple[Set[str], Dict[str, float]]:
+def get_cad_cusips_with_ticker(historical_path: Path) -> Tuple[Set[str], Dict[str, str]]:
     """
-    Get CAD CUSIPs and "Yrs (Cvn)" mapping from the last date in historical_bond_details.parquet.
+    Get CAD CUSIPs and Ticker mapping from the last date in historical_bond_details.parquet.
 
     Args:
         historical_path: Path to historical_bond_details.parquet file.
 
     Returns:
-        Tuple of (cad_cusips_set, yrs_cvn_mapping) where:
+        Tuple of (cad_cusips_set, ticker_mapping) where:
         - cad_cusips_set: Set of CUSIPs with Currency="CAD" on the last date
-        - yrs_cvn_mapping: Dictionary mapping CUSIP to "Yrs (Cvn)" value (only includes CUSIPs with valid "Yrs (Cvn)")
+        - ticker_mapping: Dictionary mapping CUSIP to Ticker value (only includes CUSIPs with valid Ticker)
     """
-    print("Loading historical bond details to filter CAD CUSIPs and get Yrs (Cvn) mappings...")
+    print("Loading historical bond details to filter CAD CUSIPs and get Ticker mappings...")
     historical_df = pd.read_parquet(historical_path)
     
     # Get the last date
@@ -91,23 +88,19 @@ def get_cad_cusips_with_yrs_cvn(historical_path: Path) -> Tuple[Set[str], Dict[s
     
     print(f"Found {len(cad_cusips)} CAD CUSIPs on last date")
     
-    # Filter to CAD CUSIPs with valid "Yrs (Cvn)" data
-    valid_df = cad_df[cad_df["Yrs (Cvn)"].notna()].copy()
-    
-    # Convert "Yrs (Cvn)" to float
-    valid_df["Yrs (Cvn)"] = pd.to_numeric(valid_df["Yrs (Cvn)"], errors="coerce")
-    valid_df = valid_df[valid_df["Yrs (Cvn)"].notna()].copy()
+    # Filter to CAD CUSIPs with valid Ticker data
+    valid_df = cad_df[cad_df["Ticker"].notna()].copy()
     
     # Create mapping
-    yrs_cvn_mapping = dict(zip(valid_df["CUSIP"], valid_df["Yrs (Cvn)"].astype(float)))
+    ticker_mapping = dict(zip(valid_df["CUSIP"], valid_df["Ticker"].astype(str)))
     
-    excluded_count = len(cad_cusips) - len(yrs_cvn_mapping)
+    excluded_count = len(cad_cusips) - len(ticker_mapping)
     if excluded_count > 0:
-        print(f"Excluded {excluded_count} CAD CUSIPs with missing/invalid Yrs (Cvn) data")
+        print(f"Excluded {excluded_count} CAD CUSIPs with missing/invalid Ticker data")
     
-    print(f"Found {len(yrs_cvn_mapping)} CAD CUSIPs with valid Yrs (Cvn) data")
+    print(f"Found {len(ticker_mapping)} CAD CUSIPs with valid Ticker data")
     
-    return cad_cusips, yrs_cvn_mapping
+    return cad_cusips, ticker_mapping
 
 
 def filter_recent_cusips(data: pd.DataFrame, percent: float = RECENT_DATE_PERCENT) -> pd.DataFrame:
@@ -211,40 +204,38 @@ def run_analysis(
     historical_path: Path = HISTORICAL_PARQUET_PATH,
     output_dir: Path = OUTPUT_DIR,
     top_n: int = 80,
-    max_yrs_cvn_diff: float = MAX_YRS_CVN_DIFF,
 ) -> pd.DataFrame:
     """
-    Execute the term combinations pair analytics workflow.
+    Execute the ticker combinations pair analytics workflow.
 
     Args:
         bql_path: Path to the BQL parquet file.
         historical_path: Path to historical_bond_details.parquet file.
         output_dir: Directory for CSV export.
         top_n: Number of top pairs to return (default 80).
-        max_yrs_cvn_diff: Maximum absolute difference in "Yrs (Cvn)" for pair filtering (default 0.8).
 
     Returns:
         DataFrame containing top N pair analytics sorted by Z Score.
     """
-    # Get CAD CUSIPs and "Yrs (Cvn)" mapping from historical data
-    cad_cusips, yrs_cvn_mapping = get_cad_cusips_with_yrs_cvn(historical_path)
+    # Get CAD CUSIPs and Ticker mapping from historical data
+    cad_cusips, ticker_mapping = get_cad_cusips_with_ticker(historical_path)
     
     if not cad_cusips:
         raise ValueError("No CAD CUSIPs found in historical data")
     
-    if not yrs_cvn_mapping:
-        raise ValueError("No CAD CUSIPs with valid Yrs (Cvn) data found")
+    if not ticker_mapping:
+        raise ValueError("No CAD CUSIPs with valid Ticker data found")
     
     print("Loading BQL data...")
     data = pd.read_parquet(bql_path)
     
-    # Filter to only CAD CUSIPs that have "Yrs (Cvn)" data
-    valid_cusips = set(yrs_cvn_mapping.keys())
-    print(f"Filtering BQL data to {len(valid_cusips)} CAD CUSIPs with valid Yrs (Cvn) data...")
+    # Filter to only CAD CUSIPs that have Ticker data
+    valid_cusips = set(ticker_mapping.keys())
+    print(f"Filtering BQL data to {len(valid_cusips)} CAD CUSIPs with valid Ticker data...")
     data = data[data["CUSIP"].isin(valid_cusips)].copy()
     
     if data.empty:
-        raise ValueError("No BQL data found for CAD CUSIPs with valid Yrs (Cvn) data")
+        raise ValueError("No BQL data found for CAD CUSIPs with valid Ticker data")
     
     # Ensure all columns have complete data - drop any rows with missing values
     print("Filtering for complete data...")
@@ -280,37 +271,37 @@ def run_analysis(
     # Get list of CUSIPs
     cusips = wide_values.columns.tolist()
     
-    # Filter CUSIPs to only those with "Yrs (Cvn)" data (should already be filtered, but double-check)
-    cusips = [c for c in cusips if c in yrs_cvn_mapping]
+    # Filter CUSIPs to only those with Ticker data (should already be filtered, but double-check)
+    cusips = [c for c in cusips if c in ticker_mapping]
     
     if not cusips:
-        raise ValueError("No CUSIPs remaining after Yrs (Cvn) filtering")
+        raise ValueError("No CUSIPs remaining after Ticker filtering")
     
     num_cusips = len(cusips)
     
-    # Pre-filter pairs based on "Yrs (Cvn)" difference
-    print(f"Pre-filtering pairs where abs(Yrs (Cvn) difference) <= {max_yrs_cvn_diff}...")
+    # Pre-filter pairs based on matching Ticker values
+    print("Pre-filtering pairs where Ticker values match exactly...")
     valid_pairs: List[Tuple[int, int]] = []
     for i, j in combinations(range(num_cusips), 2):
         cusip_1 = cusips[i]
         cusip_2 = cusips[j]
         
-        yrs_cvn_1 = yrs_cvn_mapping.get(cusip_1)
-        yrs_cvn_2 = yrs_cvn_mapping.get(cusip_2)
+        ticker_1 = ticker_mapping.get(cusip_1)
+        ticker_2 = ticker_mapping.get(cusip_2)
         
         # Both should be in mapping (already filtered), but check anyway
-        if yrs_cvn_1 is None or yrs_cvn_2 is None:
+        if ticker_1 is None or ticker_2 is None:
             continue
         
-        # Check if difference is within threshold
-        if abs(yrs_cvn_1 - yrs_cvn_2) <= max_yrs_cvn_diff:
+        # Check if Tickers match exactly (case-sensitive)
+        if ticker_1 == ticker_2:
             valid_pairs.append((i, j))
     
     num_pairs = len(valid_pairs)
     print(f"Found {num_pairs:,} valid pairs (out of {num_cusips * (num_cusips - 1) // 2:,} possible)")
     
     if num_pairs == 0:
-        raise ValueError(f"No pairs found with Yrs (Cvn) difference <= {max_yrs_cvn_diff}")
+        raise ValueError("No pairs found with matching Ticker values")
     
     # Convert to numpy array for faster operations
     values_array = wide_values[cusips].values  # Shape: (num_dates, num_cusips)
@@ -400,7 +391,7 @@ def run_analysis(
     
     # Write all rows to CSV
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "term_comb.csv"
+    output_path = output_dir / "ticker_comb.csv"
     results_df.to_csv(output_path, index=False)
     
     # Display top N to console
@@ -413,7 +404,7 @@ def run_analysis(
 
 
 def main() -> None:
-    """Entry point for running the term combinations pair analytics script."""
+    """Entry point for running the ticker combinations pair analytics script."""
     run_analysis()
 
 

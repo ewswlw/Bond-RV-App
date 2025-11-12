@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-XX XX:XX ET - Runs Today Analytics (MTD, YTD, 1yr changes)  
+**Last Updated**: 2025-01-XX XX:XX ET - Analytics Folder Reorganization (comb/ and runs/ subfolders)  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -426,18 +426,20 @@ poetry run pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_c
 ```
 Bond-RV-App/
 ├── analytics/             # Analytics scripts and processed outputs
-│   ├── cr01_comb.py      # CR01 pair analytics (BQL universe vs holdings spreads)
-│   ├── all_comb.py       # All combinations pair analytics (all CAD CUSIPs)
-│   ├── term_comb.py      # Term combinations pair analytics (filters pairs where abs(Yrs (Cvn) difference) <= 0.8)
-│   ├── ticker_comb.py    # Ticker combinations pair analytics (filters pairs where Ticker values match exactly)
-│   ├── custom_sector.py  # Custom sector combinations pair analytics (filters pairs where Custom_Sector values match exactly)
-│   ├── custom_bond_comb.py  # Custom bond combinations pair analytics (pairs all CAD CUSIPs with fixed target bond, configurable by Ticker or Security)
-│   ├── port_comb.py      # Portfolio combinations pair analytics (filters to portfolio CUSIPs as cusip_2)
-│   ├── port_executable.py  # Portfolio executable combinations pair analytics (filters cusip_1 by CR01 @ Wide Offer >= 2000, cusip_2 by portfolio)
-│   ├── cad_cheap_vs_usd.py  # CAD cheap vs USD pair analytics (CAD/USD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
-│   ├── cad_rich_vs_usd.py   # CAD rich vs USD pair analytics (USD/CAD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
-│   ├── runs-adjusted_ts.py  # Runs adjusted timeseries analytics (Date+CUSIP+Benchmark aggregation)
-│   ├── runs_today.py     # Runs today analytics (last date with DoD, MTD, YTD, 1yr changes)
+│   ├── comb/             # Pair analytics scripts
+│   │   ├── cr01_comb.py      # CR01 pair analytics (BQL universe vs holdings spreads)
+│   │   ├── all_comb.py       # All combinations pair analytics (all CAD CUSIPs)
+│   │   ├── term_comb.py      # Term combinations pair analytics (filters pairs where abs(Yrs (Cvn) difference) <= 0.8)
+│   │   ├── ticker_comb.py    # Ticker combinations pair analytics (filters pairs where Ticker values match exactly)
+│   │   ├── custom_sector.py  # Custom sector combinations pair analytics (filters pairs where Custom_Sector values match exactly)
+│   │   ├── custom_bond_comb.py  # Custom bond combinations pair analytics (pairs all CAD CUSIPs with fixed target bond, configurable by Ticker or Security)
+│   │   ├── port_comb.py      # Portfolio combinations pair analytics (filters to portfolio CUSIPs as cusip_2)
+│   │   ├── port_executable.py  # Portfolio executable combinations pair analytics (filters cusip_1 by CR01 @ Wide Offer >= 2000, cusip_2 by portfolio)
+│   │   ├── cad_cheap_vs_usd.py  # CAD cheap vs USD pair analytics (CAD/USD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
+│   │   └── cad_rich_vs_usd.py   # CAD rich vs USD pair analytics (USD/CAD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
+│   ├── runs/             # Runs analytics scripts
+│   │   ├── runs-adjusted_ts.py  # Runs adjusted timeseries analytics (Date+CUSIP+Benchmark aggregation)
+│   │   └── runs_today.py     # Runs today analytics (last date with DoD, MTD, YTD, 1yr changes)
 │   └── processed_data/   # CSV outputs from analytics scripts
 │       ├── cr01_pair_analytics.csv
 │       ├── all_comb.csv
@@ -491,6 +493,11 @@ Bond-RV-App/
 - **Scripts must detect their location** and adjust paths accordingly
 - **Support running from multiple directory locations** (absolute and relative paths)
 - **Avoid hardcoded paths**: Use relative paths with config-based resolution
+- **Analytics script path resolution**:
+  - Scripts in `analytics/comb/` and `analytics/runs/` use `SCRIPT_DIR = Path(__file__).parent.resolve()`
+  - Parquet files: `SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "*.parquet"` (goes up 2 levels to project root)
+  - Output directory: `SCRIPT_DIR.parent / "processed_data"` (goes up 1 level to `analytics/processed_data/`)
+  - Cross-references: `SCRIPT_DIR.parent / "processed_data" / "*.csv"` (for scripts reading other analytics outputs)
 
 ---
 
@@ -995,4 +1002,12 @@ pytest tests/unit/test_utils.py -v
   - Updated ALLOWED_DEALERS to include BNS: ['BMO', 'BNS', 'NBF', 'RBC', 'TD']
   - Updated RUNS_KNOWN_DEALERS to replace SCM with BNS for validation consistency
   - Updated documentation to reflect BNS in allowed dealers list
+- **2025-01-XX XX:XX ET**: Reorganized analytics folder structure:
+  - Created `analytics/comb/` subfolder for all pair analytics scripts (9 scripts)
+  - Created `analytics/runs/` subfolder for runs analytics scripts (2 scripts)
+  - Updated all path references in analytics scripts:
+    - Parquet paths: `SCRIPT_DIR.parent.parent` (2 levels up to project root)
+    - Output directory: `SCRIPT_DIR.parent / "processed_data"` (1 level up to `analytics/processed_data/`)
+    - Cross-references: `SCRIPT_DIR.parent / "processed_data" / "*.csv"` (for scripts reading other analytics outputs)
+  - All scripts tested and verified to run correctly from new locations
 

@@ -19,8 +19,8 @@ import pandas as pd
 
 # Get script directory and build paths relative to it
 SCRIPT_DIR = Path(__file__).parent.resolve()
-BQL_PARQUET_PATH = SCRIPT_DIR.parent / "bond_data" / "parquet" / "bql.parquet"
-OUTPUT_DIR = SCRIPT_DIR / "processed_data"
+BQL_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "bql.parquet"
+OUTPUT_DIR = SCRIPT_DIR.parent / "processed_data"
 
 CR01_HOLDINGS_RAW: List[str] = [
     "13607PXH2 Corp",

@@ -1,11 +1,16 @@
 """
-Portfolio executable combinations pair analytics script.
+Custom bond combinations pair analytics script.
 
-This module reads `bond_data/parquet/bql.parquet`, filters CUSIPs present in the most
-recent dates, computes all pairwise spreads, filters to only pairs where cusip_1 matches
-CUSIPs from runs_today.csv with CR01 @ Wide Offer >= 2000, and cusip_2 is in the
-portfolio CUSIP list, and exports all pairs sorted by Z Score to CSV.
-The top 80 pairs are displayed to console for monitoring relative value opportunities.
+This module reads `bond_data/parquet/bql.parquet`, filters cusip_1 to CAD CUSIPs present in the most
+recent dates, pairs each with a fixed cusip_2 (configurable target bond), computes pairwise spreads,
+and exports all pairs sorted by Z Score to CSV. The top N pairs are displayed to console
+for monitoring relative value opportunities.
+
+Configuration:
+    - TARGET_BOND_TICKER: Ticker of target bond(s) - takes precedence over Security (default: None)
+    - TARGET_BOND_SECURITY: Security name of target bond (default: "TCN 5.6 09/09/30")
+    - RECENT_DATE_PERCENT: Percentage of recent dates to filter (default: 0.75)
+    - TOP_N_PAIRS: Number of top pairs to display (default: 80)
 """
 
 from __future__ import annotations
@@ -17,81 +22,37 @@ from typing import Dict, List, Optional, Set, Tuple
 import numpy as np
 import pandas as pd
 
-# Get script directory and build paths relative to it
-SCRIPT_DIR = Path(__file__).parent.resolve()
-BQL_PARQUET_PATH = SCRIPT_DIR.parent / "bond_data" / "parquet" / "bql.parquet"
-HISTORICAL_PARQUET_PATH = SCRIPT_DIR.parent / "bond_data" / "parquet" / "historical_bond_details.parquet"
-RUNS_TODAY_CSV_PATH = SCRIPT_DIR / "processed_data" / "runs_today.csv"
-OUTPUT_DIR = SCRIPT_DIR / "processed_data"
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
 
-# Filter to CUSIPs present in most recent 75% of dates
+# Target bond Ticker to find in universe.parquet (exact match, case-sensitive)
+# If provided, takes precedence over TARGET_BOND_SECURITY
+# Set to None to use Security name instead
+# Example: "TCN" will find all bonds with Ticker="TCN"
+TARGET_BOND_TICKER = "TCN"  # Set to "TCN" to use Ticker-based search
+
+# Target bond Security name to find in universe.parquet
+# Used only if TARGET_BOND_TICKER is None
+# Change this to analyze pairs against a different bond
+TARGET_BOND_SECURITY = None
+
+# Filter to CUSIPs present in most recent X% of dates (default: 0.75 = 75%)
 RECENT_DATE_PERCENT = 0.75
 
-# CR01 @ Wide Offer threshold for filtering cusip_1
-CR01_WIDE_OFFER_THRESHOLD = 2000.0
+# Number of top pairs to display in console (default: 80)
+TOP_N_PAIRS = 80
 
-# Portfolio CUSIPs (normalized to uppercase, 9 characters)
-PORTFOLIO_CUSIPS = {
-    "13607PXH2",
-    "44810ZCS7",
-    "29251ZCJ4",
-    "06418YXB9",
-    "83179XAL2",
-    "13607HR79",
-    "06418MM43",
-    "766910BT9",
-    "779926FY5",
-    "63306AHT6",
-    "83179XAH1",
-    "25675TAP2",
-    "07813ZCL6",
-    "89116CST5",
-    "780086XL3",
-    "7800867G3",
-    "89117FPG8",
-    "87971MCC5",
-    "13607PBA1",
-    "89156VAC0",
-    "387427AM9",
-    "34527ACW8",
-    "064164QM1",
-    "26153WAJ8",
-    "92938WAD5",
-    "31430W3J1",
-    "375916AA1",
-    "759480AN6",
-    "375916AC7",
-    "16141AAG8",
-    "759480AM8",
-    "019456AK8",
-    "667495AN5",
-    "15135UAT6",
-    "949746TJO",
-    "780086WG5",
-    "019456AM4",
-    "06369ZCL6",
-    "55279QAE0",
-    "891102AE5",
-    "136765BX1",
-    "12658MAD3",
-    "02138ZAQ6",
-    "63306AHF6",
-    "16141AAF0",
-    "775109BT7",
-    "06415GDJ6",
-    "89117GX51",
-    "375916AE3",
-    "89353ZCF3",
-    "31430WU44",
-    "11291ZAM9",
-    "190330AQ3",
-    "172967MJ7",
-    "31943BBY5",
-    "918423BJ2",
-    "56501RAQ9",
-    "86682ZAT3",
-    "12658MAC5",
-}
+# ============================================================================
+# PATHS (auto-configured based on script location)
+# ============================================================================
+
+# Get script directory and build paths relative to it
+SCRIPT_DIR = Path(__file__).parent.resolve()
+BQL_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "bql.parquet"
+HISTORICAL_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "historical_bond_details.parquet"
+UNIVERSE_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "universe.parquet"
+OUTPUT_DIR = SCRIPT_DIR.parent / "processed_data"
 
 
 @dataclass
@@ -127,6 +88,77 @@ def ensure_ascii(value: Optional[str]) -> str:
     return value.encode("ascii", errors="replace").decode("ascii")
 
 
+def find_target_bond_cusips(
+    universe_path: Path,
+    ticker: Optional[str] = None,
+    security_name: Optional[str] = None,
+) -> Tuple[List[str], Dict[str, str]]:
+    """
+    Find CUSIP(s) for target bond(s) by searching Ticker or Security name in universe.parquet.
+    
+    If ticker is provided, searches by Ticker (exact match, case-sensitive).
+    If ticker not found, falls back to security_name if provided.
+    Returns all matching CUSIPs if multiple bonds share the same Ticker.
+
+    Args:
+        universe_path: Path to universe.parquet file.
+        ticker: Ticker to search for (exact match, case-sensitive). Takes precedence.
+        security_name: Security name to search for (fallback if ticker not found).
+
+    Returns:
+        Tuple of (list of CUSIP strings, mapping of CUSIP to Security name).
+
+    Raises:
+        ValueError: If no bond found and no fallback available.
+    """
+    print("Loading universe.parquet to find target bond(s)...")
+    universe_df = pd.read_parquet(universe_path)
+    
+    matches = None
+    search_type = None
+    
+    # Try Ticker first if provided
+    if ticker is not None and ticker.strip():
+        print(f"Searching by Ticker: '{ticker}' (exact match, case-sensitive)...")
+        matches = universe_df[universe_df["Ticker"] == ticker].copy()
+        search_type = "Ticker"
+        
+        if len(matches) == 0:
+            print(f"WARNING: No bonds found with Ticker '{ticker}'")
+            if security_name is not None and security_name.strip():
+                print(f"Falling back to Security name: '{security_name}'")
+                matches = universe_df[universe_df["Security"] == security_name].copy()
+                search_type = "Security"
+        else:
+            # Log each match
+            print(f"Found {len(matches)} bond(s) with Ticker '{ticker}':")
+            for idx, row in matches.iterrows():
+                print(f"  CUSIP: {row['CUSIP']}, Security: {row['Security']}, Ticker: {row['Ticker']}")
+    
+    # Try Security if Ticker not used or not found
+    elif security_name is not None and security_name.strip():
+        print(f"Searching by Security name: '{security_name}'...")
+        matches = universe_df[universe_df["Security"] == security_name].copy()
+        search_type = "Security"
+    
+    # No search criteria provided
+    if matches is None or len(matches) == 0:
+        error_msg = "No target bond specified. Provide either TARGET_BOND_TICKER or TARGET_BOND_SECURITY."
+        if ticker is not None and ticker.strip():
+            error_msg = f"No bonds found with Ticker '{ticker}'"
+            if security_name is not None and security_name.strip():
+                error_msg += f" or Security '{security_name}'"
+        raise ValueError(error_msg)
+    
+    # Extract CUSIPs and Security names
+    target_cusips = [str(cusip) for cusip in matches["CUSIP"].tolist()]
+    cusip_to_security = dict(zip(matches["CUSIP"], matches["Security"]))
+    
+    print(f"Found {len(target_cusips)} target bond(s): {', '.join(target_cusips)}")
+    
+    return target_cusips, cusip_to_security
+
+
 def get_cad_cusips(historical_path: Path) -> Set[str]:
     """
     Get CUSIPs with Currency="CAD" from the last date in historical_bond_details.parquet.
@@ -150,62 +182,6 @@ def get_cad_cusips(historical_path: Path) -> Set[str]:
     
     print(f"Found {len(cad_cusips)} CAD CUSIPs on last date")
     return cad_cusips
-
-
-def get_executable_cusips(runs_today_path: Path, threshold: float = CR01_WIDE_OFFER_THRESHOLD) -> Set[str]:
-    """
-    Get CUSIPs from runs_today.csv where CR01 @ Wide Offer >= threshold.
-
-    Args:
-        runs_today_path: Path to runs_today.csv file.
-        threshold: Minimum CR01 @ Wide Offer value (default 2000.0).
-
-    Returns:
-        Set of CUSIPs with CR01 @ Wide Offer >= threshold.
-
-    Raises:
-        FileNotFoundError: If runs_today.csv does not exist.
-        ValueError: If required column is missing or no matching CUSIPs found.
-    """
-    if not runs_today_path.exists():
-        raise FileNotFoundError(f"runs_today.csv not found at: {runs_today_path}")
-    
-    print(f"Loading runs_today.csv from {runs_today_path}...")
-    runs_df = pd.read_csv(runs_today_path)
-    
-    # Check if required column exists
-    required_column = "CR01 @ Wide Offer"
-    if required_column not in runs_df.columns:
-        raise ValueError(
-            f"Required column '{required_column}' not found in runs_today.csv. "
-            f"Available columns: {list(runs_df.columns)}"
-        )
-    
-    # Filter to rows with valid (non-null) CR01 @ Wide Offer values >= threshold
-    valid_mask = runs_df[required_column].notna()
-    filtered_df = runs_df[valid_mask].copy()
-    
-    if filtered_df.empty:
-        raise ValueError(f"No rows with valid CR01 @ Wide Offer values in runs_today.csv")
-    
-    # Filter to rows where CR01 @ Wide Offer >= threshold
-    threshold_mask = filtered_df[required_column] >= threshold
-    executable_df = filtered_df[threshold_mask].copy()
-    
-    if executable_df.empty:
-        raise ValueError(
-            f"No CUSIPs found with CR01 @ Wide Offer >= {threshold} in runs_today.csv"
-        )
-    
-    # Extract CUSIPs
-    executable_cusips = set(executable_df["CUSIP"].unique())
-    
-    print(
-        f"Found {len(executable_cusips)} CUSIPs with CR01 @ Wide Offer >= {threshold} "
-        f"(from {len(executable_df)} rows)"
-    )
-    
-    return executable_cusips
 
 
 def filter_recent_cusips(data: pd.DataFrame, percent: float = RECENT_DATE_PERCENT) -> pd.DataFrame:
@@ -304,80 +280,63 @@ def compute_pair_stats_vectorized(
     return (last_value, average_value, vs_average, z_score, percentile)
 
 
-def check_portfolio_cusips_in_data(
-    portfolio_cusips: Set[str],
-    data_cusips: Set[str],
-    historical_path: Path,
-) -> None:
-    """
-    Check for portfolio CUSIPs missing from BQL data and log warnings with bond names.
-
-    Args:
-        portfolio_cusips: Set of portfolio CUSIPs to check.
-        data_cusips: Set of CUSIPs present in BQL data.
-        historical_path: Path to historical_bond_details.parquet to look up bond names.
-    """
-    missing_cusips = portfolio_cusips - data_cusips
-    if missing_cusips:
-        # Load historical data to get bond names
-        historical_df = pd.read_parquet(historical_path)
-        last_date = historical_df["Date"].max()
-        last_date_df = historical_df[historical_df["Date"] == last_date]
-        
-        # Create CUSIP to Security name mapping
-        cusip_to_name = dict(zip(last_date_df["CUSIP"], last_date_df["Security"]))
-        
-        print(f"\nWARNING: {len(missing_cusips)} portfolio CUSIPs not found in BQL data:")
-        for cusip in sorted(missing_cusips):
-            bond_name = cusip_to_name.get(cusip, "Unknown")
-            # Ensure ASCII-safe for console
-            bond_name_safe = ensure_ascii(bond_name)
-            print(f"  - {bond_name_safe} ({cusip})")
-
-
 def run_analysis(
     bql_path: Path = BQL_PARQUET_PATH,
     historical_path: Path = HISTORICAL_PARQUET_PATH,
-    runs_today_path: Path = RUNS_TODAY_CSV_PATH,
+    universe_path: Path = UNIVERSE_PARQUET_PATH,
     output_dir: Path = OUTPUT_DIR,
-    top_n: int = 80,
+    top_n: int = TOP_N_PAIRS,
+    target_ticker: Optional[str] = TARGET_BOND_TICKER,
+    target_security: Optional[str] = TARGET_BOND_SECURITY,
 ) -> pd.DataFrame:
     """
-    Execute the portfolio executable combinations pair analytics workflow.
+    Execute the custom bond combinations pair analytics workflow.
 
     Args:
         bql_path: Path to the BQL parquet file.
         historical_path: Path to historical_bond_details.parquet file.
-        runs_today_path: Path to runs_today.csv file.
+        universe_path: Path to universe.parquet file.
         output_dir: Directory for CSV export.
         top_n: Number of top pairs to return (default 80).
+        target_ticker: Ticker of target bond(s) - takes precedence (default None).
+        target_security: Security name of target bond (default "TCN 5.6 09/09/30").
 
     Returns:
-        DataFrame containing top N pair analytics filtered to executable CUSIPs
-        (cusip_1) and portfolio CUSIPs (cusip_2), sorted by Z Score.
+        DataFrame containing top N pair analytics sorted by Z Score.
     """
-    # First, get CAD CUSIPs from historical data
+    # Find target bond CUSIP(s) from universe.parquet
+    target_cusips, cusip_to_security = find_target_bond_cusips(
+        universe_path, ticker=target_ticker, security_name=target_security
+    )
+    
+    # Get CAD CUSIPs from historical data
     cad_cusips = get_cad_cusips(historical_path)
     
     if not cad_cusips:
         raise ValueError("No CAD CUSIPs found in historical data")
     
-    # Get executable CUSIPs from runs_today.csv
-    executable_cusips = get_executable_cusips(runs_today_path, CR01_WIDE_OFFER_THRESHOLD)
-    
     print("Loading BQL data...")
     data = pd.read_parquet(bql_path)
     
-    # Filter to only CAD CUSIPs
+    # Check that target bond(s) have BQL data
+    target_bql_data = data[data["CUSIP"].isin(target_cusips)].copy()
+    if target_bql_data.empty:
+        raise ValueError(f"Target bond(s) (CUSIPs {', '.join(target_cusips)}) have no BQL data")
+    
+    target_cusips_with_data = target_bql_data["CUSIP"].unique().tolist()
+    if len(target_cusips_with_data) < len(target_cusips):
+        missing = set(target_cusips) - set(target_cusips_with_data)
+        print(f"WARNING: {len(missing)} target bond(s) have no BQL data: {', '.join(missing)}")
+        target_cusips = target_cusips_with_data
+    
+    print(f"Target bond(s) have {len(target_bql_data)} BQL data points across {target_bql_data['Date'].nunique()} dates")
+    
+    # Filter to CAD CUSIPs (including target bond - don't exclude it)
     print(f"Filtering BQL data to {len(cad_cusips)} CAD CUSIPs...")
     data = data[data["CUSIP"].isin(cad_cusips)].copy()
     
     if data.empty:
         raise ValueError("No BQL data found for CAD CUSIPs")
-    
-    # Check for missing portfolio CUSIPs in BQL data
-    data_cusips = set(data["CUSIP"].unique())
-    check_portfolio_cusips_in_data(PORTFOLIO_CUSIPS, data_cusips, historical_path)
     
     # Ensure all columns have complete data - drop any rows with missing values
     print("Filtering for complete data...")
@@ -397,6 +356,15 @@ def run_analysis(
     
     print(f"After filtering: {len(filtered_data)} rows, {filtered_data['CUSIP'].nunique()} CUSIPs")
     
+    # Verify target bond(s) are still in filtered data
+    target_cusips_in_data = [c for c in target_cusips if c in filtered_data["CUSIP"].values]
+    if not target_cusips_in_data:
+        raise ValueError(f"Target bond(s) (CUSIPs {', '.join(target_cusips)}) not present in recent dates")
+    if len(target_cusips_in_data) < len(target_cusips):
+        missing = set(target_cusips) - set(target_cusips_in_data)
+        print(f"WARNING: {len(missing)} target bond(s) not in recent dates: {', '.join(missing)}")
+        target_cusips = target_cusips_in_data
+    
     # Build name lookup
     print("Building name lookup...")
     name_lookup = build_name_lookup(filtered_data)
@@ -410,33 +378,16 @@ def run_analysis(
         aggfunc="last",
     ).sort_index()
     
-    # Get list of CUSIPs
+    # Get list of CUSIPs (all CAD CUSIPs with recent dates, including target bonds)
     cusips = wide_values.columns.tolist()
+    num_cusips = len(cusips)
     
-    # Pre-filter: Only include pairs where cusip_1 is executable and cusip_2 is in portfolio
-    executable_cusips_in_data = executable_cusips & set(cusips)
-    portfolio_cusips_in_data = PORTFOLIO_CUSIPS & set(cusips)
+    # Verify target bonds are in pivoted table
+    missing_targets = [c for c in target_cusips if c not in cusips]
+    if missing_targets:
+        raise ValueError(f"Target bond(s) (CUSIPs {', '.join(missing_targets)}) not found in pivoted table")
     
-    print(f"Pre-filtering: {len(executable_cusips_in_data)} executable CUSIPs, {len(portfolio_cusips_in_data)} portfolio CUSIPs found in data")
-    
-    if not executable_cusips_in_data:
-        raise ValueError(f"No executable CUSIPs (CR01 @ Wide Offer >= {CR01_WIDE_OFFER_THRESHOLD}) found in filtered BQL data")
-    
-    if not portfolio_cusips_in_data:
-        raise ValueError("No portfolio CUSIPs found in filtered BQL data")
-    
-    # Create mapping from CUSIP to its index in the pivoted table
-    cusip_to_idx = {cusip: i for i, cusip in enumerate(cusips)}
-    
-    # Get indices of executable CUSIPs for cusip_1 and portfolio CUSIPs for cusip_2
-    executable_indices_1 = [cusip_to_idx[cusip] for cusip in cusips if cusip in executable_cusips_in_data]
-    portfolio_indices_2 = [cusip_to_idx[cusip] for cusip in cusips if cusip in portfolio_cusips_in_data]
-    
-    num_cusips_1 = len(executable_indices_1)
-    num_cusips_2 = len(portfolio_indices_2)
-    num_pairs = num_cusips_1 * num_cusips_2
-    
-    print(f"Pre-filtered to {num_pairs:,} pairs ({num_cusips_1} executable CUSIPs × {num_cusips_2} portfolio CUSIPs)")
+    print(f"Creating pairs: {num_cusips} CAD CUSIPs paired with {len(target_cusips)} target bond(s)...")
     
     # Convert to numpy array for faster operations
     values_array = wide_values.values  # Shape: (num_dates, num_cusips)
@@ -444,28 +395,28 @@ def run_analysis(
     # Pre-allocate results list
     summaries: List[PairSummary] = []
     
-    # Process pairs in batches for progress tracking
-    batch_size = max(1000, num_pairs // 100)  # Show progress every ~1%
-    processed = 0
-    
-    # Iterate over executable CUSIPs (cusip_1) paired with portfolio CUSIPs (cusip_2)
-    for i_idx in executable_indices_1:
-        cusip_1 = cusips[i_idx]
-        cusip_1_vals = values_array[:, i_idx]
+    # Process each CUSIP paired with each target bond
+    for target_cusip in target_cusips:
+        target_values = wide_values[target_cusip].values  # Shape: (num_dates,)
         
-        for j_idx in portfolio_indices_2:
-            cusip_2 = cusips[j_idx]
-            cusip_2_vals = values_array[:, j_idx]
+        # Get target bond Security name for display
+        target_security_name = cusip_to_security.get(target_cusip, "")
+        target_bond_name = name_lookup.get(target_cusip, target_security_name)
+        
+        # Process each cusip_1 paired with this target bond
+        for i, cusip_1 in enumerate(cusips):
+            # Get aligned values (handling NaN alignment)
+            cusip_1_vals = values_array[:, i]
             
             # Find dates where both have values
-            both_valid = ~(np.isnan(cusip_1_vals) | np.isnan(cusip_2_vals))
+            both_valid = ~(np.isnan(cusip_1_vals) | np.isnan(target_values))
             
             if both_valid.sum() < 2:  # Need at least 2 overlapping dates
                 continue
             
             # Extract valid values
             valid_1 = cusip_1_vals[both_valid]
-            valid_2 = cusip_2_vals[both_valid]
+            valid_2 = target_values[both_valid]
             
             # Compute statistics
             stats = compute_pair_stats_vectorized(valid_1, valid_2)
@@ -481,28 +432,21 @@ def run_analysis(
             summaries.append(
                 PairSummary(
                     Bond_1=name_lookup.get(cusip_1, cusip_1),
-                    Bond_2=name_lookup.get(cusip_2, cusip_2),
+                    Bond_2=target_bond_name,
                     last_value=last_value,
                     average_value=average_value,
                     vs_average=vs_average,
                     z_score=z_score,
                     percentile=percentile,
                     cusip_1=cusip_1,
-                    cusip_2=cusip_2,
+                    cusip_2=target_cusip,
                 )
             )
-            
-            processed += 1
-            if processed % batch_size == 0:
-                print(f"  Processed {processed:,} / {num_pairs:,} pairs ({processed*100/num_pairs:.1f}%)...")
     
     print(f"Computed {len(summaries):,} valid pairs")
     
-    if len(summaries) == 0:
-        raise ValueError("No pairs remaining after filtering!")
-    
-    # Convert to DataFrame
-    print("Converting to DataFrame...")
+    # Convert to DataFrame and sort by Z Score descending
+    print("Sorting results...")
     results_df = pd.DataFrame(
         [
             {
@@ -521,7 +465,6 @@ def run_analysis(
     )
     
     # Sort by Z Score descending
-    print("Sorting results...")
     results_df = results_df.sort_values("Z Score", ascending=False, na_position="last")
     
     # Ensure ASCII-safe names for all rows
@@ -530,12 +473,12 @@ def run_analysis(
     
     # Write all rows to CSV
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "port_executable.csv"
+    output_path = output_dir / "custom_bond_comb.csv"
     results_df.to_csv(output_path, index=False)
     
     # Display top N to console
     top_results = results_df.head(top_n).copy()
-    print(f"\nTop {len(top_results)} Portfolio Executable Pair Analytics (by Z Score):")
+    print(f"\nTop {top_n} Pair Analytics (by Z Score):")
     print(top_results.to_string(index=False))
     print(f"\nCSV written to: {output_path} (all {len(results_df):,} rows)")
     
@@ -543,8 +486,11 @@ def run_analysis(
 
 
 def main() -> None:
-    """Entry point for running the portfolio executable combinations pair analytics script."""
-    run_analysis()
+    """Entry point for running the custom bond combinations pair analytics script."""
+    run_analysis(
+        target_ticker=TARGET_BOND_TICKER,
+        target_security=TARGET_BOND_SECURITY,
+    )
 
 
 if __name__ == "__main__":

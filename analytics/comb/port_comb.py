@@ -1,11 +1,9 @@
 """
-CAD rich vs USD pair analytics script.
+Portfolio combinations pair analytics script.
 
 This module reads `bond_data/parquet/bql.parquet`, filters CUSIPs present in the most
-recent dates, computes all pairwise spreads, filters to pairs where cusip_1 has
-Currency="USD" and cusip_2 has Currency="CAD" with matching Ticker and Custom_Sector
-values and absolute difference in Yrs (Cvn) <= 2 (from the last date in
-historical_bond_details.parquet), and exports all pairs sorted by Z Score to CSV.
+recent dates, computes all pairwise spreads, filters to only pairs where cusip_2 is in
+the portfolio CUSIP list, and exports all pairs sorted by Z Score to CSV.
 The top 80 pairs are displayed to console for monitoring relative value opportunities.
 """
 
@@ -20,12 +18,75 @@ import pandas as pd
 
 # Get script directory and build paths relative to it
 SCRIPT_DIR = Path(__file__).parent.resolve()
-BQL_PARQUET_PATH = SCRIPT_DIR.parent / "bond_data" / "parquet" / "bql.parquet"
-HISTORICAL_PARQUET_PATH = SCRIPT_DIR.parent / "bond_data" / "parquet" / "historical_bond_details.parquet"
-OUTPUT_DIR = SCRIPT_DIR / "processed_data"
+BQL_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "bql.parquet"
+HISTORICAL_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "historical_bond_details.parquet"
+OUTPUT_DIR = SCRIPT_DIR.parent / "processed_data"
 
 # Filter to CUSIPs present in most recent 75% of dates
 RECENT_DATE_PERCENT = 0.75
+
+# Portfolio CUSIPs (normalized to uppercase, 9 characters)
+PORTFOLIO_CUSIPS = {
+    "13607PXH2",
+    "44810ZCS7",
+    "29251ZCJ4",
+    "06418YXB9",
+    "83179XAL2",
+    "13607HR79",
+    "06418MM43",
+    "766910BT9",
+    "779926FY5",
+    "63306AHT6",
+    "83179XAH1",
+    "25675TAP2",
+    "07813ZCL6",
+    "89116CST5",
+    "780086XL3",
+    "7800867G3",
+    "89117FPG8",
+    "87971MCC5",
+    "13607PBA1",
+    "89156VAC0",
+    "387427AM9",
+    "34527ACW8",
+    "064164QM1",
+    "26153WAJ8",
+    "92938WAD5",
+    "31430W3J1",
+    "375916AA1",
+    "759480AN6",
+    "375916AC7",
+    "16141AAG8",
+    "759480AM8",
+    "019456AK8",
+    "667495AN5",
+    "15135UAT6",
+    "949746TJO",
+    "780086WG5",
+    "019456AM4",
+    "06369ZCL6",
+    "55279QAE0",
+    "891102AE5",
+    "136765BX1",
+    "12658MAD3",
+    "02138ZAQ6",
+    "63306AHF6",
+    "16141AAF0",
+    "775109BT7",
+    "06415GDJ6",
+    "89117GX51",
+    "375916AE3",
+    "89353ZCF3",
+    "31430WU44",
+    "11291ZAM9",
+    "190330AQ3",
+    "172967MJ7",
+    "31943BBY5",
+    "918423BJ2",
+    "56501RAQ9",
+    "86682ZAT3",
+    "12658MAC5",
+}
 
 
 @dataclass
@@ -61,47 +122,29 @@ def ensure_ascii(value: Optional[str]) -> str:
     return value.encode("ascii", errors="replace").decode("ascii")
 
 
-def get_currency_ticker_sector_mappings(historical_path: Path) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, float]]:
+def get_cad_cusips(historical_path: Path) -> Set[str]:
     """
-    Get Currency, Ticker, Custom_Sector, and Yrs (Cvn) mappings from the last date in historical_bond_details.parquet.
+    Get CUSIPs with Currency="CAD" from the last date in historical_bond_details.parquet.
 
     Args:
         historical_path: Path to historical_bond_details.parquet file.
 
     Returns:
-        Tuple of (currency_mapping, ticker_mapping, sector_mapping, yrs_cvn_mapping) dictionaries mapping CUSIP to Currency/Ticker/Custom_Sector/Yrs (Cvn).
-        CUSIPs with missing/null Currency, Ticker, Custom_Sector, or Yrs (Cvn) are excluded.
+        Set of CUSIPs with Currency="CAD" on the last date.
     """
-    print("Loading historical bond details to get Currency, Ticker, Custom_Sector, and Yrs (Cvn) mappings...")
+    print("Loading historical bond details to filter CAD CUSIPs...")
     historical_df = pd.read_parquet(historical_path)
     
     # Get the last date
     last_date = historical_df["Date"].max()
     print(f"Last date in historical data: {last_date}")
     
-    # Filter to last date
-    last_date_df = historical_df[historical_df["Date"] == last_date].copy()
+    # Filter to last date and Currency="CAD"
+    last_date_df = historical_df[historical_df["Date"] == last_date]
+    cad_cusips = set(last_date_df[last_date_df["Currency"] == "CAD"]["CUSIP"].unique())
     
-    # Filter out rows with missing Currency, Ticker, Custom_Sector, or Yrs (Cvn)
-    valid_df = last_date_df[
-        last_date_df["Currency"].notna() &
-        last_date_df["Ticker"].notna() &
-        last_date_df["Custom_Sector"].notna() &
-        last_date_df["Yrs (Cvn)"].notna()
-    ].copy()
-    
-    # Create mappings
-    currency_mapping = dict(zip(valid_df["CUSIP"], valid_df["Currency"]))
-    ticker_mapping = dict(zip(valid_df["CUSIP"], valid_df["Ticker"]))
-    sector_mapping = dict(zip(valid_df["CUSIP"], valid_df["Custom_Sector"]))
-    yrs_cvn_mapping = dict(zip(valid_df["CUSIP"], valid_df["Yrs (Cvn)"].astype(float)))
-    
-    print(
-        f"Found {len(currency_mapping)} CUSIPs with valid Currency, Ticker, Custom_Sector, and Yrs (Cvn) "
-        f"(excluded {len(last_date_df) - len(valid_df)} with missing values)"
-    )
-    
-    return currency_mapping, ticker_mapping, sector_mapping, yrs_cvn_mapping
+    print(f"Found {len(cad_cusips)} CAD CUSIPs on last date")
+    return cad_cusips
 
 
 def filter_recent_cusips(data: pd.DataFrame, percent: float = RECENT_DATE_PERCENT) -> pd.DataFrame:
@@ -200,6 +243,37 @@ def compute_pair_stats_vectorized(
     return (last_value, average_value, vs_average, z_score, percentile)
 
 
+def check_portfolio_cusips_in_data(
+    portfolio_cusips: Set[str],
+    data_cusips: Set[str],
+    historical_path: Path,
+) -> None:
+    """
+    Check for portfolio CUSIPs missing from BQL data and log warnings with bond names.
+
+    Args:
+        portfolio_cusips: Set of portfolio CUSIPs to check.
+        data_cusips: Set of CUSIPs present in BQL data.
+        historical_path: Path to historical_bond_details.parquet to look up bond names.
+    """
+    missing_cusips = portfolio_cusips - data_cusips
+    if missing_cusips:
+        # Load historical data to get bond names
+        historical_df = pd.read_parquet(historical_path)
+        last_date = historical_df["Date"].max()
+        last_date_df = historical_df[historical_df["Date"] == last_date]
+        
+        # Create CUSIP to Security name mapping
+        cusip_to_name = dict(zip(last_date_df["CUSIP"], last_date_df["Security"]))
+        
+        print(f"\nWARNING: {len(missing_cusips)} portfolio CUSIPs not found in BQL data:")
+        for cusip in sorted(missing_cusips):
+            bond_name = cusip_to_name.get(cusip, "Unknown")
+            # Ensure ASCII-safe for console
+            bond_name_safe = ensure_ascii(bond_name)
+            print(f"  - {bond_name_safe} ({cusip})")
+
+
 def run_analysis(
     bql_path: Path = BQL_PARQUET_PATH,
     historical_path: Path = HISTORICAL_PARQUET_PATH,
@@ -207,7 +281,7 @@ def run_analysis(
     top_n: int = 80,
 ) -> pd.DataFrame:
     """
-    Execute the CAD rich vs USD pair analytics workflow.
+    Execute the portfolio combinations pair analytics workflow.
 
     Args:
         bql_path: Path to the BQL parquet file.
@@ -216,15 +290,28 @@ def run_analysis(
         top_n: Number of top pairs to return (default 80).
 
     Returns:
-        DataFrame containing top N pair analytics filtered to USD/CAD pairs
-        with matching Tickers, Custom_Sectors, and Yrs (Cvn) difference <= 2,
+        DataFrame containing top N pair analytics filtered to portfolio CUSIPs,
         sorted by Z Score.
     """
+    # First, get CAD CUSIPs from historical data
+    cad_cusips = get_cad_cusips(historical_path)
+    
+    if not cad_cusips:
+        raise ValueError("No CAD CUSIPs found in historical data")
+    
     print("Loading BQL data...")
     data = pd.read_parquet(bql_path)
     
+    # Filter to only CAD CUSIPs
+    print(f"Filtering BQL data to {len(cad_cusips)} CAD CUSIPs...")
+    data = data[data["CUSIP"].isin(cad_cusips)].copy()
+    
     if data.empty:
-        raise ValueError("No BQL data found")
+        raise ValueError("No BQL data found for CAD CUSIPs")
+    
+    # Check for missing portfolio CUSIPs in BQL data
+    data_cusips = set(data["CUSIP"].unique())
+    check_portfolio_cusips_in_data(PORTFOLIO_CUSIPS, data_cusips, historical_path)
     
     # Ensure all columns have complete data - drop any rows with missing values
     print("Filtering for complete data...")
@@ -257,79 +344,27 @@ def run_analysis(
         aggfunc="last",
     ).sort_index()
     
-    # Get Currency, Ticker, Custom_Sector, and Yrs (Cvn) mappings from historical data
-    currency_mapping, ticker_mapping, sector_mapping, yrs_cvn_mapping = get_currency_ticker_sector_mappings(historical_path)
-    
     # Get list of CUSIPs
     cusips = wide_values.columns.tolist()
     
-    # Pre-filter CUSIPs to only those with valid mappings (Currency, Ticker, Custom_Sector, Yrs (Cvn))
-    valid_cusips = [
-        cusip for cusip in cusips
-        if cusip in currency_mapping
-        and cusip in ticker_mapping
-        and cusip in sector_mapping
-        and cusip in yrs_cvn_mapping
-    ]
+    # Pre-filter: Only include pairs where cusip_2 is in portfolio
+    portfolio_cusips_in_data = PORTFOLIO_CUSIPS & set(cusips)
+    print(f"Pre-filtering: {len(portfolio_cusips_in_data)} portfolio CUSIPs found in data")
     
-    print(f"Pre-filtering: {len(valid_cusips)} CUSIPs with valid Currency, Ticker, Custom_Sector, and Yrs (Cvn) data")
-    
-    if len(valid_cusips) < 2:
-        raise ValueError("Need at least 2 CUSIPs with valid Currency, Ticker, Custom_Sector, and Yrs (Cvn) data")
-    
-    # Separate into USD and CAD CUSIPs (swapped from cad_cheap_vs_usd.py)
-    usd_cusips = [c for c in valid_cusips if currency_mapping.get(c) == "USD"]
-    cad_cusips = [c for c in valid_cusips if currency_mapping.get(c) == "CAD"]
-    
-    print(f"Found {len(usd_cusips)} USD CUSIPs and {len(cad_cusips)} CAD CUSIPs with valid data")
-    
-    if not usd_cusips:
-        raise ValueError("No USD CUSIPs found with valid Currency, Ticker, Custom_Sector, and Yrs (Cvn) data")
-    
-    if not cad_cusips:
-        raise ValueError("No CAD CUSIPs found with valid Currency, Ticker, Custom_Sector, and Yrs (Cvn) data")
+    if not portfolio_cusips_in_data:
+        raise ValueError("No portfolio CUSIPs found in filtered BQL data")
     
     # Create mapping from CUSIP to its index in the pivoted table
     cusip_to_idx = {cusip: i for i, cusip in enumerate(cusips)}
     
-    # Pre-filter pairs based on matching criteria:
-    # 1. cusip_1 has Currency="USD"
-    # 2. cusip_2 has Currency="CAD"
-    # 3. Both have the same Ticker value
-    # 4. Both have the same Custom_Sector value
-    # 5. Absolute difference in Yrs (Cvn) <= 2
-    print("Pre-filtering pairs where USD/CAD pairs have matching Tickers, Custom_Sectors, and Yrs (Cvn) difference <= 2...")
-    valid_pairs: List[Tuple[int, int]] = []
+    # Get indices of portfolio CUSIPs for cusip_2
+    portfolio_indices_2 = [cusip_to_idx[cusip] for cusip in cusips if cusip in portfolio_cusips_in_data]
     
-    for cusip_1 in usd_cusips:
-        idx_1 = cusip_to_idx[cusip_1]
-        ticker_1 = ticker_mapping.get(cusip_1)
-        sector_1 = sector_mapping.get(cusip_1)
-        yrs_cvn_1 = yrs_cvn_mapping.get(cusip_1)
-        
-        if ticker_1 is None or sector_1 is None or yrs_cvn_1 is None:
-            continue
-        
-        for cusip_2 in cad_cusips:
-            idx_2 = cusip_to_idx[cusip_2]
-            ticker_2 = ticker_mapping.get(cusip_2)
-            sector_2 = sector_mapping.get(cusip_2)
-            yrs_cvn_2 = yrs_cvn_mapping.get(cusip_2)
-            
-            if ticker_2 is None or sector_2 is None or yrs_cvn_2 is None:
-                continue
-            
-            # Check matching criteria
-            if (ticker_1 == ticker_2 and
-                sector_1 == sector_2 and
-                abs(yrs_cvn_1 - yrs_cvn_2) <= 2.0):
-                valid_pairs.append((idx_1, idx_2))
+    num_cusips_1 = len(cusips)
+    num_cusips_2 = len(portfolio_indices_2)
+    num_pairs = num_cusips_1 * num_cusips_2
     
-    num_pairs = len(valid_pairs)
-    print(f"Found {num_pairs:,} valid pairs (out of {len(usd_cusips) * len(cad_cusips):,} possible USD/CAD combinations)")
-    
-    if num_pairs == 0:
-        raise ValueError("No pairs found with matching Ticker, Custom_Sector, and Yrs (Cvn) difference <= 2")
+    print(f"Pre-filtered to {num_pairs:,} pairs ({num_cusips_1} CAD CUSIPs × {num_cusips_2} portfolio CUSIPs)")
     
     # Convert to numpy array for faster operations
     values_array = wide_values.values  # Shape: (num_dates, num_cusips)
@@ -341,54 +376,57 @@ def run_analysis(
     batch_size = max(1000, num_pairs // 100)  # Show progress every ~1%
     processed = 0
     
-    for idx_1, idx_2 in valid_pairs:
-        cusip_1 = cusips[idx_1]
-        cusip_2 = cusips[idx_2]
+    # Iterate over all CAD CUSIPs (cusip_1) paired with portfolio CUSIPs (cusip_2)
+    for i, cusip_1 in enumerate(cusips):
+        cusip_1_vals = values_array[:, i]
         
-        # Get aligned values (handling NaN alignment)
-        cusip_1_vals = values_array[:, idx_1]
-        cusip_2_vals = values_array[:, idx_2]
-        
-        # Find dates where both have values
-        both_valid = ~(np.isnan(cusip_1_vals) | np.isnan(cusip_2_vals))
-        
-        if both_valid.sum() < 2:  # Need at least 2 overlapping dates
-            continue
-        
-        # Extract valid values
-        valid_1 = cusip_1_vals[both_valid]
-        valid_2 = cusip_2_vals[both_valid]
-        
-        # Compute statistics
-        stats = compute_pair_stats_vectorized(valid_1, valid_2)
-        if stats is None:
-            continue
-        
-        last_value, average_value, vs_average, z_score, percentile = stats
-        
-        # Only include pairs with valid Z scores (for sorting)
-        if z_score is None:
-            continue
-        
-        summaries.append(
-            PairSummary(
-                Bond_1=name_lookup.get(cusip_1, cusip_1),
-                Bond_2=name_lookup.get(cusip_2, cusip_2),
-                last_value=last_value,
-                average_value=average_value,
-                vs_average=vs_average,
-                z_score=z_score,
-                percentile=percentile,
-                cusip_1=cusip_1,
-                cusip_2=cusip_2,
+        for j_idx in portfolio_indices_2:
+            cusip_2 = cusips[j_idx]
+            cusip_2_vals = values_array[:, j_idx]
+            
+            # Find dates where both have values
+            both_valid = ~(np.isnan(cusip_1_vals) | np.isnan(cusip_2_vals))
+            
+            if both_valid.sum() < 2:  # Need at least 2 overlapping dates
+                continue
+            
+            # Extract valid values
+            valid_1 = cusip_1_vals[both_valid]
+            valid_2 = cusip_2_vals[both_valid]
+            
+            # Compute statistics
+            stats = compute_pair_stats_vectorized(valid_1, valid_2)
+            if stats is None:
+                continue
+            
+            last_value, average_value, vs_average, z_score, percentile = stats
+            
+            # Only include pairs with valid Z scores (for sorting)
+            if z_score is None:
+                continue
+            
+            summaries.append(
+                PairSummary(
+                    Bond_1=name_lookup.get(cusip_1, cusip_1),
+                    Bond_2=name_lookup.get(cusip_2, cusip_2),
+                    last_value=last_value,
+                    average_value=average_value,
+                    vs_average=vs_average,
+                    z_score=z_score,
+                    percentile=percentile,
+                    cusip_1=cusip_1,
+                    cusip_2=cusip_2,
+                )
             )
-        )
-        
-        processed += 1
-        if processed % batch_size == 0:
-            print(f"  Processed {processed:,} / {num_pairs:,} pairs ({processed*100/num_pairs:.1f}%)...")
+            
+            processed += 1
+            if processed % batch_size == 0:
+                print(f"  Processed {processed:,} / {num_pairs:,} pairs ({processed*100/num_pairs:.1f}%)...")
     
     print(f"Computed {len(summaries):,} valid pairs")
+    
+    if len(summaries) == 0:
+        raise ValueError("No pairs remaining after portfolio filtering!")
     
     # Convert to DataFrame
     print("Converting to DataFrame...")
@@ -419,12 +457,12 @@ def run_analysis(
     
     # Write all rows to CSV
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "cad_rich_vs_usd.csv"
+    output_path = output_dir / "port_comb.csv"
     results_df.to_csv(output_path, index=False)
     
     # Display top N to console
     top_results = results_df.head(top_n).copy()
-    print(f"\nTop {len(top_results)} USD vs CAD Pair Analytics (by Z Score):")
+    print(f"\nTop {len(top_results)} Portfolio Pair Analytics (by Z Score):")
     print(top_results.to_string(index=False))
     print(f"\nCSV written to: {output_path} (all {len(results_df):,} rows)")
     
@@ -432,7 +470,7 @@ def run_analysis(
 
 
 def main() -> None:
-    """Entry point for running the CAD rich vs USD pair analytics script."""
+    """Entry point for running the portfolio combinations pair analytics script."""
     run_analysis()
 
 
