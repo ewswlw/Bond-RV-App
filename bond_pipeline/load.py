@@ -127,11 +127,6 @@ class ParquetLoader:
                 new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
                 self.logger.info(f"Converted new data '{col}' to numeric in append mode")
 
-        # Convert all other object columns to string to avoid type inference issues
-        for col in new_df.columns:
-            if new_df[col].dtype == 'object':
-                new_df[col] = new_df[col].astype(str).replace(['nan', '<NA>', 'None'], pd.NA)
-
         self.logger.info(
             f"Appending {len(dates_to_add)} new dates with {len(new_df)} total rows"
         )
@@ -155,12 +150,57 @@ class ParquetLoader:
                         existing_df = existing_df[existing_df[DATE_COLUMN].notna()]
                 
                 # Convert years columns to numeric if they exist (for compatibility with new numeric format)
-                years_columns = ['Yrs Since Issue', 'Yrs (Worst)', 'Yrs (Cvn)']
                 for col in years_columns:
                     if col in existing_df.columns:
                         if existing_df[col].dtype == 'object':
                             existing_df[col] = pd.to_numeric(existing_df[col], errors='coerce')
                             self.logger.info(f"Converted existing '{col}' to numeric for compatibility")
+                
+                # Align column types between existing_df and new_df before concatenation
+                # This prevents PyArrow conversion errors when object columns have mixed types
+                common_columns = set(existing_df.columns) & set(new_df.columns)
+                
+                # First pass: Detect and convert numeric columns in existing_df, then align new_df
+                # This handles columns like "DoD SprdB" that might have mixed types
+                numeric_columns = set()
+                for col in common_columns:
+                    existing_dtype = existing_df[col].dtype
+                    
+                    # If existing is object, check if it contains numeric values
+                    if existing_dtype == 'object':
+                        # Check if existing column has numeric values
+                        sample_values = existing_df[col].dropna().head(100)
+                        if len(sample_values) > 0:
+                            # Try to convert a sample to see if it's numeric
+                            try:
+                                numeric_sample = pd.to_numeric(sample_values, errors='coerce')
+                                # If most values convert successfully, treat as numeric
+                                if numeric_sample.notna().sum() / len(sample_values) > 0.5:
+                                    numeric_columns.add(col)
+                                    # Convert existing column to numeric
+                                    existing_df[col] = pd.to_numeric(existing_df[col], errors='coerce')
+                                    # Convert new_df column to numeric (handles both object and string)
+                                    new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
+                                    self.logger.debug(f"Aligned '{col}': converted both to numeric (detected numeric values)")
+                            except (ValueError, TypeError):
+                                pass
+                    
+                    # If existing is already numeric, ensure new_df is also numeric
+                    elif pd.api.types.is_numeric_dtype(existing_dtype):
+                        if new_df[col].dtype != existing_dtype:
+                            new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
+                            self.logger.debug(f"Aligned '{col}': converted new_df to numeric to match existing")
+                
+                # Second pass: Convert remaining object columns to strings for consistency
+                for col in new_df.columns:
+                    if col not in numeric_columns and col not in years_columns:
+                        if new_df[col].dtype == 'object':
+                            new_df[col] = new_df[col].astype(str).replace(['nan', '<NA>', 'None'], pd.NA)
+                
+                for col in existing_df.columns:
+                    if col not in numeric_columns and col not in years_columns:
+                        if existing_df[col].dtype == 'object':
+                            existing_df[col] = existing_df[col].astype(str).replace(['nan', '<NA>', 'None'], pd.NA)
                 
                 # Combine
                 combined_df = pd.concat([existing_df, new_df], ignore_index=True)
