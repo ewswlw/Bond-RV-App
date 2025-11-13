@@ -17,8 +17,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 from bond_pipeline.config import (
     DEFAULT_INPUT_DIR,
     RUNS_INPUT_DIR,
+    PORTFOLIO_INPUT_DIR,
     HISTORICAL_PARQUET,
     RUNS_PARQUET,
+    PORTFOLIO_PARQUET,
     UNIVERSE_PARQUET,
     BQL_PARQUET,
     LOG_FILE_PROCESSING,
@@ -32,6 +34,7 @@ from bond_pipeline.transform import DataTransformer
 from bond_pipeline.load import ParquetLoader
 from bond_pipeline.utils import log_parquet_diagnostics
 from runs_pipeline.pipeline import RunsDataPipeline
+from portfolio_pipeline.pipeline import PortfolioDataPipeline
 
 
 def run_bond_pipeline(mode: str, process_bql: bool) -> bool:
@@ -92,6 +95,35 @@ def run_runs_pipeline(mode: str) -> bool:
         return success
     except Exception as e:
         print(f"\n[ERROR] Runs Pipeline error: {str(e)}")
+        return False
+
+
+def run_portfolio_pipeline(mode: str) -> bool:
+    """Run the portfolio data pipeline."""
+    print("\n" + "=" * 70)
+    print("  PORTFOLIO DATA PIPELINE")
+    print("=" * 70)
+    print(f"\n>> Starting Portfolio Pipeline in {mode.upper()} mode...")
+    print(f"   Input: {PORTFOLIO_INPUT_DIR}")
+    
+    try:
+        pipeline = PortfolioDataPipeline(PORTFOLIO_INPUT_DIR, mode)
+        success = pipeline.run()
+        
+        if success:
+            print("\n" + "-" * 70)
+            print("   [OK] Portfolio Pipeline completed successfully")
+            print(f"   Output: {PORTFOLIO_PARQUET}")
+            print("-" * 70)
+        else:
+            print("\n" + "-" * 70)
+            print("   [FAIL] Portfolio Pipeline failed")
+            print(f"   Logs: {PORTFOLIO_PARQUET.parent.parent / 'logs'}")
+            print("-" * 70)
+        
+        return success
+    except Exception as e:
+        print(f"\n[ERROR] Portfolio Pipeline error: {str(e)}")
         return False
 
 
@@ -182,6 +214,7 @@ def run_individual_parquet() -> bool:
         '1': ('historical_bond_details.parquet', 'Historical Bond Details (also regenerates universe)', run_historical_only),
         '2': ('bql.parquet', 'BQL Dataset', run_bql_only),
         '3': ('runs_timeseries.parquet', 'Runs Timeseries', None),  # Handled separately
+        '4': ('historical_portfolio.parquet', 'Portfolio Holdings', None),  # Handled separately
     }
     
     print("\nSelect parquet file to regenerate:")
@@ -189,7 +222,7 @@ def run_individual_parquet() -> bool:
         print(f"  [{key}] {filename}")
         print(f"       {description}")
     
-    choice = input("\nChoice (1, 2, or 3): ").strip()
+    choice = input("\nChoice (1, 2, 3, or 4): ").strip()
     
     if choice not in parquet_options:
         print("Invalid choice.")
@@ -205,6 +238,14 @@ def run_individual_parquet() -> bool:
         mode_choice = input("\nChoice (1 or 2): ").strip() or "2"
         mode = 'override' if mode_choice == '1' else 'append'
         return run_runs_pipeline(mode)
+    elif choice == '4':
+        # Portfolio pipeline needs mode selection
+        print("\nSelect processing mode:")
+        print("  [1] Override - Rebuild everything from scratch")
+        print("  [2] Append   - Add only new dates (default)")
+        mode_choice = input("\nChoice (1 or 2): ").strip() or "2"
+        mode = 'override' if mode_choice == '1' else 'append'
+        return run_portfolio_pipeline(mode)
     elif choice == '1':
         # Historical needs mode selection
         print("\nSelect processing mode:")
@@ -229,17 +270,18 @@ def main():
     print("\nSelect pipeline(s) to run:")
     print("  [1] Bond Pipeline only")
     print("  [2] Runs Pipeline only")
-    print("  [3] Both Pipelines (default)")
-    print("  [4] Individual Parquet Files")
+    print("  [3] Portfolio Pipeline only")
+    print("  [4] Both Bond and Runs Pipelines (default)")
+    print("  [5] Individual Parquet Files")
     
-    pipeline_choice = input("\nChoice (1, 2, 3, or 4): ").strip() or "3"
+    pipeline_choice = input("\nChoice (1, 2, 3, 4, or 5): ").strip() or "4"
     
-    if pipeline_choice not in ['1', '2', '3', '4']:
-        print("Invalid choice. Using default: Both Pipelines")
-        pipeline_choice = '3'
+    if pipeline_choice not in ['1', '2', '3', '4', '5']:
+        print("Invalid choice. Using default: Both Bond and Runs Pipelines")
+        pipeline_choice = '4'
     
     # Handle individual parquet selection
-    if pipeline_choice == '4':
+    if pipeline_choice == '5':
         result = run_individual_parquet()
         try:
             log_parquet_diagnostics()
@@ -266,18 +308,22 @@ def main():
     results = {}
     process_bql = False
 
-    if pipeline_choice in ['1', '3']:
+    if pipeline_choice in ['1', '4']:
         bql_choice = input("\nProcess BQL workbook as part of Bond Pipeline? (Y/n): ").strip().lower()
         process_bql = bql_choice != 'n'
     
     # Run selected pipeline(s)
-    if pipeline_choice in ['1', '3']:
+    if pipeline_choice in ['1', '4']:
         # Run Bond Pipeline
         results['bond'] = run_bond_pipeline(mode, process_bql)
     
-    if pipeline_choice in ['2', '3']:
+    if pipeline_choice in ['2', '4']:
         # Run Runs Pipeline
         results['runs'] = run_runs_pipeline(mode)
+    
+    if pipeline_choice == '3':
+        # Run Portfolio Pipeline
+        results['portfolio'] = run_portfolio_pipeline(mode)
     
     # Summary
     print("\n" + "=" * 70)
@@ -291,6 +337,10 @@ def main():
     if 'runs' in results:
         status = "SUCCESS" if results['runs'] else "FAILED"
         print(f"  Runs Pipeline: {status}")
+    
+    if 'portfolio' in results:
+        status = "SUCCESS" if results['portfolio'] else "FAILED"
+        print(f"  Portfolio Pipeline: {status}")
     
     print("=" * 70)
     

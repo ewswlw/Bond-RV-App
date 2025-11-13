@@ -172,6 +172,24 @@ RUNS_KNOWN_DEALERS = [
 RUNS_TRACK_ORPHAN_CUSIPS = True  # Track CUSIPs not in universe.parquet
 RUNS_LOG_INVALID_CUSIPS = True   # Log invalid CUSIPs (wrong length, etc.)
 
+# ===== PORTFOLIO PIPELINE CONFIGURATION =====
+
+# Default input directory for Portfolio Excel files
+PORTFOLIO_INPUT_DIR = Path(r"C:\Users\Eddy\YTM Capital Dropbox\Eddy Winiarz\Trading\COF\Models\Unfinished Models\Support Files\AD History")
+
+# Portfolio file pattern
+PORTFOLIO_FILE_PATTERN = r'Aggies\s+(\d{2})\.(\d{2})\.(\d{2})\.xlsx$'
+PORTFOLIO_HEADER_ROW = 0  # 0-indexed, row 1 in Excel (header is in first row)
+
+# Portfolio parquet output file
+PORTFOLIO_PARQUET = PARQUET_DIR / "historical_portfolio.parquet"
+
+# Portfolio primary key columns
+PORTFOLIO_PRIMARY_KEY = ['Date', 'CUSIP', 'ACCOUNT', 'PORTFOLIO']
+
+# Portfolio schema - 82 columns (will be populated dynamically from latest file)
+PORTFOLIO_MASTER_SCHEMA_COLUMNS = None  # Will be set during first file read
+
 # Ensure directories exist
 PARQUET_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)

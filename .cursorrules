@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-XX XX:XX ET - Analytics Folder Reorganization (comb/ and runs/ subfolders)  
+**Last Updated**: 2025-01-XX XX:XX ET - Portfolio Pipeline Implementation  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -142,6 +142,13 @@ runs_pipeline/
 ├── transform.py     # End-of-day deduplication, CUSIP validation/orphan tracking
 ├── load.py          # Runs parquet writing (append/override modes)
 └── pipeline.py      # Main orchestration script with CLI
+
+portfolio_pipeline/
+├── __init__.py      # Package exports
+├── extract.py       # Portfolio Excel file reading and date extraction from filename
+├── transform.py     # CUSIP normalization, NA cleaning, deduplication (Date+CUSIP+ACCOUNT+PORTFOLIO)
+├── load.py          # Portfolio parquet writing (append/override modes)
+└── pipeline.py      # Main orchestration script with CLI
 ```
 
 ### Design Principles
@@ -166,13 +173,20 @@ Each pipeline stage is a class with clear responsibilities:
 – **RunsLoader**: Runs parquet writing, Date+Dealer+CUSIP primary key enforcement, granular load metrics (new rows/dates/CUSIPs/Dealers)
 – **RunsDataPipeline**: Orchestrates all components, CLI interface, append-mode file selection + enhanced run summaries
 
+**Portfolio Pipeline:**
+- **PortfolioExtractor**: Portfolio Excel reading, date extraction from filename (Aggies MM.DD.YY.xlsx pattern), removes Unnamed columns
+- **PortfolioTransformer**: CUSIP normalization (same as bond pipeline), row filtering (drops rows with blank SECURITY or CUSIP), NA cleaning, deduplication (Date+CUSIP+ACCOUNT+PORTFOLIO)
+- **PortfolioLoader**: Portfolio parquet writing, Date+CUSIP+ACCOUNT+PORTFOLIO primary key enforcement, append/override modes
+- **PortfolioDataPipeline**: Orchestrates all components, CLI interface, enhanced run summaries
+
 **Pipeline Orchestrator:**
-- **run_pipeline.py**: Unified entry point for both bond and runs pipelines
-- User can select: Bond only, Runs only, Both pipelines, or Individual Parquet Files
+- **run_pipeline.py**: Unified entry point for bond, runs, and portfolio pipelines
+- User can select: Bond only, Runs only, Portfolio only, Both Bond and Runs, or Individual Parquet Files
 - Individual Parquet Files option allows regenerating specific parquet outputs:
   - `historical_bond_details.parquet` (also regenerates universe)
   - `bql.parquet` (standalone BQL processing)
   - `runs_timeseries.parquet` (standalone runs processing)
+  - `historical_portfolio.parquet` (standalone portfolio processing)
 - Shared mode selection (append/override) for selected pipelines
 - After successful runs, generates `bond_data/logs/parquet_stats.log` with dataset diagnostics (df.info/describe/head/tail)
 
@@ -207,6 +221,15 @@ Each pipeline stage is a class with clear responsibilities:
 - **Date/Time**: Date and Time come from columns (not filename)
   - Date: MM/DD/YY format (e.g., "10/31/25") → parsed to datetime object
   - Time: HH:MM format (e.g., "15:45") → parsed to datetime.time object
+- **NA values**: Same as bond pipeline (`#N/A Field Not Applicable`, `#N/A Invalid Security`, etc.)
+
+### Portfolio Pipeline Input Data Format
+- **Excel files**: Pattern `Aggies MM.DD.YY.xlsx` (e.g., `Aggies 11.04.25.xlsx`)
+- **Header row**: Row 1 (index 0, 0-based)
+- **Columns**: 82 columns (schema detected dynamically from latest file)
+- **Date extraction**: Date extracted from filename (MM/DD/YYYY format)
+- **Column filtering**: Unnamed columns (Unnamed: 0, Unnamed: 1, etc.) are automatically removed during extraction
+- **Row filtering**: Rows with blank SECURITY or CUSIP are dropped during transformation
 - **NA values**: Same as bond pipeline (`#N/A Field Not Applicable`, `#N/A Invalid Security`, etc.)
 
 ### Output Data Format
@@ -245,6 +268,16 @@ Each pipeline stage is a class with clear responsibilities:
 - **Storage**: `bond_data/parquet/runs_timeseries.parquet`
 - **Deduplication**: Keep latest Time per Date+Dealer+CUSIP (end-of-day snapshot)
 
+#### `historical_portfolio.parquet`
+- **Purpose**: Time series of portfolio holdings over time
+- **Primary Key**: `Date + CUSIP + ACCOUNT + PORTFOLIO` (unique combination, preserves account/portfolio detail)
+- **Schema**: All 82 columns (excluding Unnamed columns) with Date column first
+- **Column filtering**: Unnamed columns (Unnamed: 0, Unnamed: 1, etc.) are automatically removed
+- **Row filtering**: Rows with blank SECURITY or CUSIP are automatically dropped
+- **Row count**: Varies based on portfolio holdings across dates
+- **Storage**: `bond_data/parquet/historical_portfolio.parquet`
+- **Deduplication**: Keep last occurrence per Date+CUSIP+ACCOUNT+PORTFOLIO
+
 ### Processing Rules
 
 #### Date Handling
@@ -273,6 +306,16 @@ Each pipeline stage is a class with clear responsibilities:
 - Append mode inspects existing parquet dates, skips fully-loaded files, and filters mixed files down to unseen dates before extraction.
 - Pipeline summaries surface files processed/skipped plus new rows, dates, CUSIPs, and dealers added during each run.
 
+**Portfolio Pipeline:**
+- CUSIP normalization: Same as bond pipeline (uppercase, remove extra text, validate 9 characters)
+- Row filtering: Drop rows where either SECURITY or CUSIP is blank/NaN/empty (done first in transformation)
+- Column filtering: Remove all "Unnamed:" columns (Unnamed: 0, Unnamed: 1, etc.) during extraction
+- Invalid CUSIPs: Log warning but include in data (same as bond pipeline)
+- Primary key enforcement: No duplicate Date+CUSIP+ACCOUNT+PORTFOLIO combinations
+- Schema evolution: Master schema (82 columns) detected dynamically from latest file
+- Append mode: Skip dates already in parquet file
+- Override mode: Delete existing parquet file, rebuild from scratch
+
 #### Schema Evolution
 - **Master schema**: 75 columns from latest files (set dynamically)
 - **Older files**: Fill missing columns with `NULL/NaN`
@@ -292,6 +335,11 @@ Each pipeline stage is a class with clear responsibilities:
 - **Optimized**: Uses vectorized sort + drop_duplicates (O(n log n)) instead of row-by-row iteration (O(n*groups))
 - Within file and across files: One record per Date+Dealer+CUSIP combination
 - Log summary of duplicates to `bond_data/logs/duplicates.log` (combined with bond pipeline logs)
+
+**Portfolio Pipeline:**
+- Within file: Keep last occurrence of duplicate Date+CUSIP+ACCOUNT+PORTFOLIO combinations
+- Across files: One record per Date+CUSIP+ACCOUNT+PORTFOLIO combination
+- Log duplicates to `bond_data/logs/duplicates.log` (combined with bond and runs pipeline logs)
 
 #### Data Cleaning
 - Convert NA values to NULL: `#N/A Field Not Applicable`, `#N/A Invalid Security`, `N/A`, etc.
@@ -584,7 +632,7 @@ poetry shell
 
 # 2. Run automated pipeline runner
 poetry run python run_pipeline.py
-# Prompts: 1) Pipeline selection (1=Bond, 2=Runs, 3=Both, 4=Individual Parquet), 2) Mode (override/append), 3) (Bond) Include BQL workbook
+# Prompts: 1) Pipeline selection (1=Bond, 2=Runs, 3=Portfolio, 4=Both Bond+Runs, 5=Individual Parquet), 2) Mode (override/append), 3) (Bond) Include BQL workbook
 
 # 3. Or use direct CLI (Bond Pipeline)
 cd bond_pipeline
@@ -598,10 +646,14 @@ poetry run python -m bond_pipeline.pipeline -i "Raw Data/" -m append
 poetry run python -m runs_pipeline.pipeline -i "Historical Runs/" -m append
 poetry run python -m runs_pipeline.pipeline -i "Historical Runs/" -m override
 
-# 6. Unified Pipeline Orchestrator (Recommended)
+# 6. Portfolio Pipeline CLI
+poetry run python -m portfolio_pipeline.pipeline -i "AD History/" -m append
+poetry run python -m portfolio_pipeline.pipeline -i "AD History/" -m override
+
+# 7. Unified Pipeline Orchestrator (Recommended)
 poetry run python run_pipeline.py
 # Prompts: Select pipeline(s) or individual parquet files, choose mode, decide on BQL ingestion when running Bond pipeline
-# Option 4 allows regenerating individual parquet files (historical_bond_details, bql, or runs_timeseries)
+# Option 5 allows regenerating individual parquet files (historical_bond_details, bql, runs_timeseries, or historical_portfolio)
 ```
 
 ### Pipeline Modes
@@ -643,6 +695,12 @@ print(f"Unique CUSIPs: {df_runs['CUSIP'].nunique()}, Unique Dealers: {df_runs['D
 # BQL spreads stats
 df_bql = pd.read_parquet('bond_data/parquet/bql.parquet')
 print(f"BQL rows: {len(df_bql)}, Unique CUSIPs: {df_bql['CUSIP'].nunique()}, Unique Dates: {df_bql['Date'].nunique()}")
+
+# Portfolio pipeline stats
+df_portfolio = pd.read_parquet('bond_data/parquet/historical_portfolio.parquet')
+print(f"Rows: {len(df_portfolio)}, Columns: {len(df_portfolio.columns)}")
+print(f"Date range: {df_portfolio['Date'].min()} to {df_portfolio['Date'].max()}")
+print(f"Unique CUSIPs: {df_portfolio['CUSIP'].nunique()}, Unique Accounts: {df_portfolio['ACCOUNT'].nunique()}, Unique Portfolios: {df_portfolio['PORTFOLIO'].nunique()}")
 ```
 
 ---
@@ -1011,4 +1069,41 @@ pytest tests/unit/test_utils.py -v
     - Output directory: `SCRIPT_DIR.parent / "processed_data"` (1 level up to `analytics/processed_data/`)
     - Cross-references: `SCRIPT_DIR.parent / "processed_data" / "*.csv"` (for scripts reading other analytics outputs)
   - All scripts tested and verified to run correctly from new locations
+- **2025-01-XX XX:XX ET**: Added Portfolio Pipeline implementation:
+  - Created `portfolio_pipeline/` module with extract, transform, load, and pipeline modules
+  - Added portfolio configuration to `bond_pipeline/config.py`:
+    - `PORTFOLIO_INPUT_DIR` - Input directory path (AD History)
+    - `PORTFOLIO_FILE_PATTERN` - Filename pattern regex (Aggies MM.DD.YY.xlsx)
+    - `PORTFOLIO_HEADER_ROW` - Header row index (0)
+    - `PORTFOLIO_PARQUET` - Output parquet file path
+    - `PORTFOLIO_PRIMARY_KEY` - Primary key columns ['Date', 'CUSIP', 'ACCOUNT', 'PORTFOLIO']
+  - Added `extract_portfolio_date_from_filename()` function to `bond_pipeline/utils.py`
+  - Portfolio extract module:
+    - Reads Excel files with header row 0 (row 1 in Excel)
+    - Extracts date from filename (Aggies MM.DD.YY.xlsx pattern)
+    - Automatically removes Unnamed columns (Unnamed: 0, Unnamed: 1, etc.)
+  - Portfolio transform module:
+    - CUSIP normalization (same as bond pipeline: uppercase, validate 9 chars)
+    - Row filtering: Drops rows where either SECURITY or CUSIP is blank/NaN/empty
+    - Deduplication: Date+CUSIP+ACCOUNT+PORTFOLIO primary key (keeps last occurrence)
+    - NA cleaning and schema alignment (82 columns, dynamically detected)
+  - Portfolio load module:
+    - Append/override modes with date checking
+    - Date+CUSIP+ACCOUNT+PORTFOLIO primary key enforcement
+  - Portfolio pipeline orchestrator:
+    - CLI interface matching bond/runs pipeline patterns
+    - Enhanced run summaries with statistics
+  - Updated `run_pipeline.py`:
+    - Added option 3: "Portfolio Pipeline only"
+    - Updated option 5: "Individual Parquet Files" (was option 4)
+    - Added option 4 in individual parquet files: `historical_portfolio.parquet`
+  - Updated `bond_pipeline/utils.py`:
+    - Added portfolio statistics section to `log_enhanced_parquet_stats()`:
+      - Date range
+      - Unique CUSIPs per Date (formatted table)
+      - CUSIPs not in universe.parquet (Date, CUSIP, Security) - formatted table
+    - Updated `log_parquet_diagnostics()` to include `historical_portfolio.parquet`
+  - Output: `historical_portfolio.parquet` with Date+CUSIP+ACCOUNT+PORTFOLIO primary key
+  - All 82 columns stored (excluding Unnamed columns)
+  - Rows with blank SECURITY or CUSIP automatically filtered out
 

@@ -42,6 +42,7 @@ from .config import (
     UNIVERSE_PARQUET,
     BQL_PARQUET,
     RUNS_PARQUET,
+    PORTFOLIO_PARQUET,
 )
 
 
@@ -364,6 +365,38 @@ def extract_date_from_filename(filename: str) -> Optional[datetime]:
         'API 08.04.23.xlsx' -> datetime(2023, 8, 4)
     """
     match = re.search(FILE_PATTERN, filename, re.IGNORECASE)
+    
+    if not match:
+        return None
+    
+    month, day, year = match.groups()
+    
+    # Convert 2-digit year to 4-digit (assume 20xx for < 50, else 19xx)
+    full_year = int(f"20{year}") if int(year) < 50 else int(f"19{year}")
+    
+    try:
+        date_obj = datetime(full_year, int(month), int(day))
+        return date_obj
+    except ValueError:
+        return None
+
+
+def extract_portfolio_date_from_filename(filename: str) -> Optional[datetime]:
+    """
+    Extract date from portfolio filename pattern: Aggies MM.DD.YY.xlsx
+    
+    Args:
+        filename: Name of the Excel file
+    
+    Returns:
+        datetime object or None if pattern doesn't match
+    
+    Examples:
+        'Aggies 09.29.25.xlsx' -> datetime(2025, 9, 29)
+        'Aggies 11.04.25.xlsx' -> datetime(2025, 11, 4)
+    """
+    from .config import PORTFOLIO_FILE_PATTERN
+    match = re.search(PORTFOLIO_FILE_PATTERN, filename, re.IGNORECASE)
     
     if not match:
         return None
@@ -797,6 +830,7 @@ def log_parquet_diagnostics(log_file: Optional[Path] = None) -> None:
         ("universe.parquet", UNIVERSE_PARQUET),
         ("bql.parquet", BQL_PARQUET),
         ("runs_timeseries.parquet", RUNS_PARQUET),
+        ("historical_portfolio.parquet", PORTFOLIO_PARQUET),
     ]
 
     def _sanitize_text(text: str) -> str:
@@ -1207,6 +1241,115 @@ def log_enhanced_parquet_stats(
                 logger.error(f"Failed to read universe.parquet for enhanced stats: {exc}")
         else:
             logger.warning("universe.parquet not found, skipping universe statistics")
+        
+        # ========================================================================
+        # Portfolio Statistics
+        # ========================================================================
+        log_func("")
+        log_func("-" * 80)
+        log_func("PORTFOLIO PARQUET STATISTICS")
+        log_func("-" * 80)
+        
+        if PORTFOLIO_PARQUET.exists():
+            try:
+                df_portfolio = pd.read_parquet(PORTFOLIO_PARQUET)
+                
+                # 1. Date range
+                if DATE_COLUMN in df_portfolio.columns:
+                    date_col = df_portfolio[DATE_COLUMN]
+                    if date_col.dtype == 'object':
+                        # Try to parse string dates
+                        date_col_parsed = pd.to_datetime(date_col, errors='coerce')
+                        date_min = date_col_parsed.min()
+                        date_max = date_col_parsed.max()
+                    else:
+                        date_min = date_col.min()
+                        date_max = date_col.max()
+                    
+                    log_func(f"1) Date range: {date_min} to {date_max}")
+                else:
+                    logger.warning("   'Date' column not found in historical_portfolio.parquet")
+                
+                # 2. Count of unique CUSIPs per Date (formatted table)
+                if DATE_COLUMN in df_portfolio.columns and 'CUSIP' in df_portfolio.columns:
+                    # Group by Date and count unique CUSIPs
+                    cusip_counts = df_portfolio.groupby(DATE_COLUMN)['CUSIP'].nunique().reset_index()
+                    cusip_counts.columns = ['Date', 'Unique_CUSIPs']
+                    cusip_counts = cusip_counts.sort_values('Date')
+                    
+                    log_func("2) Unique CUSIPs per Date:")
+                    headers = ['Date', 'Unique_CUSIPs']
+                    rows = [
+                        [str(row['Date']), fmt_num(row['Unique_CUSIPs'])]
+                        for _, row in cusip_counts.iterrows()
+                    ]
+                    table_str = create_table(headers, rows)
+                    for line in table_str.splitlines():
+                        log_func(f"   {line}")
+                else:
+                    logger.warning("   Required columns (Date, CUSIP) not found for CUSIP count table")
+                
+                # 3. CUSIPs not in universe.parquet (Date, CUSIP, Security) - formatted table
+                if UNIVERSE_PARQUET.exists():
+                    try:
+                        df_univ = pd.read_parquet(UNIVERSE_PARQUET, columns=['CUSIP'])
+                        universe_cusips = set(df_univ['CUSIP'].dropna().astype(str).str.upper().unique())
+                        
+                        # Find portfolio CUSIPs not in universe
+                        portfolio_cusips = df_portfolio['CUSIP'].dropna().astype(str).str.upper().unique()
+                        orphan_cusips = set(portfolio_cusips) - universe_cusips
+                        
+                        if orphan_cusips:
+                            log_func(f"3) CUSIPs in portfolio not in universe.parquet: {fmt_num(len(orphan_cusips))}")
+                            
+                            # Get orphan rows with Date, CUSIP, Security
+                            orphan_df = df_portfolio[
+                                df_portfolio['CUSIP'].astype(str).str.upper().isin(orphan_cusips)
+                            ].copy()
+                            
+                            # Group by Date, CUSIP, Security (get first occurrence)
+                            if 'SECURITY' in orphan_df.columns:
+                                orphan_summary = orphan_df.groupby([DATE_COLUMN, 'CUSIP'])['SECURITY'].first().reset_index()
+                                orphan_summary = orphan_summary.sort_values([DATE_COLUMN, 'CUSIP'])
+                                
+                                log_func("   Orphan CUSIPs (Date, CUSIP, Security):")
+                                headers = ['Date', 'CUSIP', 'Security']
+                                rows = [
+                                    [
+                                        str(row[DATE_COLUMN]),
+                                        str(row['CUSIP']),
+                                        sanitize_func(str(row['SECURITY'])) if pd.notna(row['SECURITY']) else 'N/A'
+                                    ]
+                                    for _, row in orphan_summary.iterrows()
+                                ]
+                                table_str = create_table(headers, rows)
+                                for line in table_str.splitlines():
+                                    log_func(f"   {line}")
+                            else:
+                                # No Security column, just show Date and CUSIP
+                                orphan_summary = orphan_df[[DATE_COLUMN, 'CUSIP']].drop_duplicates()
+                                orphan_summary = orphan_summary.sort_values([DATE_COLUMN, 'CUSIP'])
+                                
+                                log_func("   Orphan CUSIPs (Date, CUSIP):")
+                                headers = ['Date', 'CUSIP']
+                                rows = [
+                                    [str(row[DATE_COLUMN]), str(row['CUSIP'])]
+                                    for _, row in orphan_summary.iterrows()
+                                ]
+                                table_str = create_table(headers, rows)
+                                for line in table_str.splitlines():
+                                    log_func(f"   {line}")
+                        else:
+                            log_func("3) All portfolio CUSIPs are present in universe.parquet")
+                    except Exception as exc:
+                        logger.warning(f"Failed to check portfolio CUSIPs against universe: {exc}")
+                else:
+                    logger.warning("   universe.parquet not found, cannot check for orphan CUSIPs")
+                    
+            except Exception as exc:
+                logger.error(f"Failed to read historical_portfolio.parquet for enhanced stats: {exc}")
+        else:
+            logger.warning("historical_portfolio.parquet not found, skipping portfolio statistics")
         
         # ========================================================================
         # Orphan CUSIP Detection
