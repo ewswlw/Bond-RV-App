@@ -1,8 +1,9 @@
 """
 All combinations vs holdings pair analytics script.
 
-This module dynamically loads universe and holdings CUSIPs from:
-- historical_portfolio.parquet (last date only, all unique CUSIPs)
+This module dynamically loads:
+- Universe CUSIPs from bql.parquet (all bonds in BQL universe)
+- Holdings CUSIPs from historical_portfolio.parquet (last date only, all unique CUSIPs)
 
 Then reads `bond_data/parquet/bql.parquet`, filters the universe and
 holdings CUSIPs, computes all pairwise spreads (universe minus holdings), and
@@ -143,51 +144,44 @@ def load_holdings(
 
 
 def load_universe(
-    portfolio_path: Path = PORTFOLIO_PARQUET_PATH,
+    bql_path: Path = BQL_PARQUET_PATH,
 ) -> List[str]:
     """
-    Load universe CUSIPs from historical_portfolio.parquet.
+    Load universe CUSIPs from bql.parquet.
     
-    Gets all unique CUSIPs from the last date (any account/portfolio).
+    Gets all unique CUSIPs from bql.parquet (all bonds in BQL universe).
     
     Args:
-        portfolio_path: Path to historical_portfolio.parquet file.
+        bql_path: Path to bql.parquet file.
     
     Returns:
-        Sorted list of normalized CUSIPs from portfolio universe.
+        Sorted list of normalized CUSIPs from BQL universe.
     
     Raises:
-        FileNotFoundError: If portfolio file doesn't exist.
-        ValueError: If portfolio file is empty or no CUSIPs found.
+        FileNotFoundError: If BQL file doesn't exist.
+        ValueError: If BQL file is empty or no CUSIPs found.
     """
-    # Read historical_portfolio.parquet
-    if not portfolio_path.exists():
-        raise FileNotFoundError(f"historical_portfolio.parquet not found at: {portfolio_path}")
+    # Read bql.parquet
+    if not bql_path.exists():
+        raise FileNotFoundError(f"bql.parquet not found at: {bql_path}")
     
-    portfolio_df = pd.read_parquet(portfolio_path)
+    bql_df = pd.read_parquet(bql_path)
     
-    if portfolio_df.empty:
-        raise ValueError(f"historical_portfolio.parquet is empty at: {portfolio_path}")
+    if bql_df.empty:
+        raise ValueError(f"bql.parquet is empty at: {bql_path}")
     
     # Check required columns exist
-    if "Date" not in portfolio_df.columns or "CUSIP" not in portfolio_df.columns:
-        raise ValueError("Missing required columns (Date, CUSIP) in historical_portfolio.parquet")
+    if "CUSIP" not in bql_df.columns:
+        raise ValueError("Missing required column (CUSIP) in bql.parquet")
     
-    # Get last date
-    last_date = portfolio_df["Date"].max()
-    last_date_df = portfolio_df[portfolio_df["Date"] == last_date].copy()
+    # Get unique CUSIPs from BQL data
+    bql_cusips = bql_df["CUSIP"].dropna().unique()
+    normalized_bql_cusips = {normalize_cusip(c) for c in bql_cusips if normalize_cusip(c)}
     
-    if last_date_df.empty:
-        raise ValueError(f"No data found for last date ({last_date}) in historical_portfolio.parquet")
+    if not normalized_bql_cusips:
+        raise ValueError(f"No valid CUSIPs found in bql.parquet")
     
-    # Get unique CUSIPs from last date (any account/portfolio)
-    portfolio_cusips = last_date_df["CUSIP"].dropna().unique()
-    normalized_portfolio_cusips = {normalize_cusip(c) for c in portfolio_cusips if normalize_cusip(c)}
-    
-    if not normalized_portfolio_cusips:
-        raise ValueError(f"No valid CUSIPs found in historical_portfolio.parquet for last date ({last_date})")
-    
-    return sorted(normalized_portfolio_cusips)
+    return sorted(normalized_bql_cusips)
 
 
 def normalize_cusip_list(cusips: Iterable[str]) -> List[str]:
@@ -335,8 +329,8 @@ def run_analysis(
     holdings_cusips_raw = load_holdings(portfolio_path)
     print(f"Found {len(holdings_cusips_raw)} holdings CUSIPs")
     
-    print("Loading universe CUSIPs from portfolio...")
-    universe_cusips_raw = load_universe(portfolio_path)
+    print("Loading universe CUSIPs from BQL...")
+    universe_cusips_raw = load_universe(bql_path)
     print(f"Found {len(universe_cusips_raw)} universe CUSIPs")
     
     # Normalize CUSIPs (already normalized, but ensure consistency)

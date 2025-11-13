@@ -1,9 +1,9 @@
 """
 CR01 pair analytics script generated on 2025-11-09 00:00 ET.
 
-This module dynamically loads CR01 universe and holdings CUSIPs from:
-- runs_today.csv (filtered by CR01 thresholds)
-- historical_portfolio.parquet (last date only, matched CUSIPs)
+This module dynamically loads:
+- Universe CUSIPs from bql.parquet (filtered by runs_today.csv: CR01 @ Wide Offer > 2000)
+- Holdings CUSIPs from runs_today.csv (CR01 @ Tight Bid > 2000) matched with portfolio (last date)
 
 Then reads `bond_data/parquet/bql.parquet`, filters the CR01 universe and
 holdings CUSIPs, computes all pairwise spreads (universe minus holdings), and
@@ -200,7 +200,7 @@ def load_cr01_holdings(
 
 def load_cr01_universe(
     runs_today_path: Path = RUNS_TODAY_CSV_PATH,
-    portfolio_path: Path = PORTFOLIO_PARQUET_PATH,
+    bql_path: Path = BQL_PARQUET_PATH,
 ) -> List[str]:
     """
     Load CR01 universe CUSIPs dynamically from data sources.
@@ -208,12 +208,11 @@ def load_cr01_universe(
     Filters runs_today.csv for CUSIPs where:
     - CR01 @ Wide Offer > 2000
     
-    Then matches these CUSIPs with CUSIPs in historical_portfolio.parquet
-    (last date only, unique CUSIPs from any account/portfolio).
+    Then matches these CUSIPs with CUSIPs in bql.parquet (all bonds in BQL universe).
     
     Args:
         runs_today_path: Path to runs_today.csv file.
-        portfolio_path: Path to historical_portfolio.parquet file.
+        bql_path: Path to bql.parquet file.
     
     Returns:
         Sorted list of normalized CUSIPs matching the criteria.
@@ -261,40 +260,32 @@ def load_cr01_universe(
     if not normalized_runs_cusips:
         raise ValueError("No valid CUSIPs found after normalization from runs_today.csv")
     
-    # Read historical_portfolio.parquet
-    if not portfolio_path.exists():
-        raise FileNotFoundError(f"historical_portfolio.parquet not found at: {portfolio_path}")
+    # Read bql.parquet
+    if not bql_path.exists():
+        raise FileNotFoundError(f"bql.parquet not found at: {bql_path}")
     
-    portfolio_df = pd.read_parquet(portfolio_path)
+    bql_df = pd.read_parquet(bql_path)
     
-    if portfolio_df.empty:
-        raise ValueError(f"historical_portfolio.parquet is empty at: {portfolio_path}")
+    if bql_df.empty:
+        raise ValueError(f"bql.parquet is empty at: {bql_path}")
     
     # Check required columns exist
-    if "Date" not in portfolio_df.columns or "CUSIP" not in portfolio_df.columns:
-        raise ValueError("Missing required columns (Date, CUSIP) in historical_portfolio.parquet")
+    if "CUSIP" not in bql_df.columns:
+        raise ValueError("Missing required column (CUSIP) in bql.parquet")
     
-    # Get last date
-    last_date = portfolio_df["Date"].max()
-    last_date_df = portfolio_df[portfolio_df["Date"] == last_date].copy()
+    # Get unique CUSIPs from BQL data
+    bql_cusips = bql_df["CUSIP"].dropna().unique()
+    normalized_bql_cusips = {normalize_cusip(c) for c in bql_cusips if normalize_cusip(c)}
     
-    if last_date_df.empty:
-        raise ValueError(f"No data found for last date ({last_date}) in historical_portfolio.parquet")
+    if not normalized_bql_cusips:
+        raise ValueError(f"No valid CUSIPs found in bql.parquet")
     
-    # Get unique CUSIPs from last date (any account/portfolio)
-    portfolio_cusips = last_date_df["CUSIP"].dropna().unique()
-    normalized_portfolio_cusips = {normalize_cusip(c) for c in portfolio_cusips if normalize_cusip(c)}
-    
-    if not normalized_portfolio_cusips:
-        raise ValueError(f"No valid CUSIPs found in historical_portfolio.parquet for last date ({last_date})")
-    
-    # Match CUSIPs: intersection of runs_today filtered CUSIPs and portfolio CUSIPs
-    matched_cusips = normalized_runs_cusips & normalized_portfolio_cusips
+    # Match CUSIPs: intersection of runs_today filtered CUSIPs and BQL CUSIPs
+    matched_cusips = normalized_runs_cusips & normalized_bql_cusips
     
     if not matched_cusips:
         raise ValueError(
-            f"No matching CUSIPs found between runs_today.csv (filtered) and "
-            f"historical_portfolio.parquet (last date: {last_date})"
+            f"No matching CUSIPs found between runs_today.csv (filtered) and bql.parquet"
         )
     
     return sorted(matched_cusips)
@@ -448,7 +439,7 @@ def run_analysis(
     print(f"Found {len(holdings_cusips_raw)} CR01 holdings CUSIPs")
     
     print("Loading CR01 universe CUSIPs from data sources...")
-    universe_cusips_raw = load_cr01_universe(runs_today_path, portfolio_path)
+    universe_cusips_raw = load_cr01_universe(runs_today_path, bql_path)
     print(f"Found {len(universe_cusips_raw)} CR01 universe CUSIPs")
     
     # Normalize CUSIPs (already normalized, but ensure consistency)
