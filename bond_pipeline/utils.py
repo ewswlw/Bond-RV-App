@@ -882,19 +882,6 @@ def log_parquet_diagnostics(log_file: Optional[Path] = None) -> None:
         df.info(buf=info_buffer)
         _log_multiline("DataFrame info():", info_buffer.getvalue())
 
-        try:
-            describe_df = df.describe(include='all', datetime_is_numeric=True)
-        except TypeError:
-            describe_df = df.describe(include='all')
-
-        if not describe_df.empty:
-            _log_multiline(
-                "DataFrame describe():",
-                describe_df.to_string(),
-            )
-        else:
-            _log_info("DataFrame describe(): <empty>")
-
         head_df = df.head(3)
         tail_df = df.tail(3)
 

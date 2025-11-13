@@ -188,7 +188,7 @@ Each pipeline stage is a class with clear responsibilities:
   - `runs_timeseries.parquet` (standalone runs processing)
   - `historical_portfolio.parquet` (standalone portfolio processing)
 - Shared mode selection (append/override) for selected pipelines
-- After successful runs, generates `bond_data/logs/parquet_stats.log` with dataset diagnostics (df.info/describe/head/tail)
+- After successful runs, generates `bond_data/logs/parquet_stats.log` with dataset diagnostics (df.info/head/tail)
 
 ---
 
@@ -375,7 +375,7 @@ bond_data/logs/
 ├── duplicates.log      # All duplicate CUSIPs detected
 ├── validation.log      # CUSIP validation warnings
 ├── summary.log         # Pipeline execution summary (run headers, stats)
-└── parquet_stats.log   # Snapshot diagnostics for each parquet dataset (df.info/describe/head/tail)
+└── parquet_stats.log   # Snapshot diagnostics for each parquet dataset (df.info/head/tail)
 ```
 
 ### Logging Levels
