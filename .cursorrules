@@ -484,7 +484,10 @@ Bond-RV-App/
 │   │   ├── port_comb.py      # Portfolio combinations pair analytics (filters to portfolio CUSIPs as cusip_2)
 │   │   ├── port_executable.py  # Portfolio executable combinations pair analytics (filters cusip_1 by CR01 @ Wide Offer >= 2000, cusip_2 by portfolio)
 │   │   ├── cad_cheap_vs_usd.py  # CAD cheap vs USD pair analytics (CAD/USD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
-│   │   └── cad_rich_vs_usd.py   # CAD rich vs USD pair analytics (USD/CAD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
+│   │   ├── cad_rich_vs_usd.py   # CAD rich vs USD pair analytics (USD/CAD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
+│   │   ├── executable cr01 decent bid offer vs holdings.py  # CR01 pair analytics (dynamic CUSIP loading from runs_today.csv + portfolio, filters: CR01 @ Tight Bid > 2000, CR01 @ Wide Offer > 2000, Bid/Offer>3mm < 3)
+│   │   ├── executable cr01 vs holdings.py  # CR01 pair analytics (dynamic CUSIP loading from runs_today.csv + portfolio, filters: CR01 @ Tight Bid > 2000, CR01 @ Wide Offer > 2000, no Bid/Offer filter)
+│   │   └── all combos vs holdings.py  # All combinations vs holdings pair analytics (all portfolio CUSIPs from last date, no CR01 filters)
 │   ├── runs/             # Runs analytics scripts
 │   │   ├── runs-adjusted_ts.py  # Runs adjusted timeseries analytics (Date+CUSIP+Benchmark aggregation)
 │   │   └── runs_today.py     # Runs today analytics (last date with DoD, MTD, YTD, 1yr changes)
@@ -499,6 +502,9 @@ Bond-RV-App/
 │       ├── port_executable.csv
 │       ├── cad_cheap_vs_usd.csv
 │       ├── cad_rich_vs_usd.csv
+│       ├── executable cr01 decent bid offer vs holdings.csv
+│       ├── executable cr01 vs holdings.csv
+│       ├── all combos vs holdings.csv
 │       ├── runs_adjusted_ts.csv
 │       └── runs_today.csv
 ├── bond_pipeline/          # Pipeline code (7 modules)
@@ -1106,4 +1112,19 @@ pytest tests/unit/test_utils.py -v
   - Output: `historical_portfolio.parquet` with Date+CUSIP+ACCOUNT+PORTFOLIO primary key
   - All 82 columns stored (excluding Unnamed columns)
   - Rows with blank SECURITY or CUSIP automatically filtered out
+- **2025-01-XX XX:XX ET**: Created dynamic CR01 pair analytics scripts:
+  - Created `analytics/comb/executable cr01 decent bid offer vs holdings.py`:
+    - Dynamically loads CR01 holdings CUSIPs from runs_today.csv (CR01 @ Tight Bid > 2000, Bid/Offer>3mm < 3) matched with portfolio (last date)
+    - Dynamically loads CR01 universe CUSIPs from runs_today.csv (CR01 @ Wide Offer > 2000, Bid/Offer>3mm < 3) matched with portfolio (last date)
+    - Computes all pairwise spreads (universe minus holdings) with statistical metrics
+    - Outputs to `executable cr01 decent bid offer vs holdings.csv`
+    - Uses script-relative path resolution for portability
+  - Created `analytics/comb/executable cr01 vs holdings.py`:
+    - Same as above but removes Bid/Offer>3mm filters (only CR01 thresholds)
+    - Outputs to `executable cr01 vs holdings.csv`
+  - Created `analytics/comb/all combos vs holdings.py`:
+    - Loads all CUSIPs from historical_portfolio.parquet (last date) for both universe and holdings
+    - No CR01 filters - computes all pairwise combinations within portfolio
+    - Outputs to `all combos vs holdings.csv`
+    - Uses script-relative path resolution for portability
 

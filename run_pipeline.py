@@ -1,11 +1,13 @@
 """
-Main script to run the bond and runs data pipelines.
+Main script to run the bond, runs, and portfolio data pipelines.
 Run this from the project root directory.
 
-This script orchestrates both:
+This script orchestrates:
 1. Bond Pipeline - Processes API Historical Excel files
 2. Runs Pipeline - Processes Historical Runs Excel files
-3. Individual Parquet Files - Regenerate specific parquet outputs
+3. Portfolio Pipeline - Processes Portfolio Holdings Excel files
+4. Individual Parquet Files - Regenerate specific parquet outputs
+5. All Pipelines - Run Bond, Runs, and Portfolio together
 """
 
 import sys
@@ -273,10 +275,11 @@ def main():
     print("  [3] Portfolio Pipeline only")
     print("  [4] Both Bond and Runs Pipelines (default)")
     print("  [5] Individual Parquet Files")
+    print("  [6] All Pipelines (Bond, Runs, and Portfolio)")
     
-    pipeline_choice = input("\nChoice (1, 2, 3, 4, or 5): ").strip() or "4"
+    pipeline_choice = input("\nChoice (1, 2, 3, 4, 5, or 6): ").strip() or "4"
     
-    if pipeline_choice not in ['1', '2', '3', '4', '5']:
+    if pipeline_choice not in ['1', '2', '3', '4', '5', '6']:
         print("Invalid choice. Using default: Both Bond and Runs Pipelines")
         pipeline_choice = '4'
     
@@ -308,20 +311,20 @@ def main():
     results = {}
     process_bql = False
 
-    if pipeline_choice in ['1', '4']:
+    if pipeline_choice in ['1', '4', '6']:
         bql_choice = input("\nProcess BQL workbook as part of Bond Pipeline? (Y/n): ").strip().lower()
         process_bql = bql_choice != 'n'
     
     # Run selected pipeline(s)
-    if pipeline_choice in ['1', '4']:
+    if pipeline_choice in ['1', '4', '6']:
         # Run Bond Pipeline
         results['bond'] = run_bond_pipeline(mode, process_bql)
     
-    if pipeline_choice in ['2', '4']:
+    if pipeline_choice in ['2', '4', '6']:
         # Run Runs Pipeline
         results['runs'] = run_runs_pipeline(mode)
     
-    if pipeline_choice == '3':
+    if pipeline_choice in ['3', '6']:
         # Run Portfolio Pipeline
         results['portfolio'] = run_portfolio_pipeline(mode)
     
