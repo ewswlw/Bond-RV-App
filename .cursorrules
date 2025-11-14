@@ -481,6 +481,7 @@ Bond-RV-App/
 │   │   ├── ticker_comb.py    # Ticker combinations pair analytics (filters pairs where Ticker values match exactly)
 │   │   ├── custom_sector.py  # Custom sector combinations pair analytics (filters pairs where Custom_Sector values match exactly)
 │   │   ├── custom_bond_comb.py  # Custom bond combinations pair analytics (pairs all CAD CUSIPs with fixed target bond, configurable by Ticker or Security)
+│   │   ├── custom_bond_vs_holdings.py  # Custom bond vs holdings pair analytics (pairs target CAD bonds from TARGET_BOND_TICKER/SECURITY with CR01-filtered holdings)
 │   │   ├── port_comb.py      # Portfolio combinations pair analytics (filters to portfolio CUSIPs as cusip_2)
 │   │   ├── port_executable.py  # Portfolio executable combinations pair analytics (filters cusip_1 by CR01 @ Wide Offer >= 2000, cusip_2 by portfolio)
 │   │   ├── cad_cheap_vs_usd.py  # CAD cheap vs USD pair analytics (CAD/USD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
@@ -498,6 +499,7 @@ Bond-RV-App/
 │       ├── ticker_comb.csv
 │       ├── custom_sector_comb.csv
 │       ├── custom_bond_comb.csv
+│       ├── custom_bond_vs_holdings.csv
 │       ├── port_comb.csv
 │       ├── port_executable.csv
 │       ├── cad_cheap_vs_usd.csv
@@ -1055,6 +1057,17 @@ pytest tests/unit/test_utils.py -v
     - Filters to CAD CUSIPs present in most recent 75% of dates
     - Validates target bond(s) have BQL data and are in recent dates
     - Outputs all pairs sorted by Z Score to `custom_bond_comb.csv`
+    - Uses script-relative path resolution for portability
+    - Configuration section at top: `TARGET_BOND_TICKER`, `TARGET_BOND_SECURITY`, `RECENT_DATE_PERCENT`, `TOP_N_PAIRS`
+- **2025-01-XX XX:XX ET**: Created custom bond vs holdings pair analytics script:
+  - Created `analytics/comb/custom_bond_vs_holdings.py` - custom bond vs holdings pair analytics script:
+    - Pairs target CAD bonds (cusip_1/Bond_1) from `TARGET_BOND_TICKER/SECURITY` with CR01-filtered holdings (cusip_2/Bond_2)
+    - cusip_1: Filters to CAD CUSIPs first, then finds target bond(s) via TARGET_BOND_TICKER/SECURITY in universe.parquet
+    - cusip_2: Loads holdings with CR01 @ Tight Bid > 2000 from runs_today.csv, matched with portfolio (last date)
+    - Both cusip_1 and cusip_2 filtered to recent dates (75% of dates) using BQL data
+    - Spread calculation: cusip_1 - cusip_2
+    - BQL data required only for cusip_1 (target bonds); holdings filtered to recent dates but don't require BQL data themselves
+    - Outputs all pairs sorted by Z Score to `custom_bond_vs_holdings.csv`
     - Uses script-relative path resolution for portability
     - Configuration section at top: `TARGET_BOND_TICKER`, `TARGET_BOND_SECURITY`, `RECENT_DATE_PERCENT`, `TOP_N_PAIRS`
 - **2025-01-XX XX:XX ET**: Added codebase search requirement:
