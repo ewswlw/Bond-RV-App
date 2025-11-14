@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-XX XX:XX ET - Consolidated Pair Analytics Excel Output  
+**Last Updated**: 2025-01-XX XX:XX ET - Added xxcy_diff Column to CAD/USD Pair Analytics  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -1154,4 +1154,12 @@ pytest tests/unit/test_utils.py -v
   - Still generates `comb.txt` (text summary) and `comb_validation.txt` (validation log) for reference
   - All individual analysis functions updated to return DataFrames instead of writing CSVs
   - Excel tables use `TableStyleMedium9` style with filters and banded rows enabled
+- **2025-01-XX XX:XX ET**: Added "xxcy_diff" column to CAD/USD pair analytics:
+  - Added `get_cad_equiv_swap_mapping()` helper function to load CAD Equiv Swap values from `historical_bond_details.parquet` (last date)
+  - Updated `run_cad_cheap_vs_usd_analysis()` and `run_cad_rich_vs_usd_analysis()` to include "xxcy_diff" column
+  - Column calculation: `xxcy_diff = CAD Equiv Swap (cusip_1) - CAD Equiv Swap (cusip_2)`
+  - Column positioned immediately after "Last" column in results DataFrame
+  - Values set to `None` (NaN) if either CUSIP lacks CAD Equiv Swap data
+  - Column formatted to 1 decimal place (via `format_numeric_columns()`)
+  - Appears in Excel output (`comb.xlsx`), text summary (`comb.txt`), and console output
 

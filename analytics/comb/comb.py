@@ -336,6 +336,27 @@ def get_currency_ticker_sector_mappings(historical_path: Path) -> Tuple[Dict[str
     
     return currency_mapping, ticker_mapping, sector_mapping, yrs_cvn_mapping
 
+def get_cad_equiv_swap_mapping(historical_path: Path) -> Dict[str, float]:
+    """Get CAD Equiv Swap mapping from last date."""
+    historical_df = pd.read_parquet(historical_path)
+    last_date = historical_df["Date"].max()
+    last_date_df = historical_df[historical_df["Date"] == last_date].copy()
+    
+    # Check if column exists
+    if "CAD Equiv Swap" not in last_date_df.columns:
+        return {}
+    
+    # Convert to numeric, handling any non-numeric values
+    last_date_df["CAD Equiv Swap"] = pd.to_numeric(last_date_df["CAD Equiv Swap"], errors="coerce")
+    
+    # Filter to rows with valid CAD Equiv Swap values
+    valid_df = last_date_df[last_date_df["CAD Equiv Swap"].notna()].copy()
+    
+    # Create mapping from CUSIP to CAD Equiv Swap
+    cad_equiv_swap_mapping = dict(zip(valid_df["CUSIP"], valid_df["CAD Equiv Swap"].astype(float)))
+    
+    return cad_equiv_swap_mapping
+
 def find_target_bond_cusips(
     universe_path: Path,
     cad_cusips: Set[str],
@@ -1062,6 +1083,10 @@ def run_cad_cheap_vs_usd_analysis(
         currency_mapping, ticker_mapping, sector_mapping, yrs_cvn_mapping = get_currency_ticker_sector_mappings(historical_path)
         validation_log.write(f"[cad_cheap_vs_usd] Found {len(currency_mapping)} CUSIPs with valid mappings\n")
         
+        # Load CAD Equiv Swap mapping
+        cad_equiv_swap_mapping = get_cad_equiv_swap_mapping(historical_path)
+        validation_log.write(f"[cad_cheap_vs_usd] Found {len(cad_equiv_swap_mapping)} CUSIPs with CAD Equiv Swap data\n")
+        
         cusips = wide_values.columns.tolist()
         valid_cusips = [c for c in cusips if c in currency_mapping and c in ticker_mapping and c in sector_mapping and c in yrs_cvn_mapping]
         
@@ -1103,6 +1128,7 @@ def run_cad_cheap_vs_usd_analysis(
         
         values_array = wide_values.values
         summaries: List[PairSummary] = []
+        xxcy_diff_values: List[Optional[float]] = []
         
         for idx_1, idx_2 in valid_pairs:
             cusip_1_vals = values_array[:, idx_1]
@@ -1127,12 +1153,23 @@ def run_cad_cheap_vs_usd_analysis(
                 cusip_1=cusips[idx_1],
                 cusip_2=cusips[idx_2],
             ))
+            
+            # Calculate xxcy_diff: CAD Equiv Swap (cusip_1) - CAD Equiv Swap (cusip_2)
+            cad_equiv_1 = cad_equiv_swap_mapping.get(cusips[idx_1])
+            cad_equiv_2 = cad_equiv_swap_mapping.get(cusips[idx_2])
+            if cad_equiv_1 is not None and cad_equiv_2 is not None:
+                xxcy_diff_values.append(cad_equiv_1 - cad_equiv_2)
+            else:
+                xxcy_diff_values.append(None)
         
         results_df = pd.DataFrame([{
             "Bond_1": p.Bond_1, "Bond_2": p.Bond_2, "Last": p.last_value,
             "Avg": p.average_value, "vs Avg": p.vs_average, "Z Score": p.z_score,
             "Percentile": p.percentile, "cusip_1": p.cusip_1, "cusip_2": p.cusip_2,
         } for p in summaries])
+        
+        # Add xxcy_diff column after "Last"
+        results_df.insert(results_df.columns.get_loc("Last") + 1, "xxcy_diff", xxcy_diff_values)
         
         results_df = results_df.sort_values("Z Score", ascending=False, na_position="last")
         results_df["Bond_1"] = results_df["Bond_1"].map(ensure_ascii)
@@ -1175,6 +1212,10 @@ def run_cad_rich_vs_usd_analysis(
         currency_mapping, ticker_mapping, sector_mapping, yrs_cvn_mapping = get_currency_ticker_sector_mappings(historical_path)
         validation_log.write(f"[cad_rich_vs_usd] Found {len(currency_mapping)} CUSIPs with valid mappings\n")
         
+        # Load CAD Equiv Swap mapping
+        cad_equiv_swap_mapping = get_cad_equiv_swap_mapping(historical_path)
+        validation_log.write(f"[cad_rich_vs_usd] Found {len(cad_equiv_swap_mapping)} CUSIPs with CAD Equiv Swap data\n")
+        
         cusips = wide_values.columns.tolist()
         valid_cusips = [c for c in cusips if c in currency_mapping and c in ticker_mapping and c in sector_mapping and c in yrs_cvn_mapping]
         
@@ -1216,6 +1257,7 @@ def run_cad_rich_vs_usd_analysis(
         
         values_array = wide_values.values
         summaries: List[PairSummary] = []
+        xxcy_diff_values: List[Optional[float]] = []
         
         for idx_1, idx_2 in valid_pairs:
             cusip_1_vals = values_array[:, idx_1]
@@ -1240,12 +1282,23 @@ def run_cad_rich_vs_usd_analysis(
                 cusip_1=cusips[idx_1],
                 cusip_2=cusips[idx_2],
             ))
+            
+            # Calculate xxcy_diff: CAD Equiv Swap (cusip_1) - CAD Equiv Swap (cusip_2)
+            cad_equiv_1 = cad_equiv_swap_mapping.get(cusips[idx_1])
+            cad_equiv_2 = cad_equiv_swap_mapping.get(cusips[idx_2])
+            if cad_equiv_1 is not None and cad_equiv_2 is not None:
+                xxcy_diff_values.append(cad_equiv_1 - cad_equiv_2)
+            else:
+                xxcy_diff_values.append(None)
         
         results_df = pd.DataFrame([{
             "Bond_1": p.Bond_1, "Bond_2": p.Bond_2, "Last": p.last_value,
             "Avg": p.average_value, "vs Avg": p.vs_average, "Z Score": p.z_score,
             "Percentile": p.percentile, "cusip_1": p.cusip_1, "cusip_2": p.cusip_2,
         } for p in summaries])
+        
+        # Add xxcy_diff column after "Last"
+        results_df.insert(results_df.columns.get_loc("Last") + 1, "xxcy_diff", xxcy_diff_values)
         
         results_df = results_df.sort_values("Z Score", ascending=False, na_position="last")
         results_df["Bond_1"] = results_df["Bond_1"].map(ensure_ascii)
