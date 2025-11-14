@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-XX XX:XX ET - Portfolio Pipeline Implementation  
+**Last Updated**: 2025-01-XX XX:XX ET - Consolidated Pair Analytics Excel Output  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -475,6 +475,7 @@ poetry run pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_c
 Bond-RV-App/
 ├── analytics/             # Analytics scripts and processed outputs
 │   ├── comb/             # Pair analytics scripts
+│   │   ├── comb.py           # Consolidated pair analytics script (runs all analyses, outputs single Excel file)
 │   │   ├── cr01_comb.py      # CR01 pair analytics (BQL universe vs holdings spreads)
 │   │   ├── all_comb.py       # All combinations pair analytics (all CAD CUSIPs)
 │   │   ├── term_comb.py      # Term combinations pair analytics (filters pairs where abs(Yrs (Cvn) difference) <= 0.8)
@@ -492,7 +493,10 @@ Bond-RV-App/
 │   ├── runs/             # Runs analytics scripts
 │   │   ├── runs-adjusted_ts.py  # Runs adjusted timeseries analytics (Date+CUSIP+Benchmark aggregation)
 │   │   └── runs_today.py     # Runs today analytics (last date with DoD, MTD, YTD, 1yr changes)
-│   └── processed_data/   # CSV outputs from analytics scripts
+│   └── processed_data/   # Outputs from analytics scripts
+│       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets)
+│       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
+│       ├── comb_validation.txt  # Validation log for pair analytics (from comb.py)
 │       ├── cr01_pair_analytics.csv
 │       ├── all_comb.csv
 │       ├── term_comb.csv
@@ -1140,4 +1144,14 @@ pytest tests/unit/test_utils.py -v
     - No CR01 filters - computes all pairwise combinations within portfolio
     - Outputs to `all combos vs holdings.csv`
     - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Consolidated pair analytics into single Excel output:
+  - Created `analytics/comb/comb.py` - consolidated script that runs all 11 pair analytics types
+  - Replaced individual CSV file outputs with single `comb.xlsx` Excel file
+  - Each analysis type gets its own sheet with formatted Excel tables (filters, banded rows, auto-fitted columns)
+  - Tab names use shorter versions (max 31 characters) mapped via `EXCEL_TAB_NAMES` configuration
+  - Numeric columns formatted to 1 decimal place
+  - Empty analyses automatically skipped (no empty sheets)
+  - Still generates `comb.txt` (text summary) and `comb_validation.txt` (validation log) for reference
+  - All individual analysis functions updated to return DataFrames instead of writing CSVs
+  - Excel tables use `TableStyleMedium9` style with filters and banded rows enabled
 

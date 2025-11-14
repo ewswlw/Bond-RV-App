@@ -1,0 +1,205 @@
+PAIR ANALYTICS VALIDATION LOG
+Generated: 2025-11-14 16:19:58
+================================================================================
+
+Starting pair analytics execution...
+Configuration:
+  Recent date percent: 0.75
+  Top N pairs: 80
+  Target bond ticker: TCN
+  Target bond security: None
+  CR01 tight bid threshold: 2000
+  CR01 wide offer threshold: 2000
+  Bid/Offer threshold: 3
+
+[all_comb] Starting analysis...
+[all_comb] Found 1701 CAD CUSIPs
+[all_comb] After filtering: 101750 rows, 550 CUSIPs
+[all_comb] Processed 1,509 / 150,975 pairs (1.0%)
+[all_comb] Processed 3,018 / 150,975 pairs (2.0%)
+[all_comb] Processed 4,527 / 150,975 pairs (3.0%)
+[all_comb] Processed 6,036 / 150,975 pairs (4.0%)
+[all_comb] Processed 7,545 / 150,975 pairs (5.0%)
+[all_comb] Processed 9,054 / 150,975 pairs (6.0%)
+[all_comb] Processed 10,563 / 150,975 pairs (7.0%)
+[all_comb] Processed 12,072 / 150,975 pairs (8.0%)
+[all_comb] Processed 13,581 / 150,975 pairs (9.0%)
+[all_comb] Processed 15,090 / 150,975 pairs (10.0%)
+[all_comb] Processed 16,599 / 150,975 pairs (11.0%)
+[all_comb] Processed 18,108 / 150,975 pairs (12.0%)
+[all_comb] Processed 19,617 / 150,975 pairs (13.0%)
+[all_comb] Processed 21,126 / 150,975 pairs (14.0%)
+[all_comb] Processed 22,635 / 150,975 pairs (15.0%)
+[all_comb] Processed 24,144 / 150,975 pairs (16.0%)
+[all_comb] Processed 25,653 / 150,975 pairs (17.0%)
+[all_comb] Processed 27,162 / 150,975 pairs (18.0%)
+[all_comb] Processed 28,671 / 150,975 pairs (19.0%)
+[all_comb] Processed 30,180 / 150,975 pairs (20.0%)
+[all_comb] Processed 31,689 / 150,975 pairs (21.0%)
+[all_comb] Processed 33,198 / 150,975 pairs (22.0%)
+[all_comb] Processed 34,707 / 150,975 pairs (23.0%)
+[all_comb] Processed 36,216 / 150,975 pairs (24.0%)
+[all_comb] Processed 37,725 / 150,975 pairs (25.0%)
+[all_comb] Processed 39,234 / 150,975 pairs (26.0%)
+[all_comb] Processed 40,743 / 150,975 pairs (27.0%)
+[all_comb] Processed 42,252 / 150,975 pairs (28.0%)
+[all_comb] Processed 43,761 / 150,975 pairs (29.0%)
+[all_comb] Processed 45,270 / 150,975 pairs (30.0%)
+[all_comb] Processed 46,779 / 150,975 pairs (31.0%)
+[all_comb] Processed 48,288 / 150,975 pairs (32.0%)
+[all_comb] Processed 49,797 / 150,975 pairs (33.0%)
+[all_comb] Processed 51,306 / 150,975 pairs (34.0%)
+[all_comb] Processed 52,815 / 150,975 pairs (35.0%)
+[all_comb] Processed 54,324 / 150,975 pairs (36.0%)
+[all_comb] Processed 55,833 / 150,975 pairs (37.0%)
+[all_comb] Processed 57,342 / 150,975 pairs (38.0%)
+[all_comb] Processed 58,851 / 150,975 pairs (39.0%)
+[all_comb] Processed 60,360 / 150,975 pairs (40.0%)
+[all_comb] Processed 61,869 / 150,975 pairs (41.0%)
+[all_comb] Processed 63,378 / 150,975 pairs (42.0%)
+[all_comb] Processed 64,887 / 150,975 pairs (43.0%)
+[all_comb] Processed 66,396 / 150,975 pairs (44.0%)
+[all_comb] Processed 67,905 / 150,975 pairs (45.0%)
+[all_comb] Processed 69,414 / 150,975 pairs (46.0%)
+[all_comb] Processed 70,923 / 150,975 pairs (47.0%)
+[all_comb] Processed 72,432 / 150,975 pairs (48.0%)
+[all_comb] Processed 73,941 / 150,975 pairs (49.0%)
+[all_comb] Processed 75,450 / 150,975 pairs (50.0%)
+[all_comb] Processed 76,959 / 150,975 pairs (51.0%)
+[all_comb] Processed 78,468 / 150,975 pairs (52.0%)
+[all_comb] Processed 79,977 / 150,975 pairs (53.0%)
+[all_comb] Processed 81,486 / 150,975 pairs (54.0%)
+[all_comb] Processed 82,995 / 150,975 pairs (55.0%)
+[all_comb] Processed 84,504 / 150,975 pairs (56.0%)
+[all_comb] Processed 86,013 / 150,975 pairs (57.0%)
+[all_comb] Processed 87,522 / 150,975 pairs (58.0%)
+[all_comb] Processed 89,031 / 150,975 pairs (59.0%)
+[all_comb] Processed 90,540 / 150,975 pairs (60.0%)
+[all_comb] Processed 92,049 / 150,975 pairs (61.0%)
+[all_comb] Processed 93,558 / 150,975 pairs (62.0%)
+[all_comb] Processed 95,067 / 150,975 pairs (63.0%)
+[all_comb] Processed 96,576 / 150,975 pairs (64.0%)
+[all_comb] Processed 98,085 / 150,975 pairs (65.0%)
+[all_comb] Processed 99,594 / 150,975 pairs (66.0%)
+[all_comb] Processed 101,103 / 150,975 pairs (67.0%)
+[all_comb] Processed 102,612 / 150,975 pairs (68.0%)
+[all_comb] Processed 104,121 / 150,975 pairs (69.0%)
+[all_comb] Processed 105,630 / 150,975 pairs (70.0%)
+[all_comb] Processed 107,139 / 150,975 pairs (71.0%)
+[all_comb] Processed 108,648 / 150,975 pairs (72.0%)
+[all_comb] Processed 110,157 / 150,975 pairs (73.0%)
+[all_comb] Processed 111,666 / 150,975 pairs (74.0%)
+[all_comb] Processed 113,175 / 150,975 pairs (75.0%)
+[all_comb] Processed 114,684 / 150,975 pairs (76.0%)
+[all_comb] Processed 116,193 / 150,975 pairs (77.0%)
+[all_comb] Processed 117,702 / 150,975 pairs (78.0%)
+[all_comb] Processed 119,211 / 150,975 pairs (79.0%)
+[all_comb] Processed 120,720 / 150,975 pairs (80.0%)
+[all_comb] Processed 122,229 / 150,975 pairs (81.0%)
+[all_comb] Processed 123,738 / 150,975 pairs (82.0%)
+[all_comb] Processed 125,247 / 150,975 pairs (83.0%)
+[all_comb] Processed 126,756 / 150,975 pairs (84.0%)
+[all_comb] Processed 128,265 / 150,975 pairs (85.0%)
+[all_comb] Processed 129,774 / 150,975 pairs (86.0%)
+[all_comb] Processed 131,283 / 150,975 pairs (87.0%)
+[all_comb] Processed 132,792 / 150,975 pairs (88.0%)
+[all_comb] Processed 134,301 / 150,975 pairs (89.0%)
+[all_comb] Processed 135,810 / 150,975 pairs (90.0%)
+[all_comb] Processed 137,319 / 150,975 pairs (91.0%)
+[all_comb] Processed 138,828 / 150,975 pairs (92.0%)
+[all_comb] Processed 140,337 / 150,975 pairs (93.0%)
+[all_comb] Processed 141,846 / 150,975 pairs (94.0%)
+[all_comb] Processed 143,355 / 150,975 pairs (95.0%)
+[all_comb] Processed 144,864 / 150,975 pairs (96.0%)
+[all_comb] Processed 146,373 / 150,975 pairs (97.0%)
+[all_comb] Processed 147,882 / 150,975 pairs (98.0%)
+[all_comb] Processed 149,391 / 150,975 pairs (99.0%)
+[all_comb] Processed 150,900 / 150,975 pairs (100.0%)
+[all_comb] Success: 150970 pairs generated
+[term_comb] Starting analysis...
+[term_comb] Found 1701 CAD CUSIPs, 1656 with Yrs (Cvn) data
+[term_comb] After filtering: 101750 rows, 550 CUSIPs
+[term_comb] Found 26,510 valid pairs (out of 150,975 possible)
+[term_comb] Processed 1,000 / 26,510 pairs (3.8%)
+[term_comb] Processed 2,000 / 26,510 pairs (7.5%)
+[term_comb] Processed 3,000 / 26,510 pairs (11.3%)
+[term_comb] Processed 4,000 / 26,510 pairs (15.1%)
+[term_comb] Processed 5,000 / 26,510 pairs (18.9%)
+[term_comb] Processed 6,000 / 26,510 pairs (22.6%)
+[term_comb] Processed 7,000 / 26,510 pairs (26.4%)
+[term_comb] Processed 8,000 / 26,510 pairs (30.2%)
+[term_comb] Processed 9,000 / 26,510 pairs (33.9%)
+[term_comb] Processed 10,000 / 26,510 pairs (37.7%)
+[term_comb] Processed 11,000 / 26,510 pairs (41.5%)
+[term_comb] Processed 12,000 / 26,510 pairs (45.3%)
+[term_comb] Processed 13,000 / 26,510 pairs (49.0%)
+[term_comb] Processed 14,000 / 26,510 pairs (52.8%)
+[term_comb] Processed 15,000 / 26,510 pairs (56.6%)
+[term_comb] Processed 16,000 / 26,510 pairs (60.4%)
+[term_comb] Processed 17,000 / 26,510 pairs (64.1%)
+[term_comb] Processed 18,000 / 26,510 pairs (67.9%)
+[term_comb] Processed 19,000 / 26,510 pairs (71.7%)
+[term_comb] Processed 20,000 / 26,510 pairs (75.4%)
+[term_comb] Processed 21,000 / 26,510 pairs (79.2%)
+[term_comb] Processed 22,000 / 26,510 pairs (83.0%)
+[term_comb] Processed 23,000 / 26,510 pairs (86.8%)
+[term_comb] Processed 24,000 / 26,510 pairs (90.5%)
+[term_comb] Processed 25,000 / 26,510 pairs (94.3%)
+[term_comb] Processed 26,000 / 26,510 pairs (98.1%)
+[term_comb] Success: 26505 pairs generated
+[ticker_comb] Starting analysis...
+[ticker_comb] Found 1701 CAD CUSIPs, 1701 with Ticker data
+[ticker_comb] After filtering: 101750 rows, 550 CUSIPs
+[ticker_comb] Found 1,422 valid pairs (out of 150,975 possible)
+[ticker_comb] Processed 1,000 / 1,422 pairs (70.3%)
+[ticker_comb] Success: 1417 pairs generated
+[custom_sector] Starting analysis...
+[custom_sector] Found 1701 CAD CUSIPs, 1701 with Custom_Sector data
+[custom_sector] After filtering: 101750 rows, 550 CUSIPs
+[custom_sector] Found 8,576 valid pairs (out of 150,975 possible)
+[custom_sector] Processed 1,000 / 8,576 pairs (11.7%)
+[custom_sector] Processed 2,000 / 8,576 pairs (23.3%)
+[custom_sector] Processed 3,000 / 8,576 pairs (35.0%)
+[custom_sector] Processed 4,000 / 8,576 pairs (46.6%)
+[custom_sector] Processed 5,000 / 8,576 pairs (58.3%)
+[custom_sector] Processed 6,000 / 8,576 pairs (70.0%)
+[custom_sector] Processed 7,000 / 8,576 pairs (81.6%)
+[custom_sector] Processed 8,000 / 8,576 pairs (93.3%)
+[custom_sector] Success: 8573 pairs generated
+[custom_bond_comb] Starting analysis...
+[custom_bond_comb] Found 1701 CAD CUSIPs
+[custom_bond_comb] Found 29 target bond(s)
+[custom_bond_comb] After filtering: 101750 rows, 550 CUSIPs
+[custom_bond_comb] Success: 8235 pairs generated
+[custom_bond_vs_holdings] Starting analysis...
+[custom_bond_vs_holdings] Found 1701 CAD CUSIPs
+[custom_bond_vs_holdings] Found 29 target bond(s)
+[custom_bond_vs_holdings] Found 70 CR01 holdings CUSIPs
+[custom_bond_vs_holdings] After filtering: 6845 rows, 37 CUSIPs
+[custom_bond_vs_holdings] Success: 344 pairs generated
+[cad_cheap_vs_usd] Starting analysis...
+[cad_cheap_vs_usd] After filtering: 167425 rows, 905 CUSIPs
+[cad_cheap_vs_usd] Found 2382 CUSIPs with valid mappings
+[cad_cheap_vs_usd] Found 550 CAD and 355 USD CUSIPs
+[cad_cheap_vs_usd] Found 443 valid pairs
+[cad_cheap_vs_usd] Success: 443 pairs generated
+[cad_rich_vs_usd] Starting analysis...
+[cad_rich_vs_usd] After filtering: 167425 rows, 905 CUSIPs
+[cad_rich_vs_usd] Found 2382 CUSIPs with valid mappings
+[cad_rich_vs_usd] Found 355 USD and 550 CAD CUSIPs
+[cad_rich_vs_usd] Found 443 valid pairs
+[cad_rich_vs_usd] Success: 443 pairs generated
+[executable_cr01_vs_holdings] Starting analysis...
+[executable_cr01_vs_holdings] Found 70 CR01 holdings CUSIPs
+[executable_cr01_vs_holdings] Found 210 CR01 universe CUSIPs
+[executable_cr01_vs_holdings] Success: 4830 pairs generated
+[executable_cr01_decent_bid_offer_vs_holdings] Starting analysis...
+[executable_cr01_decent_bid_offer_vs_holdings] Found 39 CR01 holdings CUSIPs
+[executable_cr01_decent_bid_offer_vs_holdings] Found 115 CR01 universe CUSIPs
+[executable_cr01_decent_bid_offer_vs_holdings] Success: 1495 pairs generated
+[all_combos_vs_holdings] Starting analysis...
+[all_combos_vs_holdings] Found 251 portfolio CUSIPs
+[all_combos_vs_holdings] Success: 3136 pairs generated
+
+================================================================================
+END OF VALIDATION LOG
