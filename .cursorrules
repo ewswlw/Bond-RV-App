@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-XX XX:XX ET - Added xxcy_diff Column to CAD/USD Pair Analytics  
+**Last Updated**: 2025-01-XX XX:XX ET - Merged runs-adjusted_ts.py into runs_today.py  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -491,8 +491,7 @@ Bond-RV-App/
 │   │   ├── executable cr01 vs holdings.py  # CR01 pair analytics (dynamic CUSIP loading from runs_today.csv + portfolio, filters: CR01 @ Tight Bid > 2000, CR01 @ Wide Offer > 2000, no Bid/Offer filter)
 │   │   └── all combos vs holdings.py  # All combinations vs holdings pair analytics (all portfolio CUSIPs from last date, no CR01 filters)
 │   ├── runs/             # Runs analytics scripts
-│   │   ├── runs-adjusted_ts.py  # Runs adjusted timeseries analytics (Date+CUSIP+Benchmark aggregation)
-│   │   └── runs_today.py     # Runs today analytics (last date with DoD, MTD, YTD, 1yr changes)
+│   │   └── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/1yr changes)
 │   └── processed_data/   # Outputs from analytics scripts
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
@@ -511,7 +510,6 @@ Bond-RV-App/
 │       ├── executable cr01 decent bid offer vs holdings.csv
 │       ├── executable cr01 vs holdings.csv
 │       ├── all combos vs holdings.csv
-│       ├── runs_adjusted_ts.csv
 │       └── runs_today.csv
 ├── bond_pipeline/          # Pipeline code (7 modules)
 ├── bond_data/              # Data directory (local only, git-ignored)
@@ -944,7 +942,7 @@ pytest tests/unit/test_utils.py -v
   - Updated enhanced statistics to use `Yrs (Cvn)` instead of `Yrs (Worst)` for binning analysis
   - Statistics now include proper binning with `<1` bin to capture negative and small values
 - **2025-11-09 17:00 ET**: Created runs adjusted timeseries analytics script:
-  - Created `analytics/runs/runs-adjusted_ts.py` - runs timeseries aggregation script:
+  - Created `analytics/runs/runs-adjusted_ts.py` - runs timeseries aggregation script (MERGED into runs_today.py on 2025-01-XX):
     - Reads `runs_timeseries.parquet` and groups by Date, CUSIP, and Benchmark
     - Computes 23 aggregated metrics including:
       - Basic columns: Date, CUSIP, Time (latest), Bid Workout Risk (average), Security
@@ -956,12 +954,12 @@ pytest tests/unit/test_utils.py -v
       - RBC dealer columns: Bid RBC, Ask RBC, Bid Size RBC, Offer Size RBC
     - All numeric columns properly typed as `float64`
     - Sorts by Date (earliest to latest)
-    - Exports to `runs_adjusted_ts.csv` in `analytics/processed_data/`
+    - Exports to `runs_adjusted_ts.csv` in `analytics/processed_data/` (no longer generated)
     - Displays table preview and `df.info()` for validation
     - Uses script-relative path resolution for portability
 - **2025-11-09 18:00 ET**: Created runs today analytics script:
   - Created `analytics/runs/runs_today.py` - daily runs analytics with Day-over-Day changes:
-    - Reads `runs_adjusted_ts.csv` and filters to most recent date
+    - Reads `runs_adjusted_ts.csv` and filters to most recent date (UPDATED: now reads parquet directly)
     - Only includes CUSIPs present on both last date and second-to-last date
     - Computes 41 columns including:
       - Basic columns: CUSIP, Security, Bid Workout Risk
@@ -976,6 +974,15 @@ pytest tests/unit/test_utils.py -v
     - Exports to `runs_today.csv` in `analytics/processed_data/`
     - Displays table preview and `df.info()` for validation
     - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Merged runs-adjusted_ts.py into runs_today.py and optimized date processing:
+  - Merged `analytics/runs/runs-adjusted_ts.py` into `analytics/runs/runs_today.py` (single flow)
+  - Removed intermediate `runs_adjusted_ts.csv` output file (no longer generated)
+  - Optimized to process only required dates (last, second-to-last, MTD ref, YTD ref, 1yr ref) instead of all dates
+  - Reads directly from `runs_timeseries.parquet` instead of intermediate CSV
+  - Single workflow: aggregation → today analysis → CSV output
+  - Keeps `compute_group_metrics()` and `ensure_ascii()` as helper functions
+  - Improved performance by filtering parquet data before grouping/aggregation
+  - Deleted `runs-adjusted_ts.py` file
 - **2025-01-XX XX:XX ET**: Enhanced runs today analytics with MTD, YTD, and 1yr changes:
   - Added Month-to-Date (MTD) change columns for all DoD columns (compares last date with first available date of current month)
   - Added Year-to-Date (YTD) change columns for all DoD columns (compares last date with first available date of current year)
