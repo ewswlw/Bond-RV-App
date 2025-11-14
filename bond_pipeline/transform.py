@@ -174,17 +174,33 @@ class DataTransformer:
     
     def convert_years_to_numeric(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Convert 'Yrs Since Issue', 'Yrs (Worst)', and 'Yrs (Cvn)' columns to numeric.
+        Convert numeric columns to float64, including years columns and spread/metric columns.
         
         Args:
             df: DataFrame to convert
         
         Returns:
-            DataFrame with numeric years columns
+            DataFrame with numeric columns converted to float64
         """
+        # Years columns
         years_columns = ['Yrs Since Issue', 'Yrs (Worst)', 'Yrs (Cvn)']
         
-        for col in years_columns:
+        # Spread and metric columns that should be numeric
+        numeric_columns = [
+            'G Sprd',
+            'vs BI',
+            'vs BCE',
+            'MTD Equity',
+            'YTD Equity',
+            'Retracement',
+            'Z Score',
+            'Retracement2',
+        ]
+        
+        # Combine all numeric columns
+        all_numeric_columns = years_columns + numeric_columns
+        
+        for col in all_numeric_columns:
             if col in df.columns:
                 # Convert to numeric, coercing errors to NaN
                 df[col] = pd.to_numeric(df[col], errors='coerce')

@@ -120,9 +120,21 @@ class ParquetLoader:
         # Combine new data
         new_df = pd.concat(non_empty_dfs, ignore_index=True)
 
-        # Convert years columns to numeric FIRST (before general object conversion)
+        # Convert numeric columns to float64 FIRST (before general object conversion)
         years_columns = ['Yrs Since Issue', 'Yrs (Worst)', 'Yrs (Cvn)']
-        for col in years_columns:
+        spread_metric_columns = [
+            'G Sprd',
+            'vs BI',
+            'vs BCE',
+            'MTD Equity',
+            'YTD Equity',
+            'Retracement',
+            'Z Score',
+            'Retracement2',
+        ]
+        all_numeric_columns = years_columns + spread_metric_columns
+        
+        for col in all_numeric_columns:
             if col in new_df.columns:
                 new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
                 self.logger.info(f"Converted new data '{col}' to numeric in append mode")
@@ -149,8 +161,8 @@ class ParquetLoader:
                         # Remove any None values (unparseable strings)
                         existing_df = existing_df[existing_df[DATE_COLUMN].notna()]
                 
-                # Convert years columns to numeric if they exist (for compatibility with new numeric format)
-                for col in years_columns:
+                # Convert numeric columns if they exist (for compatibility with new numeric format)
+                for col in all_numeric_columns:
                     if col in existing_df.columns:
                         if existing_df[col].dtype == 'object':
                             existing_df[col] = pd.to_numeric(existing_df[col], errors='coerce')
@@ -193,12 +205,12 @@ class ParquetLoader:
                 
                 # Second pass: Convert remaining object columns to strings for consistency
                 for col in new_df.columns:
-                    if col not in numeric_columns and col not in years_columns:
+                    if col not in all_numeric_columns:
                         if new_df[col].dtype == 'object':
                             new_df[col] = new_df[col].astype(str).replace(['nan', '<NA>', 'None'], pd.NA)
                 
                 for col in existing_df.columns:
-                    if col not in numeric_columns and col not in years_columns:
+                    if col not in all_numeric_columns:
                         if existing_df[col].dtype == 'object':
                             existing_df[col] = existing_df[col].astype(str).replace(['nan', '<NA>', 'None'], pd.NA)
                 
@@ -252,9 +264,21 @@ class ParquetLoader:
         # Combine all data
         combined_df = pd.concat(non_empty_dfs, ignore_index=True)
         
-        # Convert years columns to numeric FIRST (before general object conversion)
+        # Convert numeric columns to float64 FIRST (before general object conversion)
         years_columns = ['Yrs Since Issue', 'Yrs (Worst)', 'Yrs (Cvn)']
-        for col in years_columns:
+        spread_metric_columns = [
+            'G Sprd',
+            'vs BI',
+            'vs BCE',
+            'MTD Equity',
+            'YTD Equity',
+            'Retracement',
+            'Z Score',
+            'Retracement2',
+        ]
+        all_numeric_columns = years_columns + spread_metric_columns
+        
+        for col in all_numeric_columns:
             if col in combined_df.columns:
                 combined_df[col] = pd.to_numeric(combined_df[col], errors='coerce')
                 self.logger.info(f"Converted '{col}' to numeric in override mode")

@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-XX XX:XX ET - Merged runs-adjusted_ts.py into runs_today.py  
+**Last Updated**: 2025-11-14 18:30 ET - Added numeric column conversion for spread/metric columns, runs_today.py merge functionality, and comprehensive logging  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -348,11 +348,12 @@ Each pipeline stage is a class with clear responsibilities:
 
 #### Numeric Column Conversion
 - **Years columns**: `Yrs Since Issue`, `Yrs (Worst)`, and `Yrs (Cvn)` are automatically converted to numeric (`float64`) during transformation
+- **Spread and metric columns**: `G Sprd`, `vs BI`, `vs BCE`, `MTD Equity`, `YTD Equity`, `Retracement`, `Z Score`, `Retracement2` are automatically converted to numeric (`float64`) during transformation
 - **Conversion points**: 
-  - Transform step: Converts during `transform_single_file()` processing
+  - Transform step: Converts during `transform_single_file()` processing via `convert_years_to_numeric()` method
   - Load step (append): Converts new data and existing data for compatibility
   - Load step (override): Converts all data before writing
-- **Result**: These columns are always stored as numeric in parquet files, enabling proper binning and statistical analysis
+- **Result**: These columns are always stored as numeric (`float64`) in parquet files, enabling proper binning, statistical analysis, and accurate merging with other datasets
 - **Error handling**: Non-numeric values are coerced to NaN (errors='coerce')
 
 #### BQL Pipeline
@@ -375,7 +376,8 @@ bond_data/logs/
 ├── duplicates.log      # All duplicate CUSIPs detected
 ├── validation.log      # CUSIP validation warnings
 ├── summary.log         # Pipeline execution summary (run headers, stats)
-└── parquet_stats.log   # Snapshot diagnostics for each parquet dataset (df.info/head/tail)
+├── parquet_stats.log   # Snapshot diagnostics for each parquet dataset (df.info/head/tail)
+└── runs_today.log     # Runs today analytics execution log (merge statistics, df.info, matching details)
 ```
 
 ### Logging Levels
@@ -959,21 +961,34 @@ pytest tests/unit/test_utils.py -v
     - Uses script-relative path resolution for portability
 - **2025-11-09 18:00 ET**: Created runs today analytics script:
   - Created `analytics/runs/runs_today.py` - daily runs analytics with Day-over-Day changes:
-    - Reads `runs_adjusted_ts.csv` and filters to most recent date (UPDATED: now reads parquet directly)
+    - Reads `runs_timeseries.parquet` directly and aggregates required dates only (optimized)
     - Only includes CUSIPs present on both last date and second-to-last date
-    - Computes 41 columns including:
+    - Computes aggregated metrics including:
       - Basic columns: CUSIP, Security, Bid Workout Risk
       - Spread metrics: Tight Bid >3mm, Wide Offer >3mm, Bid/Offer>3mm, Tight Bid, Wide Offer, Bid/Offer
       - Dealer columns: Current dealers and T-1 dealers (from second-to-last date)
       - Size, CR01, cumulative, and count metrics
       - RBC dealer columns
       - 16 Day-over-Day (DoD) change columns (Last Date - Second Last Date)
+      - 16 MTD change columns (Last Date - First Date of Month)
+      - 16 YTD change columns (Last Date - First Date of Year)
+      - 16 1yr change columns (Last Date - Closest Date ~1 Year Ago)
+    - Merges external columns from `historical_portfolio.parquet` (last date): QUANTITY, POSITION CR01
+    - Merges external columns from `historical_bond_details.parquet` (most recent available date): G Sprd, Yrs (Cvn), vs BI, vs BCE, MTD Equity, YTD Equity, Retracement, Yrs Since Issue, Z Score, Retracement2, Rating
+    - CUSIP normalization: Normalizes CUSIPs for matching (runs CUSIPs may not be normalized, bond/portfolio CUSIPs are normalized)
+    - Portfolio aggregation: Sums QUANTITY and POSITION CR01 when multiple ACCOUNT/PORTFOLIO rows exist per CUSIP
+    - Bond details date handling: Uses most recent available date if exact date match not found
     - Bid/Offer calculations only populate when both source columns have values
-    - All DoD columns properly typed as `float64` (including integer columns)
+    - All numeric columns properly typed as `float64`
     - Sorts by CUSIP
     - Exports to `runs_today.csv` in `analytics/processed_data/`
-    - Displays table preview and `df.info()` for validation
+    - Comprehensive logging to `bond_data/logs/runs_today.log`:
+      - Merge statistics (match counts, percentages, unmatched CUSIPs)
+      - Full `df.info()` output for input parquet and final CSV (verbose mode)
+      - Column summaries and sample data
+      - CUSIP normalization details
     - Uses script-relative path resolution for portability
+    - Configuration section at top for easy column management
 - **2025-01-XX XX:XX ET**: Merged runs-adjusted_ts.py into runs_today.py and optimized date processing:
   - Merged `analytics/runs/runs-adjusted_ts.py` into `analytics/runs/runs_today.py` (single flow)
   - Removed intermediate `runs_adjusted_ts.csv` output file (no longer generated)
@@ -1169,4 +1184,20 @@ pytest tests/unit/test_utils.py -v
   - Values set to `None` (NaN) if either CUSIP lacks CAD Equiv Swap data
   - Column formatted to 1 decimal place (via `format_numeric_columns()`)
   - Appears in Excel output (`comb.xlsx`), text summary (`comb.txt`), and console output
+- **2025-11-14 18:30 ET**: Enhanced bond pipeline numeric conversion and runs_today.py merge functionality:
+  - Extended `convert_years_to_numeric()` in `bond_pipeline/transform.py` to convert spread/metric columns to `float64`:
+    - Added: `G Sprd`, `vs BI`, `vs BCE`, `MTD Equity`, `YTD Equity`, `Retracement`, `Z Score`, `Retracement2`
+    - These columns are now stored as numeric in `historical_bond_details.parquet` instead of object/string
+  - Updated `bond_pipeline/load.py` to convert numeric columns in both append and override modes
+  - Added merge functionality to `analytics/runs/runs_today.py`:
+    - Merges QUANTITY and POSITION CR01 from `historical_portfolio.parquet` (last date, aggregated by CUSIP)
+    - Merges 11 columns from `historical_bond_details.parquet` (most recent available date)
+    - CUSIP normalization for matching (runs CUSIPs normalized before merge)
+    - Flexible configuration at top of file for easy column management
+  - Added comprehensive logging to `runs_today.py`:
+    - Creates `bond_data/logs/runs_today.log` with detailed merge statistics
+    - Logs CUSIP normalization details and match statistics
+    - Logs full `df.info()` output for input parquet and final CSV (verbose mode)
+    - Logs column-level match percentages and sample matched/unmatched CUSIPs
+    - Logs final DataFrame summary and sample data rows
 
