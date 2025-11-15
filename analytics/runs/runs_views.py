@@ -279,7 +279,7 @@ def get_reference_dates(runs_path: Path) -> dict:
     }
 
 
-def format_table(df: pd.DataFrame, title: str, column_display_names: dict) -> str:
+def format_table(df: pd.DataFrame, title: str, column_display_names: dict, summary_dict: dict = None) -> str:
     """
     Format DataFrame as a nicely formatted text table with center alignment.
     
@@ -287,6 +287,7 @@ def format_table(df: pd.DataFrame, title: str, column_display_names: dict) -> st
         df: DataFrame to format.
         title: Table title.
         column_display_names: Dictionary mapping original column names to display names.
+        summary_dict: Optional dictionary with summary statistics to display at top (e.g., {"Cumulative CR01 TB": 12345}).
     
     Returns:
         Formatted table string with center-aligned columns.
@@ -354,6 +355,17 @@ def format_table(df: pd.DataFrame, title: str, column_display_names: dict) -> st
     
     # Build formatted output
     output = f"\n{'='*100}\n{title}\n{'='*100}\n"
+    
+    # Add summary statistics if provided
+    if summary_dict:
+        for key, value in summary_dict.items():
+            # Format numeric values with thousand separators
+            if isinstance(value, (int, float)):
+                formatted_value = f"{int(round(value)):,}"
+            else:
+                formatted_value = str(value)
+            output += f"{key}: {formatted_value}\n"
+    
     output += f"Total rows: {len(df):,}\n"
     output += f"{'-'*100}\n"
     output += table_str
@@ -537,6 +549,166 @@ def create_portfolio_1yr_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
     return df_filtered
 
 
+def create_size_bids_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create Size Bids table (exactly like CR01 Risk but sorted by CR01 TB).
+    
+    Filters to rows where:
+    - QUANTITY > 0
+    - CR01 @ Tight Bid >= 1000
+    - POSITION CR01 >= 1,000
+    
+    Sorted by CR01 @ Tight Bid descending.
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Filter to QUANTITY > 0
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to CR01 @ Tight Bid >= 1000
+    cr01_tb_col = "CR01 @ Tight Bid"
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[cr01_tb_col].notna() & (df_filtered[cr01_tb_col] >= 1000)
+        ].copy()
+    
+    # Filter to POSITION CR01 >= 1,000
+    pos_cr01_col = "POSITION CR01"
+    if pos_cr01_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[pos_cr01_col].notna() & (df_filtered[pos_cr01_col] >= 1000)
+        ].copy()
+    
+    # Sort by CR01 @ Tight Bid descending (largest first)
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(cr01_tb_col, ascending=False, na_position='last')
+    
+    # Select only required columns (same as CR01 Risk table)
+    available_columns = [col for col in PORTFOLIO_CR01_RISK_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
+def create_size_bids_minimal_bo_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create Size Bids With Minimal Bid/Offer table (same as Size Bids but with Bid/Offer>3mm filter).
+    
+    Filters to rows where:
+    - QUANTITY > 0
+    - CR01 @ Tight Bid >= 1000
+    - POSITION CR01 >= 1,000
+    - Bid/Offer>3mm <= 3 (excludes > 3 or blank)
+    
+    Sorted by CR01 @ Tight Bid descending.
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Filter to QUANTITY > 0
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to CR01 @ Tight Bid >= 1000
+    cr01_tb_col = "CR01 @ Tight Bid"
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[cr01_tb_col].notna() & (df_filtered[cr01_tb_col] >= 1000)
+        ].copy()
+    
+    # Filter to POSITION CR01 >= 1,000
+    pos_cr01_col = "POSITION CR01"
+    if pos_cr01_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[pos_cr01_col].notna() & (df_filtered[pos_cr01_col] >= 1000)
+        ].copy()
+    
+    # Filter to Bid/Offer>3mm <= 3 (excludes > 3 or blank)
+    bo_3mm_col = "Bid/Offer>3mm"
+    if bo_3mm_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[bo_3mm_col].notna() & (df_filtered[bo_3mm_col] <= 3)
+        ].copy()
+    
+    # Sort by CR01 @ Tight Bid descending (largest first)
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(cr01_tb_col, ascending=False, na_position='last')
+    
+    # Select only required columns (same as CR01 Risk table)
+    available_columns = [col for col in PORTFOLIO_CR01_RISK_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
+def create_size_bids_minimal_bo_by_dealer_table(df: pd.DataFrame, dealer: str) -> pd.DataFrame:
+    """
+    Create Size Bids With Minimal Bid/Offer table filtered by specific dealer.
+    
+    Filters to rows where:
+    - QUANTITY > 0
+    - CR01 @ Tight Bid >= 1000
+    - POSITION CR01 >= 1,000
+    - Bid/Offer>3mm <= 3 (excludes > 3 or blank)
+    - Dealer @ Tight Bid >3mm == dealer
+    
+    Sorted by CR01 @ Tight Bid descending.
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        dealer: Dealer name to filter by (e.g., "TD", "RBC", "BMO").
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Start with Size Bids With Minimal Bid/Offer filters
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to CR01 @ Tight Bid >= 1000
+    cr01_tb_col = "CR01 @ Tight Bid"
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[cr01_tb_col].notna() & (df_filtered[cr01_tb_col] >= 1000)
+        ].copy()
+    
+    # Filter to POSITION CR01 >= 1,000
+    pos_cr01_col = "POSITION CR01"
+    if pos_cr01_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[pos_cr01_col].notna() & (df_filtered[pos_cr01_col] >= 1000)
+        ].copy()
+    
+    # Filter to Bid/Offer>3mm <= 3 (excludes > 3 or blank)
+    bo_3mm_col = "Bid/Offer>3mm"
+    if bo_3mm_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[bo_3mm_col].notna() & (df_filtered[bo_3mm_col] <= 3)
+        ].copy()
+    
+    # Filter to specific dealer in "Dealer @ Tight Bid >3mm"
+    dealer_col = "Dealer @ Tight Bid >3mm"
+    if dealer_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[dealer_col].notna() & (df_filtered[dealer_col] == dealer)
+        ].copy()
+    
+    # Sort by CR01 @ Tight Bid descending (largest first)
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(cr01_tb_col, ascending=False, na_position='last')
+    
+    # Select only required columns (same as CR01 Risk table)
+    available_columns = [col for col in PORTFOLIO_CR01_RISK_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
 def main() -> None:
     """Main execution function."""
     print("="*100)
@@ -570,6 +742,13 @@ def main() -> None:
     portfolio_cr01_df = create_portfolio_cr01_risk_table(df)
     print(f"Filtered to {len(portfolio_cr01_df):,} rows with QUANTITY > 0")
     
+    # Calculate Total CR01 (sum of POSITION CR01) for Portfolio CR01 Risk table
+    total_cr01 = 0
+    pos_cr01_col = "POSITION CR01"
+    if pos_cr01_col in portfolio_cr01_df.columns:
+        total_cr01 = portfolio_cr01_df[pos_cr01_col].sum()
+    print(f"Total CR01: {int(round(total_cr01)):,}")
+    
     # Step 4: Create Portfolio Sorted By DoD Bid Chg table
     print("\n[STEP 4] Creating Portfolio Sorted By DoD Bid Chg With >3MM on Bid table...")
     portfolio_dod_bid_df = create_portfolio_dod_bid_chg_table(df)
@@ -590,8 +769,58 @@ def main() -> None:
     portfolio_1yr_bid_df = create_portfolio_1yr_bid_chg_table(df)
     print(f"Filtered to {len(portfolio_1yr_bid_df):,} rows with QUANTITY > 0, TB >3mm has value, and 1yr TB non-zero")
     
-    # Step 8: Format and write output
-    print("\n[STEP 8] Formatting and writing output...")
+    # Step 8: Create Size Bids table
+    print("\n[STEP 8] Creating Size Bids table...")
+    size_bids_df = create_size_bids_table(df)
+    print(f"Filtered to {len(size_bids_df):,} rows with QUANTITY > 0, CR01 TB >= 1000, and POSITION CR01 >= 1,000")
+    
+    # Calculate cumulative CR01 TB for Size Bids table
+    cumulative_cr01_tb = 0
+    cr01_tb_col = "CR01 @ Tight Bid"
+    if cr01_tb_col in size_bids_df.columns:
+        cumulative_cr01_tb = size_bids_df[cr01_tb_col].sum()
+    print(f"Cumulative CR01 TB: {int(round(cumulative_cr01_tb)):,}")
+    
+    # Step 9: Create Size Bids With Minimal Bid/Offer table
+    print("\n[STEP 9] Creating Size Bids With Minimal Bid/Offer table...")
+    size_bids_minimal_bo_df = create_size_bids_minimal_bo_table(df)
+    print(f"Filtered to {len(size_bids_minimal_bo_df):,} rows with QUANTITY > 0, CR01 TB >= 1000, POSITION CR01 >= 1,000, and Bid/Offer>3mm <= 3")
+    
+    # Calculate cumulative CR01 TB for Size Bids With Minimal Bid/Offer table
+    cumulative_cr01_tb_minimal_bo = 0
+    if cr01_tb_col in size_bids_minimal_bo_df.columns:
+        cumulative_cr01_tb_minimal_bo = size_bids_minimal_bo_df[cr01_tb_col].sum()
+    print(f"Cumulative CR01 TB: {int(round(cumulative_cr01_tb_minimal_bo)):,}")
+    
+    # Step 10: Create Size Bids With Minimal Bid/Offer tables by dealer
+    print("\n[STEP 10] Creating Size Bids With Minimal Bid/Offer tables by dealer...")
+    dealer_col = "Dealer @ Tight Bid >3mm"
+    dealer_tables = {}
+    dealer_cumulative_cr01 = {}
+    
+    if dealer_col in size_bids_minimal_bo_df.columns:
+        # Get unique dealers (excluding NaN)
+        unique_dealers = size_bids_minimal_bo_df[dealer_col].dropna().unique()
+        unique_dealers = sorted([d for d in unique_dealers if pd.notna(d)])
+        
+        print(f"Found {len(unique_dealers)} unique dealers: {', '.join(unique_dealers)}")
+        
+        for dealer in unique_dealers:
+            dealer_df = create_size_bids_minimal_bo_by_dealer_table(df, dealer)
+            dealer_tables[dealer] = dealer_df
+            
+            # Calculate cumulative CR01 TB for this dealer
+            dealer_cumulative = 0
+            if cr01_tb_col in dealer_df.columns:
+                dealer_cumulative = dealer_df[cr01_tb_col].sum()
+            dealer_cumulative_cr01[dealer] = dealer_cumulative
+            
+            print(f"  {dealer}: {len(dealer_df):,} rows, Cumulative CR01 TB: {int(round(dealer_cumulative)):,}")
+    else:
+        print("Warning: 'Dealer @ Tight Bid >3mm' column not found, skipping dealer-specific tables")
+    
+    # Step 11: Format and write output
+    print("\n[STEP 11] Formatting and writing output...")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -613,11 +842,13 @@ def main() -> None:
             f.write(f"  YTD Reference Date: N/A\n")
         f.write("="*100 + "\n")
         
-        # Write Portfolio Sorted By CR01 Risk table
+        # Write Portfolio Sorted By CR01 Risk table with Total CR01 summary
+        summary_dict_cr01 = {"Total CR01": total_cr01}
         table_str = format_table(
             portfolio_cr01_df,
             "Portfolio Sorted By CR01 Risk",
-            COLUMN_DISPLAY_NAMES
+            COLUMN_DISPLAY_NAMES,
+            summary_dict=summary_dict_cr01
         )
         f.write(table_str)
         
@@ -653,6 +884,39 @@ def main() -> None:
         )
         f.write(table_str)
         
+        # Write Size Bids table with cumulative CR01 TB summary
+        summary_dict = {"Cumulative CR01 TB": cumulative_cr01_tb}
+        table_str = format_table(
+            size_bids_df,
+            "Size Bids",
+            COLUMN_DISPLAY_NAMES,
+            summary_dict=summary_dict
+        )
+        f.write(table_str)
+        
+        # Write Size Bids With Minimal Bid/Offer table with cumulative CR01 TB summary
+        summary_dict_minimal_bo = {"Cumulative CR01 TB": cumulative_cr01_tb_minimal_bo}
+        table_str = format_table(
+            size_bids_minimal_bo_df,
+            "Size Bids With Minimal Bid/Offer",
+            COLUMN_DISPLAY_NAMES,
+            summary_dict=summary_dict_minimal_bo
+        )
+        f.write(table_str)
+        
+        # Write Size Bids With Minimal Bid/Offer tables by dealer
+        for dealer in sorted(dealer_tables.keys()):
+            dealer_df = dealer_tables[dealer]
+            dealer_cumulative = dealer_cumulative_cr01[dealer]
+            summary_dict_dealer = {"Cumulative CR01 TB": dealer_cumulative}
+            table_str = format_table(
+                dealer_df,
+                f"Size Bids With Minimal Bid/Offer: Where {dealer} Is Best Bid",
+                COLUMN_DISPLAY_NAMES,
+                summary_dict=summary_dict_dealer
+            )
+            f.write(table_str)
+        
         f.write("\n" + "="*100 + "\n")
         f.write("END OF REPORT\n")
     
@@ -662,6 +926,8 @@ def main() -> None:
     print(f"Total rows in Portfolio MTD Bid Chg table: {len(portfolio_mtd_bid_df):,}")
     print(f"Total rows in Portfolio YTD Bid Chg table: {len(portfolio_ytd_bid_df):,}")
     print(f"Total rows in Portfolio 1yr Bid Chg table: {len(portfolio_1yr_bid_df):,}")
+    print(f"Total rows in Size Bids table: {len(size_bids_df):,}")
+    print(f"Total rows in Size Bids With Minimal Bid/Offer table: {len(size_bids_minimal_bo_df):,}")
     print("\nDone!")
 
 
