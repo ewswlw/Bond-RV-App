@@ -594,6 +594,122 @@ def create_size_bids_table(df: pd.DataFrame) -> pd.DataFrame:
     return df_filtered
 
 
+def create_size_bids_struggling_names_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create Size Bids Struggling Names table (same as Size Bids but filters to Retracement < 50%).
+    
+    Filters to rows where:
+    - QUANTITY > 0
+    - CR01 @ Tight Bid >= 1000
+    - POSITION CR01 >= 1,000
+    - Retracement < 0.5 (Retracement < 50%, where Retracement is stored as decimal)
+    
+    Sorted by CR01 @ Tight Bid descending.
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Filter to QUANTITY > 0
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to CR01 @ Tight Bid >= 1000
+    cr01_tb_col = "CR01 @ Tight Bid"
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[cr01_tb_col].notna() & (df_filtered[cr01_tb_col] >= 1000)
+        ].copy()
+    
+    # Filter to POSITION CR01 >= 1,000
+    pos_cr01_col = "POSITION CR01"
+    if pos_cr01_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[pos_cr01_col].notna() & (df_filtered[pos_cr01_col] >= 1000)
+        ].copy()
+    
+    # Filter to Retracement < 0.5 (Retracement < 50%)
+    retracement_col = "Retracement"
+    if retracement_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[retracement_col].notna() & (df_filtered[retracement_col] < 0.5)
+        ].copy()
+    
+    # Sort by CR01 @ Tight Bid descending (largest first)
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(cr01_tb_col, ascending=False, na_position='last')
+    
+    # Select only required columns (same as CR01 Risk table)
+    available_columns = [col for col in PORTFOLIO_CR01_RISK_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
+def create_size_bids_heavily_offered_lines_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create Size Bids Heavily Offered Lines table (same as Size Bids but excludes Bail In and filters to # Offers>3mm > 2).
+    
+    Filters to rows where:
+    - QUANTITY > 0
+    - CR01 @ Tight Bid >= 1000
+    - POSITION CR01 >= 1,000
+    - Custom_Sector != "Bail In" (excludes Bail In sector)
+    - # Offers>3mm > 2
+    
+    Sorted by CR01 @ Tight Bid descending.
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Filter to QUANTITY > 0
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to CR01 @ Tight Bid >= 1000
+    cr01_tb_col = "CR01 @ Tight Bid"
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[cr01_tb_col].notna() & (df_filtered[cr01_tb_col] >= 1000)
+        ].copy()
+    
+    # Filter to POSITION CR01 >= 1,000
+    pos_cr01_col = "POSITION CR01"
+    if pos_cr01_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[pos_cr01_col].notna() & (df_filtered[pos_cr01_col] >= 1000)
+        ].copy()
+    
+    # Filter out "Bail In" from Custom_Sector
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | (df_filtered[custom_sector_col] != "Bail In")
+        ].copy()
+    
+    # Filter to # of Offers >3mm > 2
+    offers_3mm_col = "# of Offers >3mm"
+    if offers_3mm_col in df_filtered.columns:
+        # Convert to numeric in case it's stored as string
+        df_filtered[offers_3mm_col] = pd.to_numeric(df_filtered[offers_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[offers_3mm_col].notna() & (df_filtered[offers_3mm_col] > 2)
+        ].copy()
+    
+    # Sort by CR01 @ Tight Bid descending (largest first)
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(cr01_tb_col, ascending=False, na_position='last')
+    
+    # Select only required columns (same as CR01 Risk table)
+    available_columns = [col for col in PORTFOLIO_CR01_RISK_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
 def create_size_bids_minimal_bo_table(df: pd.DataFrame) -> pd.DataFrame:
     """
     Create Size Bids With Minimal Bid/Offer table (same as Size Bids but with Bid/Offer>3mm filter).
@@ -634,6 +750,67 @@ def create_size_bids_minimal_bo_table(df: pd.DataFrame) -> pd.DataFrame:
     if bo_3mm_col in df_filtered.columns:
         df_filtered = df_filtered[
             df_filtered[bo_3mm_col].notna() & (df_filtered[bo_3mm_col] <= 3)
+        ].copy()
+    
+    # Sort by CR01 @ Tight Bid descending (largest first)
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(cr01_tb_col, ascending=False, na_position='last')
+    
+    # Select only required columns (same as CR01 Risk table)
+    available_columns = [col for col in PORTFOLIO_CR01_RISK_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
+def create_size_bids_minimal_bo_no_bail_in_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create Size Bids With Minimal Bid/Offer No Bail In table (same as Size Bids With Minimal Bid/Offer but excludes Bail In sector).
+    
+    Filters to rows where:
+    - QUANTITY > 0
+    - CR01 @ Tight Bid >= 1000
+    - POSITION CR01 >= 1,000
+    - Bid/Offer>3mm <= 3 (excludes > 3 or blank)
+    - Custom_Sector != "Bail In" (excludes Bail In sector)
+    
+    Sorted by CR01 @ Tight Bid descending.
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Filter to QUANTITY > 0
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to CR01 @ Tight Bid >= 1000
+    cr01_tb_col = "CR01 @ Tight Bid"
+    if cr01_tb_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[cr01_tb_col].notna() & (df_filtered[cr01_tb_col] >= 1000)
+        ].copy()
+    
+    # Filter to POSITION CR01 >= 1,000
+    pos_cr01_col = "POSITION CR01"
+    if pos_cr01_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[pos_cr01_col].notna() & (df_filtered[pos_cr01_col] >= 1000)
+        ].copy()
+    
+    # Filter to Bid/Offer>3mm <= 3 (excludes > 3 or blank)
+    bo_3mm_col = "Bid/Offer>3mm"
+    if bo_3mm_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[bo_3mm_col].notna() & (df_filtered[bo_3mm_col] <= 3)
+        ].copy()
+    
+    # Filter out "Bail In" from Custom_Sector
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | (df_filtered[custom_sector_col] != "Bail In")
         ].copy()
     
     # Sort by CR01 @ Tight Bid descending (largest first)
@@ -781,8 +958,30 @@ def main() -> None:
         cumulative_cr01_tb = size_bids_df[cr01_tb_col].sum()
     print(f"Cumulative CR01 TB: {int(round(cumulative_cr01_tb)):,}")
     
-    # Step 9: Create Size Bids With Minimal Bid/Offer table
-    print("\n[STEP 9] Creating Size Bids With Minimal Bid/Offer table...")
+    # Step 9: Create Size Bids Struggling Names table
+    print("\n[STEP 9] Creating Size Bids Struggling Names table...")
+    size_bids_struggling_names_df = create_size_bids_struggling_names_table(df)
+    print(f"Filtered to {len(size_bids_struggling_names_df):,} rows with QUANTITY > 0, CR01 TB >= 1000, POSITION CR01 >= 1,000, and Retracement < 50%")
+    
+    # Calculate cumulative CR01 TB for Size Bids Struggling Names table
+    cumulative_cr01_tb_struggling_names = 0
+    if cr01_tb_col in size_bids_struggling_names_df.columns:
+        cumulative_cr01_tb_struggling_names = size_bids_struggling_names_df[cr01_tb_col].sum()
+    print(f"Cumulative CR01 TB: {int(round(cumulative_cr01_tb_struggling_names)):,}")
+    
+    # Step 10: Create Size Bids Heavily Offered Lines table
+    print("\n[STEP 10] Creating Size Bids Heavily Offered Lines table...")
+    size_bids_heavily_offered_lines_df = create_size_bids_heavily_offered_lines_table(df)
+    print(f"Filtered to {len(size_bids_heavily_offered_lines_df):,} rows with QUANTITY > 0, CR01 TB >= 1000, POSITION CR01 >= 1,000, Custom_Sector != 'Bail In', and # of Offers >3mm > 2")
+    
+    # Calculate cumulative CR01 TB for Size Bids Heavily Offered Lines table
+    cumulative_cr01_tb_heavily_offered_lines = 0
+    if cr01_tb_col in size_bids_heavily_offered_lines_df.columns:
+        cumulative_cr01_tb_heavily_offered_lines = size_bids_heavily_offered_lines_df[cr01_tb_col].sum()
+    print(f"Cumulative CR01 TB: {int(round(cumulative_cr01_tb_heavily_offered_lines)):,}")
+    
+    # Step 11: Create Size Bids With Minimal Bid/Offer table
+    print("\n[STEP 11] Creating Size Bids With Minimal Bid/Offer table...")
     size_bids_minimal_bo_df = create_size_bids_minimal_bo_table(df)
     print(f"Filtered to {len(size_bids_minimal_bo_df):,} rows with QUANTITY > 0, CR01 TB >= 1000, POSITION CR01 >= 1,000, and Bid/Offer>3mm <= 3")
     
@@ -792,8 +991,19 @@ def main() -> None:
         cumulative_cr01_tb_minimal_bo = size_bids_minimal_bo_df[cr01_tb_col].sum()
     print(f"Cumulative CR01 TB: {int(round(cumulative_cr01_tb_minimal_bo)):,}")
     
-    # Step 10: Create Size Bids With Minimal Bid/Offer tables by dealer
-    print("\n[STEP 10] Creating Size Bids With Minimal Bid/Offer tables by dealer...")
+    # Step 12: Create Size Bids With Minimal Bid/Offer No Bail In table
+    print("\n[STEP 12] Creating Size Bids With Minimal Bid/Offer No Bail In table...")
+    size_bids_minimal_bo_no_bail_in_df = create_size_bids_minimal_bo_no_bail_in_table(df)
+    print(f"Filtered to {len(size_bids_minimal_bo_no_bail_in_df):,} rows with QUANTITY > 0, CR01 TB >= 1000, POSITION CR01 >= 1,000, Bid/Offer>3mm <= 3, and Custom_Sector != 'Bail In'")
+    
+    # Calculate cumulative CR01 TB for Size Bids With Minimal Bid/Offer No Bail In table
+    cumulative_cr01_tb_minimal_bo_no_bail_in = 0
+    if cr01_tb_col in size_bids_minimal_bo_no_bail_in_df.columns:
+        cumulative_cr01_tb_minimal_bo_no_bail_in = size_bids_minimal_bo_no_bail_in_df[cr01_tb_col].sum()
+    print(f"Cumulative CR01 TB: {int(round(cumulative_cr01_tb_minimal_bo_no_bail_in)):,}")
+    
+    # Step 13: Create Size Bids With Minimal Bid/Offer tables by dealer
+    print("\n[STEP 13] Creating Size Bids With Minimal Bid/Offer tables by dealer...")
     dealer_col = "Dealer @ Tight Bid >3mm"
     dealer_tables = {}
     dealer_cumulative_cr01 = {}
@@ -819,8 +1029,8 @@ def main() -> None:
     else:
         print("Warning: 'Dealer @ Tight Bid >3mm' column not found, skipping dealer-specific tables")
     
-    # Step 11: Format and write output
-    print("\n[STEP 11] Formatting and writing output...")
+    # Step 14: Format and write output
+    print("\n[STEP 14] Formatting and writing output...")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -894,6 +1104,26 @@ def main() -> None:
         )
         f.write(table_str)
         
+        # Write Size Bids Struggling Names table with cumulative CR01 TB summary
+        summary_dict_struggling_names = {"Cumulative CR01 TB": cumulative_cr01_tb_struggling_names}
+        table_str = format_table(
+            size_bids_struggling_names_df,
+            "Size Bids Struggling Names",
+            COLUMN_DISPLAY_NAMES,
+            summary_dict=summary_dict_struggling_names
+        )
+        f.write(table_str)
+        
+        # Write Size Bids Heavily Offered Lines table with cumulative CR01 TB summary
+        summary_dict_heavily_offered_lines = {"Cumulative CR01 TB": cumulative_cr01_tb_heavily_offered_lines}
+        table_str = format_table(
+            size_bids_heavily_offered_lines_df,
+            "Size Bids Heavily Offered Lines",
+            COLUMN_DISPLAY_NAMES,
+            summary_dict=summary_dict_heavily_offered_lines
+        )
+        f.write(table_str)
+        
         # Write Size Bids With Minimal Bid/Offer table with cumulative CR01 TB summary
         summary_dict_minimal_bo = {"Cumulative CR01 TB": cumulative_cr01_tb_minimal_bo}
         table_str = format_table(
@@ -901,6 +1131,16 @@ def main() -> None:
             "Size Bids With Minimal Bid/Offer",
             COLUMN_DISPLAY_NAMES,
             summary_dict=summary_dict_minimal_bo
+        )
+        f.write(table_str)
+        
+        # Write Size Bids With Minimal Bid/Offer No Bail In table with cumulative CR01 TB summary
+        summary_dict_minimal_bo_no_bail_in = {"Cumulative CR01 TB": cumulative_cr01_tb_minimal_bo_no_bail_in}
+        table_str = format_table(
+            size_bids_minimal_bo_no_bail_in_df,
+            "Size Bids With Minimal Bid/Offer No Bail In",
+            COLUMN_DISPLAY_NAMES,
+            summary_dict=summary_dict_minimal_bo_no_bail_in
         )
         f.write(table_str)
         
@@ -927,7 +1167,10 @@ def main() -> None:
     print(f"Total rows in Portfolio YTD Bid Chg table: {len(portfolio_ytd_bid_df):,}")
     print(f"Total rows in Portfolio 1yr Bid Chg table: {len(portfolio_1yr_bid_df):,}")
     print(f"Total rows in Size Bids table: {len(size_bids_df):,}")
+    print(f"Total rows in Size Bids Struggling Names table: {len(size_bids_struggling_names_df):,}")
+    print(f"Total rows in Size Bids Heavily Offered Lines table: {len(size_bids_heavily_offered_lines_df):,}")
     print(f"Total rows in Size Bids With Minimal Bid/Offer table: {len(size_bids_minimal_bo_df):,}")
+    print(f"Total rows in Size Bids With Minimal Bid/Offer No Bail In table: {len(size_bids_minimal_bo_no_bail_in_df):,}")
     print("\nDone!")
 
 

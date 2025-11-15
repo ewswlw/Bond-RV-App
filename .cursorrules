@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-15 12:00 ET - Enhanced runs_views.py with 12 portfolio tables (CR01 Risk with Total CR01, DoD/MTD/YTD/1yr Bid Chg, Size Bids, Size Bids With Minimal Bid/Offer, 5 dealer-specific tables), added Custom_Sector merge to runs_today.py  
+**Last Updated**: 2025-11-15 12:30 ET - Enhanced runs_views.py with 15 portfolio tables (CR01 Risk with Total CR01, DoD/MTD/YTD/1yr Bid Chg, Size Bids, Size Bids Struggling Names, Size Bids Heavily Offered Lines, Size Bids With Minimal Bid/Offer, Size Bids With Minimal Bid/Offer No Bail In, 5 dealer-specific tables), added Custom_Sector merge to runs_today.py  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -1202,9 +1202,9 @@ pytest tests/unit/test_utils.py -v
     - Logs full `df.info()` output for input parquet and final CSV (verbose mode)
     - Logs column-level match percentages and sample matched/unmatched CUSIPs
     - Logs final DataFrame summary and sample data rows
-- **2025-11-15 12:00 ET**: Created and enhanced runs_views.py for custom portfolio table views:
+- **2025-11-15 12:30 ET**: Created and enhanced runs_views.py for custom portfolio table views:
   - Created `analytics/runs/runs_views.py` - custom formatted tables generator from runs_today.csv
-  - Generates 12 portfolio tables with custom formatting:
+  - Generates 15 portfolio tables with custom formatting:
     1. **Portfolio Sorted By CR01 Risk**: 
        - Filters to rows where QUANTITY > 0
        - Sorts by POSITION CR01 descending (largest to smallest)
@@ -1231,11 +1231,24 @@ pytest tests/unit/test_utils.py -v
        - Filters to QUANTITY > 0, CR01 @ Tight Bid >= 1000, POSITION CR01 >= 1,000
        - Sorts by CR01 @ Tight Bid descending
        - Shows "Cumulative CR01 TB" summary at top (sum of CR01 @ Tight Bid)
-    7. **Size Bids With Minimal Bid/Offer**:
+    7. **Size Bids Struggling Names**:
+       - Same filters as Size Bids plus Retracement < 0.5 (Retracement < 50%)
+       - Sorts by CR01 @ Tight Bid descending
+       - Shows "Cumulative CR01 TB" summary at top
+    8. **Size Bids Heavily Offered Lines**:
+       - Same filters as Size Bids plus Custom_Sector != "Bail In" and # of Offers >3mm > 2
+       - Sorts by CR01 @ Tight Bid descending
+       - Shows "Cumulative CR01 TB" summary at top
+       - Numeric conversion applied to # of Offers >3mm column before filtering
+    9. **Size Bids With Minimal Bid/Offer**:
        - Same filters as Size Bids plus Bid/Offer>3mm <= 3 (excludes > 3 or blank)
        - Sorts by CR01 @ Tight Bid descending
        - Shows "Cumulative CR01 TB" summary at top
-    8-12. **Size Bids With Minimal Bid/Offer: Where {Dealer} Is Best Bid** (5 dealer-specific tables):
+    10. **Size Bids With Minimal Bid/Offer No Bail In**:
+       - Same filters as Size Bids With Minimal Bid/Offer plus Custom_Sector != "Bail In"
+       - Sorts by CR01 @ Tight Bid descending
+       - Shows "Cumulative CR01 TB" summary at top
+    11-15. **Size Bids With Minimal Bid/Offer: Where {Dealer} Is Best Bid** (5 dealer-specific tables):
        - One table for each unique dealer in "Dealer @ Tight Bid >3mm" (BMO, BNS, NBF, RBC, TD)
        - Same filters as Size Bids With Minimal Bid/Offer plus dealer filter
        - Each table shows "Cumulative CR01 TB" summary at top
