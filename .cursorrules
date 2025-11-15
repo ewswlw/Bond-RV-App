@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-14 18:30 ET - Added numeric column conversion for spread/metric columns, runs_today.py merge functionality, and comprehensive logging  
+**Last Updated**: 2025-11-15 10:30 ET - Created runs_views.py for custom portfolio tables, added Custom_Sector merge to runs_today.py  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -493,7 +493,8 @@ Bond-RV-App/
 │   │   ├── executable cr01 vs holdings.py  # CR01 pair analytics (dynamic CUSIP loading from runs_today.csv + portfolio, filters: CR01 @ Tight Bid > 2000, CR01 @ Wide Offer > 2000, no Bid/Offer filter)
 │   │   └── all combos vs holdings.py  # All combinations vs holdings pair analytics (all portfolio CUSIPs from last date, no CR01 filters)
 │   ├── runs/             # Runs analytics scripts
-│   │   └── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/1yr changes)
+│   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/1yr changes)
+│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio views with custom formatting)
 │   └── processed_data/   # Outputs from analytics scripts
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
@@ -512,7 +513,8 @@ Bond-RV-App/
 │       ├── executable cr01 decent bid offer vs holdings.csv
 │       ├── executable cr01 vs holdings.csv
 │       ├── all combos vs holdings.csv
-│       └── runs_today.csv
+│       ├── runs_today.csv
+│       └── portfolio_runs_view.txt  # Formatted portfolio tables (from runs_views.py)
 ├── bond_pipeline/          # Pipeline code (7 modules)
 ├── bond_data/              # Data directory (local only, git-ignored)
 │   ├── parquet/           # Output parquet files
@@ -974,7 +976,7 @@ pytest tests/unit/test_utils.py -v
       - 16 YTD change columns (Last Date - First Date of Year)
       - 16 1yr change columns (Last Date - Closest Date ~1 Year Ago)
     - Merges external columns from `historical_portfolio.parquet` (last date): QUANTITY, POSITION CR01
-    - Merges external columns from `historical_bond_details.parquet` (most recent available date): G Sprd, Yrs (Cvn), vs BI, vs BCE, MTD Equity, YTD Equity, Retracement, Yrs Since Issue, Z Score, Retracement2, Rating
+    - Merges external columns from `historical_bond_details.parquet` (most recent available date): G Sprd, Yrs (Cvn), vs BI, vs BCE, MTD Equity, YTD Equity, Retracement, Yrs Since Issue, Z Score, Retracement2, Rating, Custom_Sector
     - CUSIP normalization: Normalizes CUSIPs for matching (runs CUSIPs may not be normalized, bond/portfolio CUSIPs are normalized)
     - Portfolio aggregation: Sums QUANTITY and POSITION CR01 when multiple ACCOUNT/PORTFOLIO rows exist per CUSIP
     - Bond details date handling: Uses most recent available date if exact date match not found
@@ -1200,4 +1202,22 @@ pytest tests/unit/test_utils.py -v
     - Logs full `df.info()` output for input parquet and final CSV (verbose mode)
     - Logs column-level match percentages and sample matched/unmatched CUSIPs
     - Logs final DataFrame summary and sample data rows
+- **2025-11-15 10:30 ET**: Created runs_views.py for custom portfolio table views:
+  - Created `analytics/runs/runs_views.py` - custom formatted tables generator from runs_today.csv
+  - Generates "Portfolio Sorted By CR01 Risk" table with custom formatting:
+    - Filters to rows where QUANTITY > 0
+    - Sorts by POSITION CR01 descending (largest to smallest)
+    - Includes 31 columns: Security, QUANTITY, POSITION CR01, Yrs (Cvn), spread metrics, dealer info, CR01 metrics, DoD/MTD/YTD/1yr changes, equity metrics, Retracement, Custom_Sector
+    - Custom formatting:
+      - Numeric columns: Thousand separators, no decimals (rounded), except Yrs (Cvn) with 1 decimal
+      - Retracement: Percentage format with 2 decimals (multiplied by 100: 1.0 = 100.00%)
+      - Missing values: Blank (empty string) instead of "N/A"
+      - Center-aligned columns and headers
+    - Outputs to `portfolio_runs_view.txt` in `analytics/processed_data/`
+    - Header includes refresh timestamp and MTD/YTD reference dates from runs_timeseries.parquet
+    - Configuration section at top for column display names and column order
+  - Added Custom_Sector to runs_today.py merge:
+    - Added "Custom_Sector" to BOND_DETAILS_MERGE_COLUMNS in `analytics/runs/runs_today.py`
+    - Custom_Sector now merged from historical_bond_details.parquet into runs_today.csv
+    - Appears as last column in portfolio_runs_view.txt table
 

@@ -65,6 +65,7 @@ BOND_DETAILS_MERGE_COLUMNS = [
     "Z Score",
     "Retracement2",
     "Rating",
+    "Custom_Sector",
 ]
 
 # Columns to merge from bond details that should be converted to numeric
