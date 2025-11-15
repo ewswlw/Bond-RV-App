@@ -3,6 +3,7 @@ Runs views script.
 
 This module creates custom formatted tables from runs_today.csv data.
 Outputs nicely formatted tables to portfolio_runs_view.txt and portfolio_runs_view.xlsx for portfolio monitoring.
+Also generates universe RV views to uni_runs_view.txt and uni_runs_view.xlsx for universe-wide analysis.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ RUNS_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "runs_t
 OUTPUT_DIR = SCRIPT_DIR.parent / "processed_data"
 OUTPUT_FILE = OUTPUT_DIR / "portfolio_runs_view.txt"
 EXCEL_OUTPUT_FILE = OUTPUT_DIR / "portfolio_runs_view.xlsx"
+UNI_OUTPUT_FILE = OUTPUT_DIR / "uni_runs_view.txt"
+UNI_EXCEL_OUTPUT_FILE = OUTPUT_DIR / "uni_runs_view.xlsx"
 
 # ============================================================================
 # CONFIGURATION
@@ -174,6 +177,69 @@ PORTFOLIO_1YR_COLUMNS = [
     "CR01 @ Wide Offer",
     "# of Bids >3mm",
     "# of Offers >3mm",
+    "1yr Chg Tight Bid",
+    "MTD Equity",
+    "YTD Equity",
+    "Retracement",
+    "Custom_Sector",
+]
+
+# ============================================================================
+# UNIVERSE RV VIEWS CONFIGURATION
+# ============================================================================
+
+# Custom_Sector values to filter out from universe tables
+UNIVERSE_EXCLUDED_SECTORS = [
+    "Asset Backed Subs",
+    "Auto ABS",
+    "Bail In",
+    "CAD Govt",
+    "CASH CAD",
+    "CASH USD",
+    "CDX",
+    "CP",
+    "Covered",
+    "Dep Note",
+    "Financial Hybrid",
+    "HY",
+    "Non Financial Hybrid",
+    "Non Financial Hybrids",
+    "USD Govt",
+    "Utility",
+]
+
+# Number of top and bottom rows to show for DoD moves table
+UNIVERSE_TOP_BOTTOM_N = 20
+
+# Sort column for Universe Sorted By DoD Moves table
+UNIVERSE_DOD_SORT_COLUMN = "DoD Chg Tight Bid >3mm"
+
+# Column order for Universe Sorted By DoD Moves table
+UNIVERSE_DOD_MOVES_COLUMNS = [
+    "Security",
+    "Yrs (Cvn)",
+    "Tight Bid >3mm",
+    "Wide Offer >3mm",
+    "Tight Bid",
+    "Wide Offer",
+    "Bid/Offer>3mm",
+    "Bid/Offer",
+    "Dealer @ Tight Bid >3mm",
+    "Dealer @ Wide Offer >3mm",
+    "Size @ Tight Bid >3mm",
+    "Size @ Wide Offer >3mm",
+    "CR01 @ Tight Bid",
+    "CR01 @ Wide Offer",
+    "# of Bids >3mm",
+    "# of Offers >3mm",
+    "DoD Chg Tight Bid >3mm",
+    "DoD Chg Wide Offer >3mm",
+    "DoD Chg Tight Bid",
+    "DoD Chg Wide Offer",
+    "DoD Chg Size @ Tight Bid >3mm",
+    "DoD Chg Size @ Wide Offer >3mm",
+    "MTD Chg Tight Bid",
+    "YTD Chg Tight Bid",
     "1yr Chg Tight Bid",
     "MTD Equity",
     "YTD Equity",
@@ -917,6 +983,110 @@ def create_size_bids_minimal_bo_by_dealer_table(df: pd.DataFrame, dealer: str) -
     return df_filtered
 
 
+def create_universe_dod_moves_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    sort_column: str = None,
+    top_bottom_n: int = None,
+    columns: list[str] = None
+) -> pd.DataFrame:
+    """
+    Create Universe Sorted By DoD Moves table.
+    
+    Filters out excluded Custom_Sector values, excludes rows where sort column is 0 or blank,
+    and shows top N and bottom N rows by sort column (largest positive and most negative values).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        sort_column: Column to sort by (defaults to UNIVERSE_DOD_SORT_COLUMN).
+        top_bottom_n: Number of top and bottom rows to show (defaults to UNIVERSE_TOP_BOTTOM_N).
+        columns: List of columns to include (defaults to UNIVERSE_DOD_MOVES_COLUMNS).
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if sort_column is None:
+        sort_column = UNIVERSE_DOD_SORT_COLUMN
+    if top_bottom_n is None:
+        top_bottom_n = UNIVERSE_TOP_BOTTOM_N
+    if columns is None:
+        columns = UNIVERSE_DOD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows that had "Tight Bid >3mm" on both last date and second-to-last date
+    # This ensures DoD changes are meaningful (comparing apples to apples)
+    tb_col = "Tight Bid >3mm"
+    dod_tb_col = "DoD Chg Tight Bid >3mm"
+    
+    if tb_col in df_filtered.columns:
+        # Filter to rows where Tight Bid >3mm has a value on the last date
+        df_filtered = df_filtered[df_filtered[tb_col].notna()].copy()
+    
+    if dod_tb_col in df_filtered.columns:
+        # Filter to rows where DoD Chg Tight Bid >3mm exists (implies it had value on both dates)
+        df_filtered = df_filtered[df_filtered[dod_tb_col].notna()].copy()
+    
+    # Ensure sort column is numeric (convert to numeric, coerce errors to NaN)
+    if sort_column in df_filtered.columns:
+        df_filtered[sort_column] = pd.to_numeric(df_filtered[sort_column], errors='coerce')
+        
+        # Filter out rows where sort column is 0 or blank (NaN/null)
+        # Use numeric comparison: not NaN and not equal to 0
+        df_filtered = df_filtered[
+            df_filtered[sort_column].notna() & (df_filtered[sort_column] != 0)
+        ].copy()
+    
+    # Sort by sort column descending (largest to smallest)
+    if sort_column in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(sort_column, ascending=False, na_position='last')
+    
+    # Get top N and bottom N rows
+    total_rows = len(df_filtered)
+    if total_rows == 0:
+        # Return empty DataFrame with correct columns
+        available_columns = [col for col in columns if col in df.columns]
+        return pd.DataFrame(columns=available_columns)
+    
+    if total_rows <= (2 * top_bottom_n):
+        # If we have less than or equal to 2*N rows, show all
+        result_df = df_filtered.copy()
+    else:
+        # Get top N (largest positive values) - first N rows after descending sort
+        top_n = df_filtered.head(top_bottom_n).copy()
+        
+        # Get bottom N (most negative values) - last N rows after descending sort
+        # Since we sorted descending, tail() gives us the smallest values in ascending order
+        # We need to reverse them to get descending order (most negative first)
+        bottom_n = df_filtered.tail(top_bottom_n).copy()
+        
+        # Reverse the bottom N to get descending order (most negative first)
+        # This ensures -5 comes before -4, -4 before -3, etc.
+        bottom_n = bottom_n.iloc[::-1].reset_index(drop=True)
+        
+        # Combine top and bottom (top first, then bottom)
+        result_df = pd.concat([top_n, bottom_n], ignore_index=True)
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in result_df.columns]
+    result_df = result_df[available_columns].copy()
+    
+    return result_df
+
+
 def write_excel_file(
     output_path: Path,
     tables: Dict[str, Dict],
@@ -1487,6 +1657,112 @@ def main() -> None:
     print("\n[STEP 15] Writing Excel file...")
     write_excel_file(
         EXCEL_OUTPUT_FILE,
+        excel_tables,
+        timestamp,
+        last_date,
+        mtd_ref_date,
+        ytd_ref_date
+    )
+    
+    print("\nDone!")
+
+
+def generate_universe_views() -> None:
+    """
+    Generate universe RV views from runs_today.csv.
+    
+    Creates custom formatted tables for universe-wide analysis (not filtered by portfolio).
+    Outputs to uni_runs_view.txt and uni_runs_view.xlsx.
+    """
+    print("="*100)
+    print("UNIVERSE RV VIEWS - Universe Runs View Generator")
+    print("="*100)
+    
+    # Step 1: Load runs_today.csv
+    print("\n[STEP 1] Loading runs_today.csv...")
+    if not RUNS_TODAY_CSV_PATH.exists():
+        raise FileNotFoundError(f"CSV file not found: {RUNS_TODAY_CSV_PATH}")
+    
+    df = pd.read_csv(RUNS_TODAY_CSV_PATH)
+    print(f"Loaded {len(df):,} rows, {len(df.columns)} columns")
+    
+    # Step 2: Get reference dates from runs_timeseries.parquet
+    print("\n[STEP 2] Extracting reference dates from runs_timeseries.parquet...")
+    if not RUNS_PARQUET_PATH.exists():
+        raise FileNotFoundError(f"Parquet file not found: {RUNS_PARQUET_PATH}")
+    
+    ref_dates = get_reference_dates(RUNS_PARQUET_PATH)
+    last_date = ref_dates["last_date"]
+    mtd_ref_date = ref_dates["mtd_ref_date"]
+    ytd_ref_date = ref_dates["ytd_ref_date"]
+    
+    print(f"Last date: {last_date}")
+    print(f"MTD reference date: {mtd_ref_date}")
+    print(f"YTD reference date: {ytd_ref_date}")
+    
+    # Step 3: Create Universe Sorted By DoD Moves table
+    print("\n[STEP 3] Creating Universe Sorted By DoD Moves table...")
+    universe_dod_df = create_universe_dod_moves_table(df)
+    
+    # Build filter description
+    excluded_sectors_str = ", ".join(UNIVERSE_EXCLUDED_SECTORS)
+    filter_description = (
+        f"Filters Applied: Excluded Custom_Sector values ({excluded_sectors_str}). "
+        f"Only includes rows where Tight Bid >3mm had a value on both last date and second-to-last date. "
+        f"Excluded rows where {UNIVERSE_DOD_SORT_COLUMN} is 0 or blank. "
+        f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by {UNIVERSE_DOD_SORT_COLUMN}."
+    )
+    
+    print(f"Filtered to {len(universe_dod_df):,} rows")
+    print(f"Filters: {filter_description}")
+    
+    # Step 4: Format and write output
+    print("\n[STEP 4] Formatting and writing output...")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Prepare tables dictionary for Excel export
+    excel_tables = {}
+    
+    with open(UNI_OUTPUT_FILE, 'w', encoding='utf-8') as f:
+        # Write header
+        f.write("UNIVERSE RV VIEWS\n")
+        f.write("="*100 + "\n")
+        f.write(f"Last Refreshed: {timestamp}\n")
+        f.write(f"\nReference Dates:\n")
+        f.write(f"  Last Date: {last_date}\n")
+        if mtd_ref_date:
+            f.write(f"  MTD Reference Date: {mtd_ref_date.strftime('%Y-%m-%d')}\n")
+        else:
+            f.write(f"  MTD Reference Date: N/A\n")
+        if ytd_ref_date:
+            f.write(f"  YTD Reference Date: {ytd_ref_date.strftime('%Y-%m-%d')}\n")
+        else:
+            f.write(f"  YTD Reference Date: N/A\n")
+        f.write(f"\n{filter_description}\n")
+        f.write("="*100 + "\n")
+        
+        # Write Universe Sorted By DoD Moves table
+        table_title_dod = "Universe Sorted By DoD Moves"
+        excel_tables[table_title_dod] = {'df': universe_dod_df, 'summary': {}}
+        table_str = format_table(
+            universe_dod_df,
+            table_title_dod,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str)
+        
+        f.write("\n" + "="*100 + "\n")
+        f.write("END OF REPORT\n")
+    
+    print(f"\nOutput written to: {UNI_OUTPUT_FILE}")
+    print(f"Total rows in Universe DoD Moves table: {len(universe_dod_df):,}")
+    
+    # Step 5: Write Excel file
+    print("\n[STEP 5] Writing Excel file...")
+    write_excel_file(
+        UNI_EXCEL_OUTPUT_FILE,
         excel_tables,
         timestamp,
         last_date,

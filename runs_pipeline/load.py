@@ -268,6 +268,26 @@ class RunsLoader:
                         existing_df = existing_df.copy()
                         existing_df['Dealer'] = existing_df['Dealer'].astype(str).replace('SCM', 'BNS')
                 
+                # Filter out negative bid/ask spreads in existing data (set to NaN) - data quality issue
+                if 'Bid Spread' in existing_df.columns:
+                    negative_bid_count = (existing_df['Bid Spread'] < 0).sum()
+                    if negative_bid_count > 0:
+                        self.logger.info(
+                            f"Filtering out {negative_bid_count} negative Bid Spread values in existing data (setting to NaN)"
+                        )
+                        existing_df = existing_df.copy()
+                        existing_df.loc[existing_df['Bid Spread'] < 0, 'Bid Spread'] = pd.NA
+                
+                if 'Ask Spread' in existing_df.columns:
+                    negative_ask_count = (existing_df['Ask Spread'] < 0).sum()
+                    if negative_ask_count > 0:
+                        self.logger.info(
+                            f"Filtering out {negative_ask_count} negative Ask Spread values in existing data (setting to NaN)"
+                        )
+                        if 'Bid Spread' not in existing_df.columns or negative_bid_count == 0:
+                            existing_df = existing_df.copy()
+                        existing_df.loc[existing_df['Ask Spread'] < 0, 'Ask Spread'] = pd.NA
+                
                 # Filter existing data to only allowed dealers
                 if 'Dealer' in existing_df.columns:
                     before_filter = len(existing_df)
@@ -324,6 +344,23 @@ class RunsLoader:
                         f"Replacing {scm_count} instances of 'SCM' with 'BNS' before writing"
                     )
                     write_df['Dealer'] = write_df['Dealer'].astype(str).replace('SCM', 'BNS')
+            
+            # Filter out negative bid/ask spreads (set to NaN) - data quality issue
+            if 'Bid Spread' in write_df.columns:
+                negative_bid_count = (write_df['Bid Spread'] < 0).sum()
+                if negative_bid_count > 0:
+                    self.logger.info(
+                        f"Filtering out {negative_bid_count} negative Bid Spread values (setting to NaN)"
+                    )
+                    write_df.loc[write_df['Bid Spread'] < 0, 'Bid Spread'] = pd.NA
+            
+            if 'Ask Spread' in write_df.columns:
+                negative_ask_count = (write_df['Ask Spread'] < 0).sum()
+                if negative_ask_count > 0:
+                    self.logger.info(
+                        f"Filtering out {negative_ask_count} negative Ask Spread values (setting to NaN)"
+                    )
+                    write_df.loc[write_df['Ask Spread'] < 0, 'Ask Spread'] = pd.NA
             
             # Filter to only allowed dealers
             if 'Dealer' in write_df.columns:
@@ -410,6 +447,23 @@ class RunsLoader:
                         f"Replacing {scm_count} instances of 'SCM' with 'BNS' before writing"
                     )
                     data_write['Dealer'] = data_write['Dealer'].astype(str).replace('SCM', 'BNS')
+            
+            # Filter out negative bid/ask spreads (set to NaN) - data quality issue
+            if 'Bid Spread' in data_write.columns:
+                negative_bid_count = (data_write['Bid Spread'] < 0).sum()
+                if negative_bid_count > 0:
+                    self.logger.info(
+                        f"Filtering out {negative_bid_count} negative Bid Spread values (setting to NaN)"
+                    )
+                    data_write.loc[data_write['Bid Spread'] < 0, 'Bid Spread'] = pd.NA
+            
+            if 'Ask Spread' in data_write.columns:
+                negative_ask_count = (data_write['Ask Spread'] < 0).sum()
+                if negative_ask_count > 0:
+                    self.logger.info(
+                        f"Filtering out {negative_ask_count} negative Ask Spread values (setting to NaN)"
+                    )
+                    data_write.loc[data_write['Ask Spread'] < 0, 'Ask Spread'] = pd.NA
             
             # Filter to only allowed dealers
             if 'Dealer' in data_write.columns:

@@ -169,17 +169,25 @@ def compute_group_metrics(group: pd.DataFrame) -> dict:
     result = {
         "Date": group["Date"].iloc[0],
         "CUSIP": group["CUSIP"].iloc[0],
+        "Benchmark": group["Benchmark"].iloc[0],  # Any row (should all be same)
         "Time": group["Time"].max(),  # Latest Time in group
         "Bid Workout Risk": group["Bid Workout Risk"].mean(),  # Average
         "Security": group["Security"].iloc[0],  # Any row (should all be same)
     }
 
+    # Filter out negative bid/ask spreads (set to NaN) - these are data quality issues
+    group_cleaned = group.copy()
+    if "Bid Spread" in group_cleaned.columns:
+        group_cleaned.loc[group_cleaned["Bid Spread"] < 0, "Bid Spread"] = pd.NA
+    if "Ask Spread" in group_cleaned.columns:
+        group_cleaned.loc[group_cleaned["Ask Spread"] < 0, "Ask Spread"] = pd.NA
+    
     # Filter to rows with Bid Size > 3mm
-    bid_gt_3mm = group[group["Bid Size"] > SIZE_THRESHOLD].copy()
+    bid_gt_3mm = group_cleaned[group_cleaned["Bid Size"] > SIZE_THRESHOLD].copy()
     
     # Filter to rows with Ask Size > 3mm
-    ask_gt_3mm = group[group["Ask Size"] > SIZE_THRESHOLD].copy()
-
+    ask_gt_3mm = group_cleaned[group_cleaned["Ask Size"] > SIZE_THRESHOLD].copy()
+    
     # Tight Bid >3mm (smallest Bid Spread with Bid Size > 3000000)
     if len(bid_gt_3mm) > 0 and bid_gt_3mm["Bid Spread"].notna().any():
         tight_bid_3mm_idx = bid_gt_3mm["Bid Spread"].idxmin()
@@ -195,7 +203,7 @@ def compute_group_metrics(group: pd.DataFrame) -> dict:
         result["Tight Bid >3mm"] = pd.NA
         result["Dealer @ Tight Bid >3mm"] = pd.NA
         result["Size @ Tight Bid >3mm"] = pd.NA
-
+    
     # Wide Offer >3mm (largest Ask Spread with Ask Size > 3000000)
     if len(ask_gt_3mm) > 0 and ask_gt_3mm["Ask Spread"].notna().any():
         wide_offer_3mm_idx = ask_gt_3mm["Ask Spread"].idxmax()
@@ -211,16 +219,16 @@ def compute_group_metrics(group: pd.DataFrame) -> dict:
         result["Wide Offer >3mm"] = pd.NA
         result["Dealer @ Wide Offer >3mm"] = pd.NA
         result["Size @ Wide Offer >3mm"] = pd.NA
-
-    # Tight Bid (smallest Bid Spread overall)
-    if len(group) > 0 and group["Bid Spread"].notna().any():
-        result["Tight Bid"] = group["Bid Spread"].min()
+    
+    # Tight Bid (smallest Bid Spread overall, excluding negatives)
+    if len(group_cleaned) > 0 and group_cleaned["Bid Spread"].notna().any():
+        result["Tight Bid"] = group_cleaned["Bid Spread"].min()
     else:
         result["Tight Bid"] = pd.NA
-
-    # Wide Offer (largest Ask Spread overall)
-    if len(group) > 0 and group["Ask Spread"].notna().any():
-        result["Wide Offer"] = group["Ask Spread"].max()
+    
+    # Wide Offer (largest Ask Spread overall, excluding negatives)
+    if len(group_cleaned) > 0 and group_cleaned["Ask Spread"].notna().any():
+        result["Wide Offer"] = group_cleaned["Ask Spread"].max()
     else:
         result["Wide Offer"] = pd.NA
 
@@ -252,8 +260,8 @@ def compute_group_metrics(group: pd.DataFrame) -> dict:
     else:
         result["# of Offers >3mm"] = 0
 
-    # RBC dealer columns
-    rbc_rows = group[group["Dealer"] == "RBC"].copy()
+    # RBC dealer columns (use cleaned data to exclude negative spreads)
+    rbc_rows = group_cleaned[group_cleaned["Dealer"] == "RBC"].copy()
     if len(rbc_rows) > 0:
         # If multiple RBC rows, take the first one (or could use latest time)
         rbc_row = rbc_rows.iloc[0]
@@ -633,9 +641,11 @@ def run_analysis(
     aggregated_df = pd.DataFrame(results)
     
     # Ensure column order for aggregated data
+    # Note: Benchmark must be included to match by (CUSIP, Benchmark) in lookups
     aggregated_column_order = [
         "Date",
         "CUSIP",
+        "Benchmark",
         "Time",
         "Bid Workout Risk",
         "Security",
@@ -663,6 +673,10 @@ def run_analysis(
     for col in aggregated_column_order:
         if col not in aggregated_df.columns:
             aggregated_df[col] = pd.NA
+    
+    # Preserve Benchmark column if it exists but isn't in the order list
+    if "Benchmark" in aggregated_df.columns and "Benchmark" not in aggregated_column_order:
+        aggregated_column_order.insert(2, "Benchmark")  # Insert after CUSIP
     
     aggregated_df = aggregated_df[aggregated_column_order]
     
@@ -703,57 +717,61 @@ def run_analysis(
     print("\nFiltering to last date for today analysis...")
     last_date_df = aggregated_df[aggregated_df["Date"] == last_date].copy()
     
-    # Handle duplicate CUSIPs (keep first occurrence)
-    if last_date_df["CUSIP"].duplicated().any():
-        print("Warning: Found duplicate CUSIPs on last date, keeping first occurrence...")
-        last_date_df = last_date_df.drop_duplicates(subset=["CUSIP"], keep="first")
-    
+    # Note: We keep all rows (including duplicates by CUSIP with different Benchmarks)
+    # This is important because we match by (CUSIP, Benchmark) tuple
     print(f"Rows on last date: {len(last_date_df):,}")
     
-    # Step 6: Get CUSIPs that exist on both last date and second-to-last date
+    # Step 6: Get rows that exist on both last date and second-to-last date
+    # Match by (CUSIP, Benchmark) to ensure correct pairing
     second_last_date_df = aggregated_df[aggregated_df["Date"] == second_last_date].copy()
-    if second_last_date_df["CUSIP"].duplicated().any():
-        second_last_date_df = second_last_date_df.drop_duplicates(subset=["CUSIP"], keep="first")
     
-    last_date_cusips = set(last_date_df["CUSIP"].unique())
-    second_last_date_cusips = set(second_last_date_df["CUSIP"].unique())
-    common_cusips = last_date_cusips & second_last_date_cusips
+    # Create sets of (CUSIP, Benchmark) tuples for matching
+    last_date_keys = set(zip(last_date_df["CUSIP"], last_date_df["Benchmark"]))
+    second_last_date_keys = set(zip(second_last_date_df["CUSIP"], second_last_date_df["Benchmark"]))
+    common_keys = last_date_keys & second_last_date_keys
     
-    print(f"CUSIPs on last date: {len(last_date_cusips):,}")
-    print(f"CUSIPs on second-to-last date: {len(second_last_date_cusips):,}")
-    print(f"CUSIPs on both dates: {len(common_cusips):,}")
+    print(f"Unique (CUSIP, Benchmark) pairs on last date: {len(last_date_keys):,}")
+    print(f"Unique (CUSIP, Benchmark) pairs on second-to-last date: {len(second_last_date_keys):,}")
+    print(f"Common (CUSIP, Benchmark) pairs: {len(common_keys):,}")
     
-    # Filter to only CUSIPs that exist on both dates
-    result_df = last_date_df[last_date_df["CUSIP"].isin(common_cusips)].copy()
+    # Filter to only (CUSIP, Benchmark) pairs that exist on both dates
+    result_df = last_date_df[
+        last_date_df.apply(lambda row: (row["CUSIP"], row["Benchmark"]) in common_keys, axis=1)
+    ].copy()
     
     # Step 7: Create lookup dictionaries for reference dates
+    # Use (CUSIP, Benchmark) tuple as key to ensure correct matching
     second_last_lookup = {}
     for idx, row in second_last_date_df.iterrows():
-        second_last_lookup[row["CUSIP"]] = row
+        key = (row["CUSIP"], row["Benchmark"])
+        second_last_lookup[key] = row
     
     mtd_lookup = {}
     if mtd_ref_date:
         mtd_df = aggregated_df[aggregated_df["Date"] == mtd_ref_date].copy()
-        if mtd_df["CUSIP"].duplicated().any():
-            mtd_df = mtd_df.drop_duplicates(subset=["CUSIP"], keep="first")
         for idx, row in mtd_df.iterrows():
-            mtd_lookup[row["CUSIP"]] = row
+            key = (row["CUSIP"], row["Benchmark"])
+            # If duplicate key exists, keep first occurrence
+            if key not in mtd_lookup:
+                mtd_lookup[key] = row
     
     ytd_lookup = {}
     if ytd_ref_date:
         ytd_df = aggregated_df[aggregated_df["Date"] == ytd_ref_date].copy()
-        if ytd_df["CUSIP"].duplicated().any():
-            ytd_df = ytd_df.drop_duplicates(subset=["CUSIP"], keep="first")
         for idx, row in ytd_df.iterrows():
-            ytd_lookup[row["CUSIP"]] = row
+            key = (row["CUSIP"], row["Benchmark"])
+            # If duplicate key exists, keep first occurrence
+            if key not in ytd_lookup:
+                ytd_lookup[key] = row
     
     one_yr_lookup = {}
     if one_yr_ref_date:
         one_yr_df = aggregated_df[aggregated_df["Date"] == one_yr_ref_date].copy()
-        if one_yr_df["CUSIP"].duplicated().any():
-            one_yr_df = one_yr_df.drop_duplicates(subset=["CUSIP"], keep="first")
         for idx, row in one_yr_df.iterrows():
-            one_yr_lookup[row["CUSIP"]] = row
+            key = (row["CUSIP"], row["Benchmark"])
+            # If duplicate key exists, keep first occurrence
+            if key not in one_yr_lookup:
+                one_yr_lookup[key] = row
     
     # Step 8: Calculate DoD changes
     print("\nCalculating Day-over-Day changes...")
@@ -767,17 +785,28 @@ def run_analysis(
         
         for idx, row in result_df.iterrows():
             cusip = row["CUSIP"]
+            benchmark = row["Benchmark"]
             last_value = row[col]
+            lookup_key = (cusip, benchmark)
             
-            if cusip in second_last_lookup:
-                second_last_value = second_last_lookup[cusip][col]
+            if lookup_key in second_last_lookup:
+                second_last_value = second_last_lookup[lookup_key][col]
                 
                 # Calculate DoD: Last Date - Second Last Date
-                if pd.notna(last_value) and pd.notna(second_last_value):
-                    dod_values.append(float(last_value) - float(second_last_value))
+                # Only calculate if BOTH values exist and are not blank/empty
+                # If either value is blank/NaN/empty, set DoD to blank (pd.NA)
+                if (pd.notna(last_value) and pd.notna(second_last_value) and 
+                    last_value != '' and second_last_value != ''):
+                    try:
+                        dod_values.append(float(last_value) - float(second_last_value))
+                    except (ValueError, TypeError):
+                        # If conversion fails, set to blank
+                        dod_values.append(pd.NA)
                 else:
+                    # Either value is blank/NaN/empty - set DoD to blank
                     dod_values.append(pd.NA)
             else:
+                # CUSIP not found in second-to-last date - set DoD to blank
                 dod_values.append(pd.NA)
         
         result_df[dod_col_name] = dod_values
@@ -793,9 +822,11 @@ def run_analysis(
         mtd_values = []
         for idx, row in result_df.iterrows():
             cusip = row["CUSIP"]
+            benchmark = row["Benchmark"]
             last_value = row[col]
-            if cusip in mtd_lookup:
-                mtd_value = mtd_lookup[cusip][col]
+            lookup_key = (cusip, benchmark)
+            if lookup_key in mtd_lookup:
+                mtd_value = mtd_lookup[lookup_key][col]
                 if pd.notna(last_value) and pd.notna(mtd_value):
                     mtd_values.append(float(last_value) - float(mtd_value))
                 else:
@@ -809,9 +840,11 @@ def run_analysis(
         ytd_values = []
         for idx, row in result_df.iterrows():
             cusip = row["CUSIP"]
+            benchmark = row["Benchmark"]
             last_value = row[col]
-            if cusip in ytd_lookup:
-                ytd_value = ytd_lookup[cusip][col]
+            lookup_key = (cusip, benchmark)
+            if lookup_key in ytd_lookup:
+                ytd_value = ytd_lookup[lookup_key][col]
                 if pd.notna(last_value) and pd.notna(ytd_value):
                     ytd_values.append(float(last_value) - float(ytd_value))
                 else:
@@ -825,9 +858,11 @@ def run_analysis(
         one_yr_values = []
         for idx, row in result_df.iterrows():
             cusip = row["CUSIP"]
+            benchmark = row["Benchmark"]
             last_value = row[col]
-            if cusip in one_yr_lookup:
-                one_yr_value = one_yr_lookup[cusip][col]
+            lookup_key = (cusip, benchmark)
+            if lookup_key in one_yr_lookup:
+                one_yr_value = one_yr_lookup[lookup_key][col]
                 if pd.notna(last_value) and pd.notna(one_yr_value):
                     one_yr_values.append(float(last_value) - float(one_yr_value))
                 else:
@@ -865,8 +900,10 @@ def run_analysis(
     
     for idx, row in result_df.iterrows():
         cusip = row["CUSIP"]
-        if cusip in second_last_lookup:
-            second_last_row = second_last_lookup[cusip]
+        benchmark = row["Benchmark"]
+        lookup_key = (cusip, benchmark)
+        if lookup_key in second_last_lookup:
+            second_last_row = second_last_lookup[lookup_key]
             dealer_tight_t1 = second_last_row.get("Dealer @ Tight Bid >3mm", pd.NA)
             dealer_wide_t1 = second_last_row.get("Dealer @ Wide Offer >3mm", pd.NA)
             dealer_tight_t1_values.append(dealer_tight_t1 if pd.notna(dealer_tight_t1) else pd.NA)

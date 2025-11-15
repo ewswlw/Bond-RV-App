@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-15 19:00 ET - Added "Portfolio Less Liquid Lines" table to runs_views.py (replica of CR01 Risk table but filters to rows where TB >3mm is blank), updated portfolio_runs_view.xlsx to include 16 tables (was 15), added Custom_Sector merge to runs_today.py  
+**Last Updated**: 2025-11-15 19:30 ET - Added negative spread filtering to runs pipeline (filters negative Bid/Ask Spreads to NaN in parquet storage and aggregation), fixed DoD calculation Benchmark matching (uses (CUSIP, Benchmark) tuples instead of CUSIP-only), added universe RV views to runs_views.py  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -264,6 +264,7 @@ Each pipeline stage is a class with clear responsibilities:
 - **Primary Key**: `Date + Dealer + CUSIP` (unique combination, enforced after deduplication)
 - **Schema**: All 30 columns with Date and Time as first columns
 - **Dealer Filtering**: Only includes dealers: BMO, BNS, NBF, RBC, TD (other dealers filtered out during load)
+- **Data Quality**: Negative Bid Spread and Ask Spread values are filtered out (set to NaN) before writing to parquet
 - **Row count**: ~19,000+ rows (after deduplication and dealer filtering) spanning 2022-2025
 - **Storage**: `bond_data/parquet/runs_timeseries.parquet`
 - **Deduplication**: Keep latest Time per Date+Dealer+CUSIP (end-of-day snapshot)
@@ -302,6 +303,7 @@ Each pipeline stage is a class with clear responsibilities:
 - Invalid CUSIPs: Log summary warning but include in data (same as bond pipeline)
 - **Enhanced Orphan Tracking**: Log orphans with context (Security, Date, Dealer, Time, Ticker) to validation.log
 - **Dealer Filtering**: Only dealers BMO, BNS, NBF, RBC, TD are stored in `runs_timeseries.parquet` (other dealers filtered out during load)
+- **Negative Spread Filtering**: Negative Bid Spread and Ask Spread values are filtered out (set to NaN) before writing to parquet and during aggregation (data quality issue)
 - Primary key enforcement: No duplicate Date+Dealer+CUSIP combinations (after deduplication)
 - Append mode inspects existing parquet dates, skips fully-loaded files, and filters mixed files down to unseen dates before extraction.
 - Pipeline summaries surface files processed/skipped plus new rows, dates, CUSIPs, and dealers added during each run.
@@ -344,6 +346,7 @@ Each pipeline stage is a class with clear responsibilities:
 #### Data Cleaning
 - Convert NA values to NULL: `#N/A Field Not Applicable`, `#N/A Invalid Security`, `N/A`, etc.
 - Empty cells → NULL/NaN
+- **Negative Spread Filtering**: Negative Bid Spread and Ask Spread values are filtered out (set to NaN) in runs pipeline (both parquet storage and aggregation) - these are data quality issues
 - Preserve all other values as-is
 
 #### Numeric Column Conversion
@@ -493,8 +496,8 @@ Bond-RV-App/
 │   │   ├── executable cr01 vs holdings.py  # CR01 pair analytics (dynamic CUSIP loading from runs_today.csv + portfolio, filters: CR01 @ Tight Bid > 2000, CR01 @ Wide Offer > 2000, no Bid/Offer filter)
 │   │   └── all combos vs holdings.py  # All combinations vs holdings pair analytics (all portfolio CUSIPs from last date, no CR01 filters)
 │   ├── runs/             # Runs analytics scripts
-│   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/1yr changes)
-│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio views with custom formatting, generates both .txt and .xlsx outputs)
+│   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/1yr changes, filters negative spreads, matches by (CUSIP, Benchmark) tuples)
+│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs)
 │   └── processed_data/   # Outputs from analytics scripts
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
@@ -516,7 +519,9 @@ Bond-RV-App/
 │       ├── all combos vs holdings.csv
 │       ├── runs_today.csv
 │       ├── portfolio_runs_view.txt  # Formatted portfolio tables (from runs_views.py, text output)
-│       └── portfolio_runs_view.xlsx  # Excel file with 16 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
+│       ├── portfolio_runs_view.xlsx  # Excel file with 16 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
+│       ├── uni_runs_view.txt  # Formatted universe tables (from runs_views.py, text output)
+│       └── uni_runs_view.xlsx  # Excel file with universe tables (from runs_views.py, formatted Excel tables on separate sheets)
 ├── bond_pipeline/          # Pipeline code (7 modules)
 ├── bond_data/              # Data directory (local only, git-ignored)
 │   ├── parquet/           # Output parquet files
@@ -1307,4 +1312,29 @@ pytest tests/unit/test_utils.py -v
   - Included in both text output (`portfolio_runs_view.txt`) and Excel output (`portfolio_runs_view.xlsx`)
   - Excel file now contains 16 tables (was 15), with "Portfolio Less Liquid Lines" as Sheet 2
   - Table appears in text output right after "Portfolio Sorted By CR01 Risk" table
+- **2025-11-15 19:30 ET**: Added negative spread filtering and fixed DoD Benchmark matching:
+  - Added negative spread filtering to `runs_pipeline/load.py`:
+    - Filters negative Bid Spread and Ask Spread values (set to NaN) before writing to parquet in both append and override modes
+    - Filters negative spreads when reading existing data in append mode
+    - Logs count of filtered negative spreads for transparency
+  - Added negative spread filtering to `analytics/runs/runs_today.py`:
+    - Filters negative Bid Spread and Ask Spread values (set to NaN) during aggregation in `compute_group_metrics()`
+    - Prevents negative spreads from being used in "Tight Bid >3mm" and "Wide Offer >3mm" calculations
+    - Applied to all spread calculations (Tight Bid, Wide Offer, RBC columns)
+  - Fixed DoD calculation Benchmark matching in `analytics/runs/runs_today.py`:
+    - Changed all lookups from CUSIP-only to `(CUSIP, Benchmark)` tuple matching
+    - Ensures correct pairing when CUSIPs have multiple benchmarks
+    - Applied to DoD, MTD, YTD, 1yr, and T-1 dealer lookups
+    - Updated filtering logic to match by `(CUSIP, Benchmark)` pairs instead of CUSIP only
+    - Added Benchmark column to `compute_group_metrics()` output and aggregated column order
+  - Created universe RV views in `analytics/runs/runs_views.py`:
+    - Added `generate_universe_views()` function for universe-wide analysis (not filtered by portfolio)
+    - Created "Universe Sorted By DoD Moves" table:
+      - Filters out excluded Custom_Sector values (Asset Backed Subs, Auto ABS, Bail In, CAD Govt, CASH CAD, CASH USD, CDX, CP, Covered, Dep Note, Financial Hybrid, HY, Non Financial Hybrid, Non Financial Hybrids, USD Govt, Utility)
+      - Only includes rows where Tight Bid >3mm had a value on both last date and second-to-last date
+      - Excludes rows where DoD Chg Tight Bid >3mm is 0 or blank
+      - Shows top 20 and bottom 20 by DoD Chg Tight Bid >3mm (largest positive and most negative values)
+      - Uses same formatting as portfolio views (thousand separators, Yrs (Cvn) to 1 decimal, Retracement as percentage)
+    - Outputs to `uni_runs_view.txt` and `uni_runs_view.xlsx` in `analytics/processed_data/`
+    - Configuration section at top for flexible customization (excluded sectors, top/bottom N, sort column, column list)
 
