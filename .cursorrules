@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-15 18:00 ET - Added Excel file generation to runs_views.py (portfolio_runs_view.xlsx with 15 tables on separate sheets, formatted Excel tables with filters/banded rows, freeze panes after Security column, summary statistics), enhanced runs_views.py with 15 portfolio tables (CR01 Risk with Total CR01, DoD/MTD/YTD/1yr Bid Chg, Size Bids, Size Bids Struggling Names, Size Bids Heavily Offered Lines, Size Bids With Minimal Bid/Offer, Size Bids With Minimal Bid/Offer No Bail In, 5 dealer-specific tables), added Custom_Sector merge to runs_today.py  
+**Last Updated**: 2025-11-15 19:00 ET - Added "Portfolio Less Liquid Lines" table to runs_views.py (replica of CR01 Risk table but filters to rows where TB >3mm is blank), updated portfolio_runs_view.xlsx to include 16 tables (was 15), added Custom_Sector merge to runs_today.py  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -499,7 +499,7 @@ Bond-RV-App/
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
 │       ├── comb_validation.txt  # Validation log for pair analytics (from comb.py)
-│       ├── portfolio_runs_view.xlsx  # Excel file with 15 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
+│       ├── portfolio_runs_view.xlsx  # Excel file with 16 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
 │       ├── cr01_pair_analytics.csv
 │       ├── all_comb.csv
 │       ├── term_comb.csv
@@ -516,7 +516,7 @@ Bond-RV-App/
 │       ├── all combos vs holdings.csv
 │       ├── runs_today.csv
 │       ├── portfolio_runs_view.txt  # Formatted portfolio tables (from runs_views.py, text output)
-│       └── portfolio_runs_view.xlsx  # Excel file with 15 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
+│       └── portfolio_runs_view.xlsx  # Excel file with 16 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
 ├── bond_pipeline/          # Pipeline code (7 modules)
 ├── bond_data/              # Data directory (local only, git-ignored)
 │   ├── parquet/           # Output parquet files
@@ -1207,51 +1207,57 @@ pytest tests/unit/test_utils.py -v
 - **2025-11-15 12:30 ET**: Created and enhanced runs_views.py for custom portfolio table views:
   - Created `analytics/runs/runs_views.py` - custom formatted tables generator from runs_today.csv
   - Generates both text (`portfolio_runs_view.txt`) and Excel (`portfolio_runs_view.xlsx`) outputs
-  - Generates 15 portfolio tables with custom formatting:
+  - Generates 16 portfolio tables with custom formatting:
     1. **Portfolio Sorted By CR01 Risk**: 
        - Filters to rows where QUANTITY > 0
        - Sorts by POSITION CR01 descending (largest to smallest)
        - Shows "Total CR01" summary at top (sum of POSITION CR01)
        - Includes all 31 columns (Security, QUANTITY, POSITION CR01, Yrs (Cvn), spread metrics, dealer info, CR01 metrics, DoD/MTD/YTD/1yr changes, equity metrics, Retracement, Custom_Sector)
-    2. **Portfolio Sorted By DoD Bid Chg With >3MM on Bid**:
+    2. **Portfolio Less Liquid Lines**:
+       - Replica of Portfolio Sorted By CR01 Risk table
+       - Filters to rows where QUANTITY > 0 and Tight Bid >3mm is blank (NaN/null)
+       - Sorts by POSITION CR01 descending (largest to smallest)
+       - Shows "Total CR01" summary at top (sum of POSITION CR01)
+       - Includes all 31 columns (same as CR01 Risk table)
+    3. **Portfolio Sorted By DoD Bid Chg With >3MM on Bid**:
        - Filters to QUANTITY > 0, TB >3mm has value, and DoD TB>3mm non-zero
        - Sorts by DoD Chg Tight Bid >3mm descending
        - Includes all columns (same as CR01 Risk table)
-    3. **Portfolio Sorted By MTD Bid Chg With >3MM on Bid**:
+    4. **Portfolio Sorted By MTD Bid Chg With >3MM on Bid**:
        - Filters to QUANTITY > 0, TB >3mm has value, and MTD TB non-zero
        - Sorts by MTD Chg Tight Bid descending
        - Excludes all DoD columns (uses PORTFOLIO_MTD_COLUMNS)
-    4. **Portfolio Sorted By YTD Bid Chg With >3MM on Bid**:
+    5. **Portfolio Sorted By YTD Bid Chg With >3MM on Bid**:
        - Filters to QUANTITY > 0, TB >3mm has value, and YTD TB non-zero
        - Sorts by YTD Chg Tight Bid descending
        - Excludes DoD and MTD columns (uses PORTFOLIO_YTD_COLUMNS)
-    5. **Portfolio Sorted By 1yr Bid Chg With >3MM on Bid**:
+    6. **Portfolio Sorted By 1yr Bid Chg With >3MM on Bid**:
        - Filters to QUANTITY > 0, TB >3mm has value, and 1yr TB non-zero
        - Sorts by 1yr Chg Tight Bid descending
        - Excludes DoD, MTD, and YTD columns (uses PORTFOLIO_1YR_COLUMNS)
-    6. **Size Bids**:
+    7. **Size Bids**:
        - Same columns as CR01 Risk table
        - Filters to QUANTITY > 0, CR01 @ Tight Bid >= 1000, POSITION CR01 >= 1,000
        - Sorts by CR01 @ Tight Bid descending
        - Shows "Cumulative CR01 TB" summary at top (sum of CR01 @ Tight Bid)
-    7. **Size Bids Struggling Names**:
+    8. **Size Bids Struggling Names**:
        - Same filters as Size Bids plus Retracement < 0.5 (Retracement < 50%)
        - Sorts by CR01 @ Tight Bid descending
        - Shows "Cumulative CR01 TB" summary at top
-    8. **Size Bids Heavily Offered Lines**:
+    9. **Size Bids Heavily Offered Lines**:
        - Same filters as Size Bids plus Custom_Sector != "Bail In" and # of Offers >3mm > 2
        - Sorts by CR01 @ Tight Bid descending
        - Shows "Cumulative CR01 TB" summary at top
        - Numeric conversion applied to # of Offers >3mm column before filtering
-    9. **Size Bids With Minimal Bid/Offer**:
+    10. **Size Bids With Minimal Bid/Offer**:
        - Same filters as Size Bids plus Bid/Offer>3mm <= 3 (excludes > 3 or blank)
        - Sorts by CR01 @ Tight Bid descending
        - Shows "Cumulative CR01 TB" summary at top
-    10. **Size Bids With Minimal Bid/Offer No Bail In**:
+    11. **Size Bids With Minimal Bid/Offer No Bail In**:
        - Same filters as Size Bids With Minimal Bid/Offer plus Custom_Sector != "Bail In"
        - Sorts by CR01 @ Tight Bid descending
        - Shows "Cumulative CR01 TB" summary at top
-    11-15. **Size Bids With Minimal Bid/Offer: Where {Dealer} Is Best Bid** (5 dealer-specific tables):
+    12-16. **Size Bids With Minimal Bid/Offer: Where {Dealer} Is Best Bid** (5 dealer-specific tables):
        - One table for each unique dealer in "Dealer @ Tight Bid >3mm" (BMO, BNS, NBF, RBC, TD)
        - Same filters as Size Bids With Minimal Bid/Offer plus dealer filter
        - Each table shows "Cumulative CR01 TB" summary at top
@@ -1263,7 +1269,7 @@ pytest tests/unit/test_utils.py -v
     - Center-aligned columns and headers
     - Summary statistics (Total CR01, Cumulative CR01 TB) displayed at top of relevant tables with thousand separators
   - Outputs all tables to `portfolio_runs_view.txt` in `analytics/processed_data/` (text format with center alignment)
-  - Generates `portfolio_runs_view.xlsx` Excel file with 15 sheets (one per table):
+  - Generates `portfolio_runs_view.xlsx` Excel file with 16 sheets (one per table):
     - Each sheet contains formatted Excel table with filters and banded rows (TableStyleMedium9)
     - Summary statistics displayed at top of relevant sheets (Total CR01, Cumulative CR01 TB) without merged cells
     - Freeze panes set after Security column (B3 for sheets with summary, B2 for sheets without)
@@ -1280,7 +1286,7 @@ pytest tests/unit/test_utils.py -v
     - Appears as last column in all portfolio_runs_view.txt tables
 - **2025-11-15 18:00 ET**: Added Excel file generation to runs_views.py:
   - Enhanced `analytics/runs/runs_views.py` to generate `portfolio_runs_view.xlsx` alongside text output
-  - Created `write_excel_file()` function that writes all 15 tables to separate Excel sheets
+  - Created `write_excel_file()` function that writes all tables to separate Excel sheets (16 tables total)
   - Each table formatted as Excel table with filters and banded rows (TableStyleMedium9 style)
   - Summary statistics (Total CR01, Cumulative CR01 TB) written to row 1 without merged cells (to avoid Excel validation issues)
   - Tables start at row 2 (after summary) or row 1 (no summary)
@@ -1290,4 +1296,15 @@ pytest tests/unit/test_utils.py -v
   - All formatting preserved (thousand separators, Retracement as percentage, Yrs (Cvn) to 1 decimal)
   - Full column names used in Excel (not display names from COLUMN_DISPLAY_NAMES)
   - Auto-fitted column widths for optimal display
+- **2025-11-15 19:00 ET**: Added "Portfolio Less Liquid Lines" table to runs_views.py:
+  - Created `create_portfolio_less_liquid_lines_table()` function in `analytics/runs/runs_views.py`
+  - Replica of Portfolio Sorted By CR01 Risk table but filters to rows where "Tight Bid >3mm" is blank (NaN/null)
+  - Filters to QUANTITY > 0 and Tight Bid >3mm is blank
+  - Sorts by POSITION CR01 descending (same as CR01 Risk table)
+  - Uses same columns as PORTFOLIO_CR01_RISK_COLUMNS
+  - Shows "Total CR01" summary at top (sum of POSITION CR01)
+  - Added as Step 3.5 in main() function (right after Portfolio CR01 Risk table)
+  - Included in both text output (`portfolio_runs_view.txt`) and Excel output (`portfolio_runs_view.xlsx`)
+  - Excel file now contains 16 tables (was 15), with "Portfolio Less Liquid Lines" as Sheet 2
+  - Table appears in text output right after "Portfolio Sorted By CR01 Risk" table
 

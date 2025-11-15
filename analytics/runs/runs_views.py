@@ -400,6 +400,34 @@ def create_portfolio_cr01_risk_table(df: pd.DataFrame) -> pd.DataFrame:
     return df_filtered
 
 
+def create_portfolio_less_liquid_lines_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create Portfolio Less Liquid Lines table (replica of CR01 Risk but only shows rows where TB >3mm is blank).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Filter to QUANTITY > 0
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to rows where Tight Bid >3mm is blank (NaN/null)
+    tb_col = "Tight Bid >3mm"
+    if tb_col in df_filtered.columns:
+        df_filtered = df_filtered[df_filtered[tb_col].isna()].copy()
+    
+    # Sort by POSITION CR01 descending (largest to smallest)
+    df_filtered = df_filtered.sort_values("POSITION CR01", ascending=False, na_position='last')
+    
+    # Select only required columns (same as CR01 Risk table)
+    available_columns = [col for col in PORTFOLIO_CR01_RISK_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
 def create_portfolio_dod_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
     """
     Create Portfolio Sorted By DoD Bid Chg With >3MM on Bid table.
@@ -1154,6 +1182,17 @@ def main() -> None:
         total_cr01 = portfolio_cr01_df[pos_cr01_col].sum()
     print(f"Total CR01: {int(round(total_cr01)):,}")
     
+    # Step 3.5: Create Portfolio Less Liquid Lines table
+    print("\n[STEP 3.5] Creating Portfolio Less Liquid Lines table...")
+    portfolio_less_liquid_df = create_portfolio_less_liquid_lines_table(df)
+    print(f"Filtered to {len(portfolio_less_liquid_df):,} rows with QUANTITY > 0 and TB >3mm is blank")
+    
+    # Calculate Total CR01 (sum of POSITION CR01) for Portfolio Less Liquid Lines table
+    total_cr01_less_liquid = 0
+    if pos_cr01_col in portfolio_less_liquid_df.columns:
+        total_cr01_less_liquid = portfolio_less_liquid_df[pos_cr01_col].sum()
+    print(f"Total CR01: {int(round(total_cr01_less_liquid)):,}")
+    
     # Step 4: Create Portfolio Sorted By DoD Bid Chg table
     print("\n[STEP 4] Creating Portfolio Sorted By DoD Bid Chg With >3MM on Bid table...")
     portfolio_dod_bid_df = create_portfolio_dod_bid_chg_table(df)
@@ -1298,6 +1337,21 @@ def main() -> None:
         )
         f.write(table_str)
         
+        # Write Portfolio Less Liquid Lines table with Total CR01 summary
+        summary_dict_less_liquid = {"Total CR01": total_cr01_less_liquid}
+        table_title_less_liquid = "Portfolio Less Liquid Lines"
+        excel_tables[table_title_less_liquid] = {
+            'df': portfolio_less_liquid_df,
+            'summary': summary_dict_less_liquid
+        }
+        table_str = format_table(
+            portfolio_less_liquid_df,
+            table_title_less_liquid,
+            COLUMN_DISPLAY_NAMES,
+            summary_dict=summary_dict_less_liquid
+        )
+        f.write(table_str)
+        
         # Write Portfolio Sorted By DoD Bid Chg table
         table_title_dod = "Portfolio Sorted By DoD Bid Chg With >3MM on Bid"
         excel_tables[table_title_dod] = {'df': portfolio_dod_bid_df, 'summary': {}}
@@ -1418,6 +1472,7 @@ def main() -> None:
     
     print(f"\nOutput written to: {OUTPUT_FILE}")
     print(f"Total rows in Portfolio CR01 Risk table: {len(portfolio_cr01_df):,}")
+    print(f"Total rows in Portfolio Less Liquid Lines table: {len(portfolio_less_liquid_df):,}")
     print(f"Total rows in Portfolio DoD Bid Chg table: {len(portfolio_dod_bid_df):,}")
     print(f"Total rows in Portfolio MTD Bid Chg table: {len(portfolio_mtd_bid_df):,}")
     print(f"Total rows in Portfolio YTD Bid Chg table: {len(portfolio_ytd_bid_df):,}")
