@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-15 12:30 ET - Enhanced runs_views.py with 15 portfolio tables (CR01 Risk with Total CR01, DoD/MTD/YTD/1yr Bid Chg, Size Bids, Size Bids Struggling Names, Size Bids Heavily Offered Lines, Size Bids With Minimal Bid/Offer, Size Bids With Minimal Bid/Offer No Bail In, 5 dealer-specific tables), added Custom_Sector merge to runs_today.py  
+**Last Updated**: 2025-11-15 18:00 ET - Added Excel file generation to runs_views.py (portfolio_runs_view.xlsx with 15 tables on separate sheets, formatted Excel tables with filters/banded rows, freeze panes after Security column, summary statistics), enhanced runs_views.py with 15 portfolio tables (CR01 Risk with Total CR01, DoD/MTD/YTD/1yr Bid Chg, Size Bids, Size Bids Struggling Names, Size Bids Heavily Offered Lines, Size Bids With Minimal Bid/Offer, Size Bids With Minimal Bid/Offer No Bail In, 5 dealer-specific tables), added Custom_Sector merge to runs_today.py  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -494,11 +494,12 @@ Bond-RV-App/
 │   │   └── all combos vs holdings.py  # All combinations vs holdings pair analytics (all portfolio CUSIPs from last date, no CR01 filters)
 │   ├── runs/             # Runs analytics scripts
 │   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/1yr changes)
-│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio views with custom formatting)
+│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio views with custom formatting, generates both .txt and .xlsx outputs)
 │   └── processed_data/   # Outputs from analytics scripts
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
 │       ├── comb_validation.txt  # Validation log for pair analytics (from comb.py)
+│       ├── portfolio_runs_view.xlsx  # Excel file with 15 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
 │       ├── cr01_pair_analytics.csv
 │       ├── all_comb.csv
 │       ├── term_comb.csv
@@ -514,7 +515,8 @@ Bond-RV-App/
 │       ├── executable cr01 vs holdings.csv
 │       ├── all combos vs holdings.csv
 │       ├── runs_today.csv
-│       └── portfolio_runs_view.txt  # Formatted portfolio tables (from runs_views.py)
+│       ├── portfolio_runs_view.txt  # Formatted portfolio tables (from runs_views.py, text output)
+│       └── portfolio_runs_view.xlsx  # Excel file with 15 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
 ├── bond_pipeline/          # Pipeline code (7 modules)
 ├── bond_data/              # Data directory (local only, git-ignored)
 │   ├── parquet/           # Output parquet files
@@ -1204,6 +1206,7 @@ pytest tests/unit/test_utils.py -v
     - Logs final DataFrame summary and sample data rows
 - **2025-11-15 12:30 ET**: Created and enhanced runs_views.py for custom portfolio table views:
   - Created `analytics/runs/runs_views.py` - custom formatted tables generator from runs_today.csv
+  - Generates both text (`portfolio_runs_view.txt`) and Excel (`portfolio_runs_view.xlsx`) outputs
   - Generates 15 portfolio tables with custom formatting:
     1. **Portfolio Sorted By CR01 Risk**: 
        - Filters to rows where QUANTITY > 0
@@ -1259,7 +1262,15 @@ pytest tests/unit/test_utils.py -v
     - Missing values: Blank (empty string) instead of "N/A"
     - Center-aligned columns and headers
     - Summary statistics (Total CR01, Cumulative CR01 TB) displayed at top of relevant tables with thousand separators
-  - Outputs all tables to `portfolio_runs_view.txt` in `analytics/processed_data/`
+  - Outputs all tables to `portfolio_runs_view.txt` in `analytics/processed_data/` (text format with center alignment)
+  - Generates `portfolio_runs_view.xlsx` Excel file with 15 sheets (one per table):
+    - Each sheet contains formatted Excel table with filters and banded rows (TableStyleMedium9)
+    - Summary statistics displayed at top of relevant sheets (Total CR01, Cumulative CR01 TB) without merged cells
+    - Freeze panes set after Security column (B3 for sheets with summary, B2 for sheets without)
+    - Sheet names use full table titles where possible (truncated to 31 chars), dealer tables use short names ("Min BO - {Dealer}")
+    - All numeric formatting preserved (thousand separators, Retracement as percentage, Yrs (Cvn) to 1 decimal)
+    - Full column names used (not display names)
+    - Auto-fitted column widths
   - Header includes refresh timestamp and MTD/YTD reference dates from runs_timeseries.parquet
   - Configuration section at top for column display names and column order (PORTFOLIO_CR01_RISK_COLUMNS, PORTFOLIO_MTD_COLUMNS, PORTFOLIO_YTD_COLUMNS, PORTFOLIO_1YR_COLUMNS)
   - Enhanced `format_table()` function to support optional `summary_dict` parameter for displaying summary statistics at top of tables
@@ -1267,4 +1278,16 @@ pytest tests/unit/test_utils.py -v
     - Added "Custom_Sector" to BOND_DETAILS_MERGE_COLUMNS in `analytics/runs/runs_today.py`
     - Custom_Sector now merged from historical_bond_details.parquet into runs_today.csv
     - Appears as last column in all portfolio_runs_view.txt tables
+- **2025-11-15 18:00 ET**: Added Excel file generation to runs_views.py:
+  - Enhanced `analytics/runs/runs_views.py` to generate `portfolio_runs_view.xlsx` alongside text output
+  - Created `write_excel_file()` function that writes all 15 tables to separate Excel sheets
+  - Each table formatted as Excel table with filters and banded rows (TableStyleMedium9 style)
+  - Summary statistics (Total CR01, Cumulative CR01 TB) written to row 1 without merged cells (to avoid Excel validation issues)
+  - Tables start at row 2 (after summary) or row 1 (no summary)
+  - Freeze panes implemented after Security column for all sheets
+  - Sheet name uniqueness ensured via tracking mechanism (dealer tables use short names: "Min BO - {Dealer}")
+  - Invalid Excel sheet name characters sanitized (/, \, ?, *, [, ], :)
+  - All formatting preserved (thousand separators, Retracement as percentage, Yrs (Cvn) to 1 decimal)
+  - Full column names used in Excel (not display names from COLUMN_DISPLAY_NAMES)
+  - Auto-fitted column widths for optimal display
 

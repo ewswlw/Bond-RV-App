@@ -2,16 +2,18 @@
 Runs views script.
 
 This module creates custom formatted tables from runs_today.csv data.
-Outputs nicely formatted tables to portfolio_runs_view.txt for portfolio monitoring.
+Outputs nicely formatted tables to portfolio_runs_view.txt and portfolio_runs_view.xlsx for portfolio monitoring.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
 import pandas as pd
+from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.utils import get_column_letter
 
 # Get script directory and build paths relative to it
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -19,6 +21,7 @@ RUNS_TODAY_CSV_PATH = SCRIPT_DIR.parent / "processed_data" / "runs_today.csv"
 RUNS_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "runs_timeseries.parquet"
 OUTPUT_DIR = SCRIPT_DIR.parent / "processed_data"
 OUTPUT_FILE = OUTPUT_DIR / "portfolio_runs_view.txt"
+EXCEL_OUTPUT_FILE = OUTPUT_DIR / "portfolio_runs_view.xlsx"
 
 # ============================================================================
 # CONFIGURATION
@@ -886,6 +889,180 @@ def create_size_bids_minimal_bo_by_dealer_table(df: pd.DataFrame, dealer: str) -
     return df_filtered
 
 
+def write_excel_file(
+    output_path: Path,
+    tables: Dict[str, Dict],
+    timestamp: str,
+    last_date,
+    mtd_ref_date,
+    ytd_ref_date
+) -> None:
+    # Reset used sheet names for each file generation
+    write_excel_file._used_sheet_names = set()
+    """
+    Write all portfolio tables to Excel file with formatted tables on separate sheets.
+    
+    Args:
+        output_path: Path to Excel output file.
+        tables: Dictionary mapping table titles to dicts with 'df' (DataFrame) and 'summary' (dict).
+        timestamp: Timestamp string for header.
+        last_date: Last date from runs data.
+        mtd_ref_date: MTD reference date.
+        ytd_ref_date: YTD reference date.
+    """
+    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+        for table_title, table_data in tables.items():
+            df = table_data['df']
+            summary_dict = table_data.get('summary', {})
+            
+            if df.empty:
+                continue  # Skip empty DataFrames
+            
+            # Get sheet name (max 31 characters for Excel, use full title where possible)
+            # Remove invalid characters for Excel sheet names: / \ ? * [ ] :
+            sanitized_title = table_title.replace('/', '-').replace('\\', '-').replace('?', '').replace('*', '').replace('[', '').replace(']', '').replace(':', '-')
+            
+            # For dealer tables, use shorter unique names
+            if 'Where' in sanitized_title and 'Best Bid' in sanitized_title:
+                # Extract dealer name and create short unique sheet name
+                # Format: "Min BO - {Dealer}" (shorter to ensure uniqueness)
+                dealer_match = sanitized_title.split('Where ')[1].split(' Is')[0] if 'Where ' in sanitized_title else ''
+                if dealer_match:
+                    sheet_name = f"Min BO - {dealer_match}"[:31]
+                else:
+                    sheet_name = sanitized_title[:31] if len(sanitized_title) <= 31 else sanitized_title[:28] + "..."
+            else:
+                sheet_name = sanitized_title[:31] if len(sanitized_title) <= 31 else sanitized_title[:28] + "..."
+            
+            # Track used sheet names to ensure uniqueness
+            if not hasattr(write_excel_file, '_used_sheet_names'):
+                write_excel_file._used_sheet_names = set()
+            
+            # If sheet name already used, append dealer name or number
+            original_sheet_name = sheet_name
+            counter = 1
+            while sheet_name in write_excel_file._used_sheet_names:
+                if 'Where' in sanitized_title and dealer_match:
+                    # Try even shorter name
+                    sheet_name = f"BO - {dealer_match}"[:31]
+                    if sheet_name in write_excel_file._used_sheet_names:
+                        sheet_name = f"{dealer_match} Best Bid"[:31]
+                else:
+                    # Append number for other duplicates
+                    sheet_name = f"{original_sheet_name[:27]}_{counter}"[:31]
+                counter += 1
+            
+            write_excel_file._used_sheet_names.add(sheet_name)
+            
+            # Format DataFrame (numeric columns with thousand separators, Retracement as percentage)
+            # Keep original column names (not display names)
+            df_formatted = format_numeric_columns(df.copy())
+            
+            # Replace NaN with empty string for Excel display
+            df_formatted = df_formatted.fillna("")
+            
+            # Ensure ASCII-safe strings
+            for col in df_formatted.columns:
+                if df_formatted[col].dtype == 'object':
+                    df_formatted[col] = df_formatted[col].apply(
+                        lambda x: ensure_ascii(str(x)) if x != "" else ""
+                    )
+            
+            # Calculate start row for DataFrame (after summary statistics if any)
+            summary_rows = len(summary_dict) if summary_dict else 0
+            start_row = summary_rows
+            
+            # Write DataFrame to Excel sheet (starting after summary rows)
+            df_formatted.to_excel(writer, sheet_name=sheet_name, index=False, startrow=start_row)
+            
+            # Get the worksheet
+            worksheet = writer.sheets[sheet_name]
+            
+            # Write summary statistics FIRST (before creating table)
+            # This ensures summary rows are in place before table validation
+            if summary_dict:
+                # Write summary statistics starting at row 1
+                for idx, (key, value) in enumerate(summary_dict.items(), start=1):
+                    # Format numeric values with thousand separators
+                    if isinstance(value, (int, float)):
+                        formatted_value = f"{int(round(value)):,}"
+                    else:
+                        formatted_value = str(value)
+                    
+                    # Write summary text to first cell
+                    cell = worksheet.cell(row=idx, column=1)
+                    cell.value = f"{key}: {formatted_value}"
+            
+            # Calculate start row for table (header row)
+            start_row_table = summary_rows + 1 if summary_rows > 0 else 1
+            
+            # Create Excel table AFTER summary rows are written
+            # Table name must be unique and valid (no spaces, starts with letter)
+            sanitized_name = table_title.replace(' ', '_').replace('-', '_').replace('.', '_').replace(':', '_')
+            sanitized_name = ''.join(c if c.isalnum() or c == '_' else '' for c in sanitized_name)
+            if sanitized_name and not sanitized_name[0].isalpha():
+                sanitized_name = 'T_' + sanitized_name
+            table_name = f"Table_{sanitized_name}"[:255]  # Excel table name max length is 255
+            
+            # Table range includes header + data (summary rows are above the table)
+            # Excel tables: range includes header row + all data rows
+            table_start_row = start_row_table  # Header row (1-indexed)
+            # End row = header row + number of data rows
+            # Note: len(df_formatted) is number of data rows, header is at table_start_row
+            table_end_row = table_start_row + len(df_formatted)  # Last data row
+            table_range = f"A{table_start_row}:{get_column_letter(len(df_formatted.columns))}{table_end_row}"
+            
+            # Create table - ensure range is valid and doesn't include summary rows
+            # Verify table range doesn't overlap with summary rows
+            if table_start_row > summary_rows:
+                table = Table(displayName=table_name, ref=table_range)
+                
+                # Apply table style with banded rows and filters
+                style = TableStyleInfo(
+                    name="TableStyleMedium9",  # Medium style with banded rows
+                    showFirstColumn=False,
+                    showLastColumn=False,
+                    showRowStripes=True,  # Banded rows
+                    showColumnStripes=False
+                )
+                table.tableStyleInfo = style
+                
+                # Add table to worksheet
+                worksheet.add_table(table)
+            else:
+                print(f"Warning: Skipping table for '{sheet_name}' - invalid table range")
+            
+            # Find Security column index for freeze panes
+            security_col_idx = None
+            for idx, col in enumerate(df_formatted.columns, start=1):
+                if col == "Security":
+                    security_col_idx = idx
+                    break
+            
+            # Freeze panes after Security column (if Security column exists)
+            # Freeze at row after summary rows + header row
+            if security_col_idx is not None:
+                # Freeze after Security column, starting at first data row (after summary + header)
+                freeze_row = start_row_table + 1  # +1 for first data row (header is at start_row_table)
+                freeze_cell = f"{get_column_letter(security_col_idx + 1)}{freeze_row}"
+                worksheet.freeze_panes = freeze_cell
+            
+            # Auto-fit column widths
+            for idx, col in enumerate(df_formatted.columns, start=1):
+                column_letter = get_column_letter(idx)
+                # Calculate max width (content + padding)
+                max_length = max(
+                    len(str(col)),  # Header length
+                    df_formatted[col].astype(str).map(len).max() if len(df_formatted) > 0 else 0
+                )
+                # Set width with some padding (min 10, max 50)
+                adjusted_width = min(max(max_length + 2, 10), 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+    
+    print(f"\nExcel file written to: {output_path}")
+    print(f"Total sheets: {sum(1 for t in tables.values() if not t['df'].empty)}")
+
+
 def main() -> None:
     """Main execution function."""
     print("="*100)
@@ -1035,6 +1212,9 @@ def main() -> None:
     
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
+    # Prepare tables dictionary for Excel export
+    excel_tables = {}
+    
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         # Write header
         f.write("PORTFOLIO RUNS VIEW\n")
@@ -1054,91 +1234,114 @@ def main() -> None:
         
         # Write Portfolio Sorted By CR01 Risk table with Total CR01 summary
         summary_dict_cr01 = {"Total CR01": total_cr01}
+        table_title_cr01 = "Portfolio Sorted By CR01 Risk"
+        excel_tables[table_title_cr01] = {
+            'df': portfolio_cr01_df,
+            'summary': summary_dict_cr01
+        }
         table_str = format_table(
             portfolio_cr01_df,
-            "Portfolio Sorted By CR01 Risk",
+            table_title_cr01,
             COLUMN_DISPLAY_NAMES,
             summary_dict=summary_dict_cr01
         )
         f.write(table_str)
         
         # Write Portfolio Sorted By DoD Bid Chg table
+        table_title_dod = "Portfolio Sorted By DoD Bid Chg With >3MM on Bid"
+        excel_tables[table_title_dod] = {'df': portfolio_dod_bid_df, 'summary': {}}
         table_str = format_table(
             portfolio_dod_bid_df,
-            "Portfolio Sorted By DoD Bid Chg With >3MM on Bid",
+            table_title_dod,
             COLUMN_DISPLAY_NAMES
         )
         f.write(table_str)
         
         # Write Portfolio Sorted By MTD Bid Chg table
+        table_title_mtd = "Portfolio Sorted By MTD Bid Chg With >3MM on Bid"
+        excel_tables[table_title_mtd] = {'df': portfolio_mtd_bid_df, 'summary': {}}
         table_str = format_table(
             portfolio_mtd_bid_df,
-            "Portfolio Sorted By MTD Bid Chg With >3MM on Bid",
+            table_title_mtd,
             COLUMN_DISPLAY_NAMES
         )
         f.write(table_str)
         
         # Write Portfolio Sorted By YTD Bid Chg table
+        table_title_ytd = "Portfolio Sorted By YTD Bid Chg With >3MM on Bid"
+        excel_tables[table_title_ytd] = {'df': portfolio_ytd_bid_df, 'summary': {}}
         table_str = format_table(
             portfolio_ytd_bid_df,
-            "Portfolio Sorted By YTD Bid Chg With >3MM on Bid",
+            table_title_ytd,
             COLUMN_DISPLAY_NAMES
         )
         f.write(table_str)
         
         # Write Portfolio Sorted By 1yr Bid Chg table
+        table_title_1yr = "Portfolio Sorted By 1yr Bid Chg With >3MM on Bid"
+        excel_tables[table_title_1yr] = {'df': portfolio_1yr_bid_df, 'summary': {}}
         table_str = format_table(
             portfolio_1yr_bid_df,
-            "Portfolio Sorted By 1yr Bid Chg With >3MM on Bid",
+            table_title_1yr,
             COLUMN_DISPLAY_NAMES
         )
         f.write(table_str)
         
         # Write Size Bids table with cumulative CR01 TB summary
+        table_title_size_bids = "Size Bids"
         summary_dict = {"Cumulative CR01 TB": cumulative_cr01_tb}
+        excel_tables[table_title_size_bids] = {'df': size_bids_df, 'summary': summary_dict}
         table_str = format_table(
             size_bids_df,
-            "Size Bids",
+            table_title_size_bids,
             COLUMN_DISPLAY_NAMES,
             summary_dict=summary_dict
         )
         f.write(table_str)
         
         # Write Size Bids Struggling Names table with cumulative CR01 TB summary
+        table_title_struggling = "Size Bids Struggling Names"
         summary_dict_struggling_names = {"Cumulative CR01 TB": cumulative_cr01_tb_struggling_names}
+        excel_tables[table_title_struggling] = {'df': size_bids_struggling_names_df, 'summary': summary_dict_struggling_names}
         table_str = format_table(
             size_bids_struggling_names_df,
-            "Size Bids Struggling Names",
+            table_title_struggling,
             COLUMN_DISPLAY_NAMES,
             summary_dict=summary_dict_struggling_names
         )
         f.write(table_str)
         
         # Write Size Bids Heavily Offered Lines table with cumulative CR01 TB summary
+        table_title_heavily_offered = "Size Bids Heavily Offered Lines"
         summary_dict_heavily_offered_lines = {"Cumulative CR01 TB": cumulative_cr01_tb_heavily_offered_lines}
+        excel_tables[table_title_heavily_offered] = {'df': size_bids_heavily_offered_lines_df, 'summary': summary_dict_heavily_offered_lines}
         table_str = format_table(
             size_bids_heavily_offered_lines_df,
-            "Size Bids Heavily Offered Lines",
+            table_title_heavily_offered,
             COLUMN_DISPLAY_NAMES,
             summary_dict=summary_dict_heavily_offered_lines
         )
         f.write(table_str)
         
         # Write Size Bids With Minimal Bid/Offer table with cumulative CR01 TB summary
+        table_title_minimal_bo = "Size Bids With Minimal Bid/Offer"
         summary_dict_minimal_bo = {"Cumulative CR01 TB": cumulative_cr01_tb_minimal_bo}
+        excel_tables[table_title_minimal_bo] = {'df': size_bids_minimal_bo_df, 'summary': summary_dict_minimal_bo}
         table_str = format_table(
             size_bids_minimal_bo_df,
-            "Size Bids With Minimal Bid/Offer",
+            table_title_minimal_bo,
             COLUMN_DISPLAY_NAMES,
             summary_dict=summary_dict_minimal_bo
         )
         f.write(table_str)
         
         # Write Size Bids With Minimal Bid/Offer No Bail In table with cumulative CR01 TB summary
+        table_title_minimal_bo_no_bail = "Size Bids With Minimal Bid/Offer No Bail In"
         summary_dict_minimal_bo_no_bail_in = {"Cumulative CR01 TB": cumulative_cr01_tb_minimal_bo_no_bail_in}
+        excel_tables[table_title_minimal_bo_no_bail] = {'df': size_bids_minimal_bo_no_bail_in_df, 'summary': summary_dict_minimal_bo_no_bail_in}
         table_str = format_table(
             size_bids_minimal_bo_no_bail_in_df,
-            "Size Bids With Minimal Bid/Offer No Bail In",
+            table_title_minimal_bo_no_bail,
             COLUMN_DISPLAY_NAMES,
             summary_dict=summary_dict_minimal_bo_no_bail_in
         )
@@ -1148,10 +1351,12 @@ def main() -> None:
         for dealer in sorted(dealer_tables.keys()):
             dealer_df = dealer_tables[dealer]
             dealer_cumulative = dealer_cumulative_cr01[dealer]
+            table_title_dealer = f"Size Bids With Minimal Bid/Offer: Where {dealer} Is Best Bid"
             summary_dict_dealer = {"Cumulative CR01 TB": dealer_cumulative}
+            excel_tables[table_title_dealer] = {'df': dealer_df, 'summary': summary_dict_dealer}
             table_str = format_table(
                 dealer_df,
-                f"Size Bids With Minimal Bid/Offer: Where {dealer} Is Best Bid",
+                table_title_dealer,
                 COLUMN_DISPLAY_NAMES,
                 summary_dict=summary_dict_dealer
             )
@@ -1171,6 +1376,18 @@ def main() -> None:
     print(f"Total rows in Size Bids Heavily Offered Lines table: {len(size_bids_heavily_offered_lines_df):,}")
     print(f"Total rows in Size Bids With Minimal Bid/Offer table: {len(size_bids_minimal_bo_df):,}")
     print(f"Total rows in Size Bids With Minimal Bid/Offer No Bail In table: {len(size_bids_minimal_bo_no_bail_in_df):,}")
+    
+    # Step 15: Write Excel file
+    print("\n[STEP 15] Writing Excel file...")
+    write_excel_file(
+        EXCEL_OUTPUT_FILE,
+        excel_tables,
+        timestamp,
+        last_date,
+        mtd_ref_date,
+        ytd_ref_date
+    )
+    
     print("\nDone!")
 
 
