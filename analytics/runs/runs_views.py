@@ -94,6 +94,90 @@ PORTFOLIO_CR01_RISK_COLUMNS = [
     "Custom_Sector",
 ]
 
+# Column order for MTD table (excludes DoD columns)
+PORTFOLIO_MTD_COLUMNS = [
+    "Security",
+    "QUANTITY",
+    "POSITION CR01",
+    "Yrs (Cvn)",
+    "Tight Bid >3mm",
+    "Wide Offer >3mm",
+    "Tight Bid",
+    "Wide Offer",
+    "Bid/Offer>3mm",
+    "Bid/Offer",
+    "Dealer @ Tight Bid >3mm",
+    "Dealer @ Wide Offer >3mm",
+    "Size @ Tight Bid >3mm",
+    "Size @ Wide Offer >3mm",
+    "CR01 @ Tight Bid",
+    "CR01 @ Wide Offer",
+    "# of Bids >3mm",
+    "# of Offers >3mm",
+    "MTD Chg Tight Bid",
+    "YTD Chg Tight Bid",
+    "1yr Chg Tight Bid",
+    "MTD Equity",
+    "YTD Equity",
+    "Retracement",
+    "Custom_Sector",
+]
+
+# Column order for YTD table (excludes DoD and MTD columns)
+PORTFOLIO_YTD_COLUMNS = [
+    "Security",
+    "QUANTITY",
+    "POSITION CR01",
+    "Yrs (Cvn)",
+    "Tight Bid >3mm",
+    "Wide Offer >3mm",
+    "Tight Bid",
+    "Wide Offer",
+    "Bid/Offer>3mm",
+    "Bid/Offer",
+    "Dealer @ Tight Bid >3mm",
+    "Dealer @ Wide Offer >3mm",
+    "Size @ Tight Bid >3mm",
+    "Size @ Wide Offer >3mm",
+    "CR01 @ Tight Bid",
+    "CR01 @ Wide Offer",
+    "# of Bids >3mm",
+    "# of Offers >3mm",
+    "YTD Chg Tight Bid",
+    "1yr Chg Tight Bid",
+    "MTD Equity",
+    "YTD Equity",
+    "Retracement",
+    "Custom_Sector",
+]
+
+# Column order for 1yr table (excludes DoD, MTD, and YTD columns)
+PORTFOLIO_1YR_COLUMNS = [
+    "Security",
+    "QUANTITY",
+    "POSITION CR01",
+    "Yrs (Cvn)",
+    "Tight Bid >3mm",
+    "Wide Offer >3mm",
+    "Tight Bid",
+    "Wide Offer",
+    "Bid/Offer>3mm",
+    "Bid/Offer",
+    "Dealer @ Tight Bid >3mm",
+    "Dealer @ Wide Offer >3mm",
+    "Size @ Tight Bid >3mm",
+    "Size @ Wide Offer >3mm",
+    "CR01 @ Tight Bid",
+    "CR01 @ Wide Offer",
+    "# of Bids >3mm",
+    "# of Offers >3mm",
+    "1yr Chg Tight Bid",
+    "MTD Equity",
+    "YTD Equity",
+    "Retracement",
+    "Custom_Sector",
+]
+
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
@@ -301,6 +385,158 @@ def create_portfolio_cr01_risk_table(df: pd.DataFrame) -> pd.DataFrame:
     return df_filtered
 
 
+def create_portfolio_dod_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create Portfolio Sorted By DoD Bid Chg With >3MM on Bid table.
+    
+    Filters to rows where Tight Bid >3mm has a value (non-blank) and DoD Chg Tight Bid >3mm is non-zero (positive or negative).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Filter to QUANTITY > 0
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to rows where Tight Bid >3mm has a value (non-blank)
+    tb_col = "Tight Bid >3mm"
+    if tb_col in df_filtered.columns:
+        df_filtered = df_filtered[df_filtered[tb_col].notna()].copy()
+    
+    # Filter to rows where DoD Chg Tight Bid >3mm is non-zero (positive or negative) and non-blank
+    dod_col = "DoD Chg Tight Bid >3mm"
+    if dod_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[dod_col].notna() & (df_filtered[dod_col] != 0)
+        ].copy()
+    
+    # Sort by DoD Chg Tight Bid >3mm descending (largest changes first)
+    if dod_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(dod_col, ascending=False, na_position='last')
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in PORTFOLIO_CR01_RISK_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
+def create_portfolio_mtd_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create Portfolio Sorted By MTD Bid Chg With >3MM on Bid table.
+    
+    Filters to rows where Tight Bid >3mm has a value (non-blank) and MTD Chg Tight Bid is non-zero (positive or negative).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Filter to QUANTITY > 0
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to rows where Tight Bid >3mm has a value (non-blank)
+    tb_col = "Tight Bid >3mm"
+    if tb_col in df_filtered.columns:
+        df_filtered = df_filtered[df_filtered[tb_col].notna()].copy()
+    
+    # Filter to rows where MTD Chg Tight Bid is non-zero (positive or negative) and non-blank
+    mtd_col = "MTD Chg Tight Bid"
+    if mtd_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[mtd_col].notna() & (df_filtered[mtd_col] != 0)
+        ].copy()
+    
+    # Sort by MTD Chg Tight Bid descending (largest changes first)
+    if mtd_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(mtd_col, ascending=False, na_position='last')
+    
+    # Select only required columns (in order) - excludes DoD columns
+    available_columns = [col for col in PORTFOLIO_MTD_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
+def create_portfolio_ytd_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create Portfolio Sorted By YTD Bid Chg With >3MM on Bid table.
+    
+    Filters to rows where Tight Bid >3mm has a value (non-blank) and YTD Chg Tight Bid is non-zero (positive or negative).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Filter to QUANTITY > 0
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to rows where Tight Bid >3mm has a value (non-blank)
+    tb_col = "Tight Bid >3mm"
+    if tb_col in df_filtered.columns:
+        df_filtered = df_filtered[df_filtered[tb_col].notna()].copy()
+    
+    # Filter to rows where YTD Chg Tight Bid is non-zero (positive or negative) and non-blank
+    ytd_col = "YTD Chg Tight Bid"
+    if ytd_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[ytd_col].notna() & (df_filtered[ytd_col] != 0)
+        ].copy()
+    
+    # Sort by YTD Chg Tight Bid descending (largest changes first)
+    if ytd_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(ytd_col, ascending=False, na_position='last')
+    
+    # Select only required columns (in order) - excludes DoD and MTD columns
+    available_columns = [col for col in PORTFOLIO_YTD_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
+def create_portfolio_1yr_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create Portfolio Sorted By 1yr Bid Chg With >3MM on Bid table.
+    
+    Filters to rows where Tight Bid >3mm has a value (non-blank) and 1yr Chg Tight Bid is non-zero (positive or negative).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Filter to QUANTITY > 0
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to rows where Tight Bid >3mm has a value (non-blank)
+    tb_col = "Tight Bid >3mm"
+    if tb_col in df_filtered.columns:
+        df_filtered = df_filtered[df_filtered[tb_col].notna()].copy()
+    
+    # Filter to rows where 1yr Chg Tight Bid is non-zero (positive or negative) and non-blank
+    one_yr_col = "1yr Chg Tight Bid"
+    if one_yr_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[one_yr_col].notna() & (df_filtered[one_yr_col] != 0)
+        ].copy()
+    
+    # Sort by 1yr Chg Tight Bid descending (largest changes first)
+    if one_yr_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(one_yr_col, ascending=False, na_position='last')
+    
+    # Select only required columns (in order) - excludes DoD, MTD, and YTD columns
+    available_columns = [col for col in PORTFOLIO_1YR_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
 def main() -> None:
     """Main execution function."""
     print("="*100)
@@ -334,8 +570,28 @@ def main() -> None:
     portfolio_cr01_df = create_portfolio_cr01_risk_table(df)
     print(f"Filtered to {len(portfolio_cr01_df):,} rows with QUANTITY > 0")
     
-    # Step 4: Format and write output
-    print("\n[STEP 4] Formatting and writing output...")
+    # Step 4: Create Portfolio Sorted By DoD Bid Chg table
+    print("\n[STEP 4] Creating Portfolio Sorted By DoD Bid Chg With >3MM on Bid table...")
+    portfolio_dod_bid_df = create_portfolio_dod_bid_chg_table(df)
+    print(f"Filtered to {len(portfolio_dod_bid_df):,} rows with QUANTITY > 0, TB >3mm has value, and DoD TB>3mm non-zero")
+    
+    # Step 5: Create Portfolio Sorted By MTD Bid Chg table
+    print("\n[STEP 5] Creating Portfolio Sorted By MTD Bid Chg With >3MM on Bid table...")
+    portfolio_mtd_bid_df = create_portfolio_mtd_bid_chg_table(df)
+    print(f"Filtered to {len(portfolio_mtd_bid_df):,} rows with QUANTITY > 0, TB >3mm has value, and MTD TB non-zero")
+    
+    # Step 6: Create Portfolio Sorted By YTD Bid Chg table
+    print("\n[STEP 6] Creating Portfolio Sorted By YTD Bid Chg With >3MM on Bid table...")
+    portfolio_ytd_bid_df = create_portfolio_ytd_bid_chg_table(df)
+    print(f"Filtered to {len(portfolio_ytd_bid_df):,} rows with QUANTITY > 0, TB >3mm has value, and YTD TB non-zero")
+    
+    # Step 7: Create Portfolio Sorted By 1yr Bid Chg table
+    print("\n[STEP 7] Creating Portfolio Sorted By 1yr Bid Chg With >3MM on Bid table...")
+    portfolio_1yr_bid_df = create_portfolio_1yr_bid_chg_table(df)
+    print(f"Filtered to {len(portfolio_1yr_bid_df):,} rows with QUANTITY > 0, TB >3mm has value, and 1yr TB non-zero")
+    
+    # Step 8: Format and write output
+    print("\n[STEP 8] Formatting and writing output...")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -365,11 +621,47 @@ def main() -> None:
         )
         f.write(table_str)
         
+        # Write Portfolio Sorted By DoD Bid Chg table
+        table_str = format_table(
+            portfolio_dod_bid_df,
+            "Portfolio Sorted By DoD Bid Chg With >3MM on Bid",
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str)
+        
+        # Write Portfolio Sorted By MTD Bid Chg table
+        table_str = format_table(
+            portfolio_mtd_bid_df,
+            "Portfolio Sorted By MTD Bid Chg With >3MM on Bid",
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str)
+        
+        # Write Portfolio Sorted By YTD Bid Chg table
+        table_str = format_table(
+            portfolio_ytd_bid_df,
+            "Portfolio Sorted By YTD Bid Chg With >3MM on Bid",
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str)
+        
+        # Write Portfolio Sorted By 1yr Bid Chg table
+        table_str = format_table(
+            portfolio_1yr_bid_df,
+            "Portfolio Sorted By 1yr Bid Chg With >3MM on Bid",
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str)
+        
         f.write("\n" + "="*100 + "\n")
         f.write("END OF REPORT\n")
     
     print(f"\nOutput written to: {OUTPUT_FILE}")
     print(f"Total rows in Portfolio CR01 Risk table: {len(portfolio_cr01_df):,}")
+    print(f"Total rows in Portfolio DoD Bid Chg table: {len(portfolio_dod_bid_df):,}")
+    print(f"Total rows in Portfolio MTD Bid Chg table: {len(portfolio_mtd_bid_df):,}")
+    print(f"Total rows in Portfolio YTD Bid Chg table: {len(portfolio_ytd_bid_df):,}")
+    print(f"Total rows in Portfolio 1yr Bid Chg table: {len(portfolio_1yr_bid_df):,}")
     print("\nDone!")
 
 
