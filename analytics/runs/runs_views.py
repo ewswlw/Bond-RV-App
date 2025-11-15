@@ -954,18 +954,18 @@ def write_excel_file(
             
             write_excel_file._used_sheet_names.add(sheet_name)
             
-            # Format DataFrame (numeric columns with thousand separators, Retracement as percentage)
-            # Keep original column names (not display names)
-            df_formatted = format_numeric_columns(df.copy())
+            # Keep original DataFrame with numeric types for Excel
+            # We'll apply formatting via openpyxl cell formatting (not string conversion)
+            df_excel = df.copy()
             
-            # Replace NaN with empty string for Excel display
-            df_formatted = df_formatted.fillna("")
+            # Replace NaN with None (Excel will display as empty)
+            df_excel = df_excel.where(pd.notna(df_excel), None)
             
-            # Ensure ASCII-safe strings
-            for col in df_formatted.columns:
-                if df_formatted[col].dtype == 'object':
-                    df_formatted[col] = df_formatted[col].apply(
-                        lambda x: ensure_ascii(str(x)) if x != "" else ""
+            # Ensure ASCII-safe strings for text columns only
+            for col in df_excel.columns:
+                if df_excel[col].dtype == 'object':
+                    df_excel[col] = df_excel[col].apply(
+                        lambda x: ensure_ascii(str(x)) if x is not None and x != "" else None
                     )
             
             # Calculate start row for DataFrame (after summary statistics if any)
@@ -973,25 +973,62 @@ def write_excel_file(
             start_row = summary_rows
             
             # Write DataFrame to Excel sheet (starting after summary rows)
-            df_formatted.to_excel(writer, sheet_name=sheet_name, index=False, startrow=start_row)
+            # Keep numeric types - we'll format via openpyxl
+            df_excel.to_excel(writer, sheet_name=sheet_name, index=False, startrow=start_row)
             
             # Get the worksheet
             worksheet = writer.sheets[sheet_name]
+            
+            # Apply Excel number formatting to numeric columns
+            # Find numeric columns and apply appropriate formats
+            for col_idx, col_name in enumerate(df_excel.columns, start=1):
+                if pd.api.types.is_numeric_dtype(df_excel[col_name]):
+                    # Determine format based on column name
+                    if col_name == "Retracement":
+                        # Percentage format: 0.5 -> 50.00%
+                        number_format = "0.00%"
+                    elif col_name == "Yrs (Cvn)":
+                        # One decimal place
+                        number_format = "0.0"
+                    else:
+                        # Thousand separators, no decimals (rounded)
+                        number_format = "#,##0"
+                    
+                    # Apply format to all data cells in this column
+                    # Data starts at start_row + 2 (start_row is 0-indexed for DataFrame, +1 for header row, +1 for 1-indexed Excel)
+                    data_start_row = start_row + 2  # Header row is at start_row + 1, data starts at start_row + 2
+                    data_end_row = start_row + len(df_excel) + 1  # Last data row
+                    for row_idx in range(data_start_row, data_end_row + 1):
+                        cell = worksheet.cell(row=row_idx, column=col_idx)
+                        # Apply format if cell has a numeric value
+                        if cell.value is not None:
+                            try:
+                                # Check if it's a number (int, float, or numeric string)
+                                float(cell.value)
+                                cell.number_format = number_format
+                            except (ValueError, TypeError):
+                                # Not a number, skip formatting
+                                pass
             
             # Write summary statistics FIRST (before creating table)
             # This ensures summary rows are in place before table validation
             if summary_dict:
                 # Write summary statistics starting at row 1
                 for idx, (key, value) in enumerate(summary_dict.items(), start=1):
-                    # Format numeric values with thousand separators
-                    if isinstance(value, (int, float)):
-                        formatted_value = f"{int(round(value)):,}"
-                    else:
-                        formatted_value = str(value)
-                    
                     # Write summary text to first cell
+                    # Keep numeric values as numbers, format display via Excel formatting
                     cell = worksheet.cell(row=idx, column=1)
-                    cell.value = f"{key}: {formatted_value}"
+                    if isinstance(value, (int, float)):
+                        # Store as number with thousand separator format
+                        cell.value = value
+                        cell.number_format = "#,##0"
+                        # Update cell to show label + formatted value
+                        # We'll use a formula or keep it as text with formatted number
+                        # Actually, let's keep it simple: text label + formatted number
+                        formatted_value = f"{int(round(value)):,}"
+                        cell.value = f"{key}: {formatted_value}"
+                    else:
+                        cell.value = f"{key}: {str(value)}"
             
             # Calculate start row for table (header row)
             start_row_table = summary_rows + 1 if summary_rows > 0 else 1
@@ -1008,9 +1045,9 @@ def write_excel_file(
             # Excel tables: range includes header row + all data rows
             table_start_row = start_row_table  # Header row (1-indexed)
             # End row = header row + number of data rows
-            # Note: len(df_formatted) is number of data rows, header is at table_start_row
-            table_end_row = table_start_row + len(df_formatted)  # Last data row
-            table_range = f"A{table_start_row}:{get_column_letter(len(df_formatted.columns))}{table_end_row}"
+            # Note: len(df_excel) is number of data rows, header is at table_start_row
+            table_end_row = table_start_row + len(df_excel)  # Last data row
+            table_range = f"A{table_start_row}:{get_column_letter(len(df_excel.columns))}{table_end_row}"
             
             # Create table - ensure range is valid and doesn't include summary rows
             # Verify table range doesn't overlap with summary rows
@@ -1034,7 +1071,7 @@ def write_excel_file(
             
             # Find Security column index for freeze panes
             security_col_idx = None
-            for idx, col in enumerate(df_formatted.columns, start=1):
+            for idx, col in enumerate(df_excel.columns, start=1):
                 if col == "Security":
                     security_col_idx = idx
                     break
@@ -1048,13 +1085,27 @@ def write_excel_file(
                 worksheet.freeze_panes = freeze_cell
             
             # Auto-fit column widths
-            for idx, col in enumerate(df_formatted.columns, start=1):
+            for idx, col in enumerate(df_excel.columns, start=1):
                 column_letter = get_column_letter(idx)
                 # Calculate max width (content + padding)
-                max_length = max(
-                    len(str(col)),  # Header length
-                    df_formatted[col].astype(str).map(len).max() if len(df_formatted) > 0 else 0
-                )
+                # For numeric columns, estimate width based on formatted display
+                if pd.api.types.is_numeric_dtype(df_excel[col]):
+                    # Estimate width for formatted numbers
+                    sample_values = df_excel[col].dropna().head(10)
+                    if len(sample_values) > 0:
+                        if col == "Retracement":
+                            max_length = max(len(f"{v*100:.2f}%") for v in sample_values if pd.notna(v))
+                        elif col == "Yrs (Cvn)":
+                            max_length = max(len(f"{v:.1f}") for v in sample_values if pd.notna(v))
+                        else:
+                            max_length = max(len(f"{int(round(v)):,}") for v in sample_values if pd.notna(v))
+                    else:
+                        max_length = len(str(col))
+                else:
+                    max_length = max(
+                        len(str(col)),  # Header length
+                        df_excel[col].astype(str).map(len).max() if len(df_excel) > 0 else 0
+                    )
                 # Set width with some padding (min 10, max 50)
                 adjusted_width = min(max(max_length + 2, 10), 50)
                 worksheet.column_dimensions[column_letter].width = adjusted_width
