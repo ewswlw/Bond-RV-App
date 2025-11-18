@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-17 19:30 ET - Added automatic validation and regeneration of runs_today.csv in runs_views.py and comb.py (ensures all scripts always use latest date from runs_timeseries.parquet), fixed Total CR01 calculation in runs_views.py (now sums POSITION CR01 from displayed table rows instead of pre-filtered data), added negative spread filtering to runs pipeline (filters negative Bid/Ask Spreads to NaN in parquet storage and aggregation), fixed DoD calculation Benchmark matching (uses (CUSIP, Benchmark) tuples instead of CUSIP-only), added universe RV views to runs_views.py  
+**Last Updated**: 2025-01-XX XX:XX ET - Added filter descriptions to all portfolio tables in runs_views.py (displays "Filters Applied:" sections before each table, matching uni_runs_view.txt format), added automatic validation and regeneration of runs_today.csv in runs_views.py and comb.py (ensures all scripts always use latest date from runs_timeseries.parquet), fixed Total CR01 calculation in runs_views.py (now sums POSITION CR01 from displayed table rows instead of pre-filtered data), added negative spread filtering to runs pipeline (filters negative Bid/Ask Spreads to NaN in parquet storage and aggregation), fixed DoD calculation Benchmark matching (uses (CUSIP, Benchmark) tuples instead of CUSIP-only), added universe RV views to runs_views.py  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -497,7 +497,7 @@ Bond-RV-App/
 │   │   └── all combos vs holdings.py  # All combinations vs holdings pair analytics (all portfolio CUSIPs from last date, no CR01 filters)
 │   ├── runs/             # Runs analytics scripts
 │   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/1yr changes, filters negative spreads, matches by (CUSIP, Benchmark) tuples)
-│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, auto-validates and regenerates CSV if stale)
+│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, includes "Filters Applied:" sections for all tables, auto-validates and regenerates CSV if stale)
 │   └── processed_data/   # Outputs from analytics scripts
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
@@ -1273,7 +1273,8 @@ pytest tests/unit/test_utils.py -v
     - Missing values: Blank (empty string) instead of "N/A"
     - Center-aligned columns and headers
     - Summary statistics (Total CR01, Cumulative CR01 TB) displayed at top of relevant tables with thousand separators
-  - Outputs all tables to `portfolio_runs_view.txt` in `analytics/processed_data/` (text format with center alignment)
+  - Filter descriptions: Each table includes a "Filters Applied:" section before the table data, listing all filters in bullet format (matching uni_runs_view.txt format)
+  - Outputs all tables to `portfolio_runs_view.txt` in `analytics/processed_data/` (text format with center alignment, includes filter descriptions)
   - Generates `portfolio_runs_view.xlsx` Excel file with 16 sheets (one per table):
     - Each sheet contains formatted Excel table with filters and banded rows (TableStyleMedium9)
     - Summary statistics displayed at top of relevant sheets (Total CR01, Cumulative CR01 TB) without merged cells
@@ -1353,4 +1354,31 @@ pytest tests/unit/test_utils.py -v
   - Prevents stale data issues by auto-regenerating CSV when parquet is updated
   - Provides clear warnings when regeneration occurs, with timestamps of parquet and CSV modification times
   - Uses subprocess to run `runs_today.py` with proper working directory and error handling
+- **2025-01-XX XX:XX ET**: Added filter descriptions to portfolio tables in runs_views.py:
+  - Added "Filters Applied:" sections before each of the 16 portfolio tables in `portfolio_runs_view.txt` output
+  - Matches the format already used in `uni_runs_view.txt` for consistency
+  - Each table now displays a clear bulleted list of filters applied:
+    - QUANTITY filters
+    - CR01 thresholds (CR01 @ Tight Bid >= 1000, POSITION CR01 >= 1,000)
+    - Spread filters (Tight Bid >3mm, Bid/Offer>3mm <= 3)
+    - Custom_Sector exclusions (Bail In)
+    - Dealer-specific filters
+    - Change filters (DoD/MTD/YTD/1yr non-zero)
+    - Sort order descriptions
+  - Uses existing `format_filter_description()` function for consistent formatting
+  - Filter descriptions are written before each table with separator lines (`===`)
+  - Improves transparency and makes it easier to understand what data is included in each table view
+  - Affects all 16 portfolio tables:
+    1. Portfolio Sorted By CR01 Risk
+    2. Portfolio Less Liquid Lines
+    3. Portfolio Sorted By DoD Bid Chg With >3MM on Bid
+    4. Portfolio Sorted By MTD Bid Chg With >3MM on Bid
+    5. Portfolio Sorted By YTD Bid Chg With >3MM on Bid
+    6. Portfolio Sorted By 1yr Bid Chg With >3MM on Bid
+    7. Size Bids
+    8. Size Bids Struggling Names
+    9. Size Bids Heavily Offered Lines
+    10. Size Bids With Minimal Bid/Offer
+    11. Size Bids With Minimal Bid/Offer No Bail In
+    12-16. Size Bids With Minimal Bid/Offer: Where {Dealer} Is Best Bid (5 dealer tables)
 
