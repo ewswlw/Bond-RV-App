@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-XX XX:XX ET - Added filter descriptions to all portfolio tables in runs_views.py (displays "Filters Applied:" sections before each table, matching uni_runs_view.txt format), added automatic validation and regeneration of runs_today.csv in runs_views.py and comb.py (ensures all scripts always use latest date from runs_timeseries.parquet), fixed Total CR01 calculation in runs_views.py (now sums POSITION CR01 from displayed table rows instead of pre-filtered data), added negative spread filtering to runs pipeline (filters negative Bid/Ask Spreads to NaN in parquet storage and aggregation), fixed DoD calculation Benchmark matching (uses (CUSIP, Benchmark) tuples instead of CUSIP-only), added universe RV views to runs_views.py  
+**Last Updated**: 2025-01-17 20:00 ET - Updated documentation to reflect actual codebase structure: consolidated all individual pair analytics scripts into single comb.py file (11 analysis functions), removed references to individual CSV outputs (now consolidated into comb.xlsx), documented empty utils/ directory, added tests/patterns/ directory documentation, cleaned up outdated file references  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -480,45 +480,16 @@ poetry run pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_c
 Bond-RV-App/
 ├── analytics/             # Analytics scripts and processed outputs
 │   ├── comb/             # Pair analytics scripts
-│   │   ├── comb.py           # Consolidated pair analytics script (runs all analyses, outputs single Excel file)
-│   │   ├── cr01_comb.py      # CR01 pair analytics (BQL universe vs holdings spreads)
-│   │   ├── all_comb.py       # All combinations pair analytics (all CAD CUSIPs)
-│   │   ├── term_comb.py      # Term combinations pair analytics (filters pairs where abs(Yrs (Cvn) difference) <= 0.8)
-│   │   ├── ticker_comb.py    # Ticker combinations pair analytics (filters pairs where Ticker values match exactly)
-│   │   ├── custom_sector.py  # Custom sector combinations pair analytics (filters pairs where Custom_Sector values match exactly)
-│   │   ├── custom_bond_comb.py  # Custom bond combinations pair analytics (pairs all CAD CUSIPs with fixed target bond, configurable by Ticker or Security)
-│   │   ├── custom_bond_vs_holdings.py  # Custom bond vs holdings pair analytics (pairs target CAD bonds from TARGET_BOND_TICKER/SECURITY with CR01-filtered holdings)
-│   │   ├── port_comb.py      # Portfolio combinations pair analytics (filters to portfolio CUSIPs as cusip_2)
-│   │   ├── port_executable.py  # Portfolio executable combinations pair analytics (filters cusip_1 by CR01 @ Wide Offer >= 2000, cusip_2 by portfolio)
-│   │   ├── cad_cheap_vs_usd.py  # CAD cheap vs USD pair analytics (CAD/USD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
-│   │   ├── cad_rich_vs_usd.py   # CAD rich vs USD pair analytics (USD/CAD pairs with matching Ticker, Custom_Sector, Yrs (Cvn) diff <= 2)
-│   │   ├── executable cr01 decent bid offer vs holdings.py  # CR01 pair analytics (dynamic CUSIP loading from runs_today.csv + portfolio, filters: CR01 @ Tight Bid > 2000, CR01 @ Wide Offer > 2000, Bid/Offer>3mm < 3)
-│   │   ├── executable cr01 vs holdings.py  # CR01 pair analytics (dynamic CUSIP loading from runs_today.csv + portfolio, filters: CR01 @ Tight Bid > 2000, CR01 @ Wide Offer > 2000, no Bid/Offer filter)
-│   │   └── all combos vs holdings.py  # All combinations vs holdings pair analytics (all portfolio CUSIPs from last date, no CR01 filters)
+│   │   └── comb.py           # Consolidated pair analytics script (contains 11 analysis functions: all_comb, term_comb, ticker_comb, custom_sector, custom_bond_comb, custom_bond_vs_holdings, cad_cheap_vs_usd, cad_rich_vs_usd, executable_cr01_vs_holdings, executable_cr01_decent_bid_offer_vs_holdings, all_combos_vs_holdings; outputs single Excel file with multiple sheets, plus comb.txt and comb_validation.txt)
 │   ├── runs/             # Runs analytics scripts
 │   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/1yr changes, filters negative spreads, matches by (CUSIP, Benchmark) tuples)
 │   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, includes "Filters Applied:" sections for all tables, auto-validates and regenerates CSV if stale)
 │   └── processed_data/   # Outputs from analytics scripts
-│       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets)
+│       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets, one sheet per analysis type)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
 │       ├── comb_validation.txt  # Validation log for pair analytics (from comb.py)
-│       ├── portfolio_runs_view.xlsx  # Excel file with 16 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
-│       ├── cr01_pair_analytics.csv
-│       ├── all_comb.csv
-│       ├── term_comb.csv
-│       ├── ticker_comb.csv
-│       ├── custom_sector_comb.csv
-│       ├── custom_bond_comb.csv
-│       ├── custom_bond_vs_holdings.csv
-│       ├── port_comb.csv
-│       ├── port_executable.csv
-│       ├── cad_cheap_vs_usd.csv
-│       ├── cad_rich_vs_usd.csv
-│       ├── executable cr01 decent bid offer vs holdings.csv
-│       ├── executable cr01 vs holdings.csv
-│       ├── all combos vs holdings.csv
-│       ├── runs_today.csv
-│       ├── portfolio_runs_view.txt  # Formatted portfolio tables (from runs_views.py, text output)
+│       ├── runs_today.csv    # Daily runs analytics output (from runs_today.py, used by runs_views.py and comb.py)
+│       ├── portfolio_runs_view.txt  # Formatted portfolio tables (from runs_views.py, text output, 16 tables)
 │       ├── portfolio_runs_view.xlsx  # Excel file with 16 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
 │       ├── uni_runs_view.txt  # Formatted universe tables (from runs_views.py, text output)
 │       └── uni_runs_view.xlsx  # Excel file with universe tables (from runs_views.py, formatted Excel tables on separate sheets)
@@ -534,7 +505,13 @@ Bond-RV-App/
 ├── Raw Data/              # Excel files (input)
 ├── References and Documentation/  # Ignored by Cursor
 ├── tests/                 # Test suite
-├── utils/                 # Utility scripts
+│   ├── unit/              # Unit tests
+│   ├── integration/       # Integration tests
+│   └── patterns/          # Pattern analysis and data exploration scripts (not production tests)
+│       ├── analyze_runs_data.py
+│       ├── data_analysis_and_questions.md
+│       └── deep_duplicate_analysis.py
+├── utils/                 # Utility scripts (currently empty, reserved for future utility scripts)
 ├── .cursorrules           # This file
 ├── .cursorignore          # Files to ignore
 ├── pyproject.toml         # Poetry project configuration
@@ -875,7 +852,7 @@ pytest tests/unit/test_utils.py -v
 ---
 
 **File Created**: January 2025  
-**Last Major Update**: 2025-11-08 11:30 ET  
+**Last Major Update**: 2025-01-17 20:00 ET  
 **Project**: Bond RV App - Data Pipeline  
 **Version**: 1.0
 
@@ -1381,4 +1358,11 @@ pytest tests/unit/test_utils.py -v
     10. Size Bids With Minimal Bid/Offer
     11. Size Bids With Minimal Bid/Offer No Bail In
     12-16. Size Bids With Minimal Bid/Offer: Where {Dealer} Is Best Bid (5 dealer tables)
+- **2025-01-17 20:00 ET**: Consolidated pair analytics scripts into single comb.py file:
+  - **IMPORTANT**: All individual pair analytics scripts (all_comb.py, term_comb.py, ticker_comb.py, custom_sector.py, custom_bond_comb.py, custom_bond_vs_holdings.py, port_comb.py, port_executable.py, cad_cheap_vs_usd.py, cad_rich_vs_usd.py, executable cr01 vs holdings.py, executable cr01 decent bid offer vs holdings.py, all combos vs holdings.py) have been consolidated into a single `analytics/comb/comb.py` file
+  - The consolidated file contains 11 analysis functions (run_all_comb_analysis, run_term_comb_analysis, run_ticker_comb_analysis, run_custom_sector_analysis, run_custom_bond_comb_analysis, run_custom_bond_vs_holdings_analysis, run_cad_cheap_vs_usd_analysis, run_cad_rich_vs_usd_analysis, run_executable_cr01_vs_holdings_analysis, run_executable_cr01_decent_bid_offer_vs_holdings_analysis, run_all_combos_vs_holdings_analysis)
+  - Individual CSV outputs have been replaced with a single Excel file (`comb.xlsx`) containing one sheet per analysis type
+  - Text outputs remain: `comb.txt` (summary) and `comb_validation.txt` (validation log)
+  - All individual CSV files referenced in earlier change log entries are no longer generated
+  - Historical change log entries documenting individual script creation are preserved for reference but scripts no longer exist as separate files
 
