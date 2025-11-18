@@ -205,16 +205,17 @@ UNIVERSE_EXCLUDED_SECTORS = [
     "Non Financial Hybrid",
     "Non Financial Hybrids",
     "USD Govt",
+    "University",
     "Utility",
 ]
 
 # Number of top and bottom rows to show for DoD moves table
 UNIVERSE_TOP_BOTTOM_N = 20
 
-# Sort column for Universe Sorted By DoD Moves table
-UNIVERSE_DOD_SORT_COLUMN = "DoD Chg Tight Bid >3mm"
+# Sort column for Universe Sorted By DoD Moves With Size On Offer >3mm table
+UNIVERSE_DOD_SORT_COLUMN = "DoD Chg Wide Offer >3mm"
 
-# Column order for Universe Sorted By DoD Moves table
+# Column order for Universe Sorted By DoD Moves With Size On Offer >3mm table
 UNIVERSE_DOD_MOVES_COLUMNS = [
     "Security",
     "Yrs (Cvn)",
@@ -238,6 +239,34 @@ UNIVERSE_DOD_MOVES_COLUMNS = [
     "DoD Chg Wide Offer",
     "DoD Chg Size @ Tight Bid >3mm",
     "DoD Chg Size @ Wide Offer >3mm",
+    "MTD Chg Tight Bid",
+    "YTD Chg Tight Bid",
+    "1yr Chg Tight Bid",
+    "MTD Equity",
+    "YTD Equity",
+    "Retracement",
+    "Custom_Sector",
+]
+
+# Column order for Universe Sorted By MTD Moves With Size On Offer >3mm table
+# Same as DoD Moves but excludes DoD columns (between # of Offers >3mm and MTD Chg Tight Bid)
+UNIVERSE_MTD_MOVES_COLUMNS = [
+    "Security",
+    "Yrs (Cvn)",
+    "Tight Bid >3mm",
+    "Wide Offer >3mm",
+    "Tight Bid",
+    "Wide Offer",
+    "Bid/Offer>3mm",
+    "Bid/Offer",
+    "Dealer @ Tight Bid >3mm",
+    "Dealer @ Wide Offer >3mm",
+    "Size @ Tight Bid >3mm",
+    "Size @ Wide Offer >3mm",
+    "CR01 @ Tight Bid",
+    "CR01 @ Wide Offer",
+    "# of Bids >3mm",
+    "# of Offers >3mm",
     "MTD Chg Tight Bid",
     "YTD Chg Tight Bid",
     "1yr Chg Tight Bid",
@@ -1170,7 +1199,7 @@ def create_universe_dod_moves_table(
     columns: list[str] = None
 ) -> pd.DataFrame:
     """
-    Create Universe Sorted By DoD Moves table.
+    Create Universe Sorted By DoD Moves With Size On Offer >3mm table.
     
     Filters out excluded Custom_Sector values, excludes rows where sort column is 0 or blank,
     and shows top N and bottom N rows by sort column (largest positive and most negative values).
@@ -1206,18 +1235,843 @@ def create_universe_dod_moves_table(
             (~df_filtered[custom_sector_col].isin(excluded_sectors))
         ].copy()
     
-    # Filter to rows that had "Tight Bid >3mm" on both last date and second-to-last date
+    # Filter to rows that had "Wide Offer >3mm" on both last date and second-to-last date
     # This ensures DoD changes are meaningful (comparing apples to apples)
-    tb_col = "Tight Bid >3mm"
-    dod_tb_col = "DoD Chg Tight Bid >3mm"
+    wo_col = "Wide Offer >3mm"
+    dod_wo_col = "DoD Chg Wide Offer >3mm"
     
-    if tb_col in df_filtered.columns:
-        # Filter to rows where Tight Bid >3mm has a value on the last date
-        df_filtered = df_filtered[df_filtered[tb_col].notna()].copy()
+    if wo_col in df_filtered.columns:
+        # Filter to rows where Wide Offer >3mm has a value on the last date
+        df_filtered = df_filtered[df_filtered[wo_col].notna()].copy()
     
-    if dod_tb_col in df_filtered.columns:
-        # Filter to rows where DoD Chg Tight Bid >3mm exists (implies it had value on both dates)
-        df_filtered = df_filtered[df_filtered[dod_tb_col].notna()].copy()
+    if dod_wo_col in df_filtered.columns:
+        # Filter to rows where DoD Chg Wide Offer >3mm exists (implies it had value on both dates)
+        df_filtered = df_filtered[df_filtered[dod_wo_col].notna()].copy()
+    
+    # Ensure sort column is numeric (convert to numeric, coerce errors to NaN)
+    if sort_column in df_filtered.columns:
+        df_filtered[sort_column] = pd.to_numeric(df_filtered[sort_column], errors='coerce')
+        
+        # Filter out rows where sort column is 0 or blank (NaN/null)
+        # Use numeric comparison: not NaN and not equal to 0
+        df_filtered = df_filtered[
+            df_filtered[sort_column].notna() & (df_filtered[sort_column] != 0)
+        ].copy()
+    
+    # Sort by sort column descending (largest to smallest)
+    if sort_column in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(sort_column, ascending=False, na_position='last')
+    
+    # Get top N and bottom N rows
+    total_rows = len(df_filtered)
+    if total_rows == 0:
+        # Return empty DataFrame with correct columns
+        available_columns = [col for col in columns if col in df.columns]
+        return pd.DataFrame(columns=available_columns)
+    
+    if total_rows <= (2 * top_bottom_n):
+        # If we have less than or equal to 2*N rows, show all
+        result_df = df_filtered.copy()
+    else:
+        # Get top N (largest positive values) - first N rows after descending sort
+        top_n = df_filtered.head(top_bottom_n).copy()
+        
+        # Get bottom N (most negative values) - last N rows after descending sort
+        # Since we sorted descending, tail() gives us the smallest values in ascending order
+        # We need to reverse them to get descending order (most negative first)
+        bottom_n = df_filtered.tail(top_bottom_n).copy()
+        
+        # Reverse the bottom N to get descending order (most negative first)
+        # This ensures -5 comes before -4, -4 before -3, etc.
+        bottom_n = bottom_n.iloc[::-1].reset_index(drop=True)
+        
+        # Combine top and bottom (top first, then bottom)
+        result_df = pd.concat([top_n, bottom_n], ignore_index=True)
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in result_df.columns]
+    result_df = result_df[available_columns].copy()
+    
+    return result_df
+
+
+def create_large_cr01_on_offer_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    columns: list[str] = None,
+    cr01_threshold: float = 3000.0,
+    bo_threshold: float = 3.0
+) -> pd.DataFrame:
+    """
+    Create Large CR01 On Offer table.
+    
+    Filters out excluded Custom_Sector values, filters to rows where CR01 @ Wide Offer > threshold
+    and Bid/Offer>3mm < threshold, and shows all matching rows (no top/bottom limit).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        columns: List of columns to include (defaults to UNIVERSE_DOD_MOVES_COLUMNS).
+        cr01_threshold: Minimum CR01 @ Wide Offer value (defaults to 3000.0).
+        bo_threshold: Maximum Bid/Offer>3mm value (defaults to 3.0).
+    
+    Returns:
+        Filtered DataFrame with selected columns, sorted by Bid/Offer>3mm ascending (low to high).
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if columns is None:
+        columns = UNIVERSE_DOD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows where CR01 @ Wide Offer > threshold
+    cr01_wo_col = "CR01 @ Wide Offer"
+    if cr01_wo_col in df_filtered.columns:
+        # Convert to numeric and filter to > threshold
+        df_filtered[cr01_wo_col] = pd.to_numeric(df_filtered[cr01_wo_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[cr01_wo_col].notna() & (df_filtered[cr01_wo_col] > cr01_threshold)
+        ].copy()
+    
+    # Filter to rows where Bid/Offer>3mm < threshold
+    bo_3mm_col = "Bid/Offer>3mm"
+    if bo_3mm_col in df_filtered.columns:
+        # Convert to numeric and filter to < threshold
+        df_filtered[bo_3mm_col] = pd.to_numeric(df_filtered[bo_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[bo_3mm_col].notna() & (df_filtered[bo_3mm_col] < bo_threshold)
+        ].copy()
+    
+    # Sort by Bid/Offer>3mm ascending (low to high)
+    if bo_3mm_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(bo_3mm_col, ascending=True, na_position='last')
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in df_filtered.columns]
+    result_df = df_filtered[available_columns].copy()
+    
+    return result_df
+
+
+def create_large_cr01_on_offer_no_longs_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    columns: list[str] = None,
+    cr01_threshold: float = 3000.0,
+    bo_threshold: float = 3.0,
+    yrs_cvn_threshold: float = 11.0
+) -> pd.DataFrame:
+    """
+    Create Large CR01 On Offer, No Longs table.
+    
+    Filters out excluded Custom_Sector values, filters to rows where CR01 @ Wide Offer > threshold,
+    Bid/Offer>3mm < threshold, and Yrs (Cvn) < threshold, and shows all matching rows (no top/bottom limit).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        columns: List of columns to include (defaults to UNIVERSE_DOD_MOVES_COLUMNS).
+        cr01_threshold: Minimum CR01 @ Wide Offer value (defaults to 3000.0).
+        bo_threshold: Maximum Bid/Offer>3mm value (defaults to 3.0).
+        yrs_cvn_threshold: Maximum Yrs (Cvn) value (defaults to 11.0).
+    
+    Returns:
+        Filtered DataFrame with selected columns, sorted by Bid/Offer>3mm ascending (low to high).
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if columns is None:
+        columns = UNIVERSE_DOD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows where CR01 @ Wide Offer > threshold
+    cr01_wo_col = "CR01 @ Wide Offer"
+    if cr01_wo_col in df_filtered.columns:
+        # Convert to numeric and filter to > threshold
+        df_filtered[cr01_wo_col] = pd.to_numeric(df_filtered[cr01_wo_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[cr01_wo_col].notna() & (df_filtered[cr01_wo_col] > cr01_threshold)
+        ].copy()
+    
+    # Filter to rows where Bid/Offer>3mm < threshold
+    bo_3mm_col = "Bid/Offer>3mm"
+    if bo_3mm_col in df_filtered.columns:
+        # Convert to numeric and filter to < threshold
+        df_filtered[bo_3mm_col] = pd.to_numeric(df_filtered[bo_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[bo_3mm_col].notna() & (df_filtered[bo_3mm_col] < bo_threshold)
+        ].copy()
+    
+    # Filter to rows where Yrs (Cvn) < threshold
+    yrs_cvn_col = "Yrs (Cvn)"
+    if yrs_cvn_col in df_filtered.columns:
+        # Convert to numeric and filter to < threshold
+        df_filtered[yrs_cvn_col] = pd.to_numeric(df_filtered[yrs_cvn_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[yrs_cvn_col].notna() & (df_filtered[yrs_cvn_col] < yrs_cvn_threshold)
+        ].copy()
+    
+    # Sort by Bid/Offer>3mm ascending (low to high)
+    if bo_3mm_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(bo_3mm_col, ascending=True, na_position='last')
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in df_filtered.columns]
+    result_df = df_filtered[available_columns].copy()
+    
+    return result_df
+
+
+def create_tough_to_find_offers_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    columns: list[str] = None,
+    cr01_threshold: float = 2000.0,
+    bo_threshold: float = 4.0,
+    offers_threshold: float = 2.0
+) -> pd.DataFrame:
+    """
+    Create Tough To Find Offers table.
+    
+    Filters out excluded Custom_Sector values, filters to rows where CR01 @ Wide Offer > threshold,
+    Bid/Offer>3mm < threshold, and # Offers>3mm < threshold, and shows all matching rows (no top/bottom limit).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        columns: List of columns to include (defaults to UNIVERSE_DOD_MOVES_COLUMNS).
+        cr01_threshold: Minimum CR01 @ Wide Offer value (defaults to 2000.0).
+        bo_threshold: Maximum Bid/Offer>3mm value (defaults to 4.0).
+        offers_threshold: Maximum # Offers>3mm value (defaults to 2.0).
+    
+    Returns:
+        Filtered DataFrame with selected columns, sorted by Bid/Offer>3mm ascending (low to high).
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if columns is None:
+        columns = UNIVERSE_DOD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows where CR01 @ Wide Offer > threshold
+    cr01_wo_col = "CR01 @ Wide Offer"
+    if cr01_wo_col in df_filtered.columns:
+        # Convert to numeric and filter to > threshold
+        df_filtered[cr01_wo_col] = pd.to_numeric(df_filtered[cr01_wo_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[cr01_wo_col].notna() & (df_filtered[cr01_wo_col] > cr01_threshold)
+        ].copy()
+    
+    # Filter to rows where Bid/Offer>3mm < threshold
+    bo_3mm_col = "Bid/Offer>3mm"
+    if bo_3mm_col in df_filtered.columns:
+        # Convert to numeric and filter to < threshold
+        df_filtered[bo_3mm_col] = pd.to_numeric(df_filtered[bo_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[bo_3mm_col].notna() & (df_filtered[bo_3mm_col] < bo_threshold)
+        ].copy()
+    
+    # Filter to rows where # Offers>3mm < threshold
+    offers_3mm_col = "# of Offers >3mm"
+    if offers_3mm_col in df_filtered.columns:
+        # Convert to numeric and filter to < threshold
+        df_filtered[offers_3mm_col] = pd.to_numeric(df_filtered[offers_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[offers_3mm_col].notna() & (df_filtered[offers_3mm_col] < offers_threshold)
+        ].copy()
+    
+    # Sort by Bid/Offer>3mm ascending (low to high)
+    if bo_3mm_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(bo_3mm_col, ascending=True, na_position='last')
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in df_filtered.columns]
+    result_df = df_filtered[available_columns].copy()
+    
+    return result_df
+
+
+def create_carry_bonds_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    columns: list[str] = None,
+    cr01_threshold: float = 500.0,
+    bo_threshold: float = 6.0,
+    yrs_cvn_threshold: float = 2.0,
+    wo_3mm_threshold: float = 60.0
+) -> pd.DataFrame:
+    """
+    Create Carry Bonds table.
+    
+    Filters out excluded Custom_Sector values, filters to rows where CR01 @ Wide Offer > threshold,
+    Bid/Offer>3mm < threshold, Yrs (Cvn) < threshold, and Wide Offer >3mm > threshold,
+    and shows all matching rows (no top/bottom limit).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        columns: List of columns to include (defaults to UNIVERSE_DOD_MOVES_COLUMNS).
+        cr01_threshold: Minimum CR01 @ Wide Offer value (defaults to 500.0).
+        bo_threshold: Maximum Bid/Offer>3mm value (defaults to 6.0).
+        yrs_cvn_threshold: Maximum Yrs (Cvn) value (defaults to 2.0).
+        wo_3mm_threshold: Minimum Wide Offer >3mm value (defaults to 60.0).
+    
+    Returns:
+        Filtered DataFrame with selected columns, sorted by Wide Offer >3mm descending (high to low).
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if columns is None:
+        columns = UNIVERSE_DOD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows where CR01 @ Wide Offer > threshold
+    cr01_wo_col = "CR01 @ Wide Offer"
+    if cr01_wo_col in df_filtered.columns:
+        # Convert to numeric and filter to > threshold
+        df_filtered[cr01_wo_col] = pd.to_numeric(df_filtered[cr01_wo_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[cr01_wo_col].notna() & (df_filtered[cr01_wo_col] > cr01_threshold)
+        ].copy()
+    
+    # Filter to rows where Bid/Offer>3mm < threshold
+    bo_3mm_col = "Bid/Offer>3mm"
+    if bo_3mm_col in df_filtered.columns:
+        # Convert to numeric and filter to < threshold
+        df_filtered[bo_3mm_col] = pd.to_numeric(df_filtered[bo_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[bo_3mm_col].notna() & (df_filtered[bo_3mm_col] < bo_threshold)
+        ].copy()
+    
+    # Filter to rows where Yrs (Cvn) < threshold
+    yrs_cvn_col = "Yrs (Cvn)"
+    if yrs_cvn_col in df_filtered.columns:
+        # Convert to numeric and filter to < threshold
+        df_filtered[yrs_cvn_col] = pd.to_numeric(df_filtered[yrs_cvn_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[yrs_cvn_col].notna() & (df_filtered[yrs_cvn_col] < yrs_cvn_threshold)
+        ].copy()
+    
+    # Filter to rows where Wide Offer >3mm > threshold
+    wo_3mm_col = "Wide Offer >3mm"
+    if wo_3mm_col in df_filtered.columns:
+        # Convert to numeric and filter to > threshold
+        df_filtered[wo_3mm_col] = pd.to_numeric(df_filtered[wo_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[wo_3mm_col].notna() & (df_filtered[wo_3mm_col] > wo_3mm_threshold)
+        ].copy()
+    
+    # Sort by Wide Offer >3mm descending (high to low)
+    if wo_3mm_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(wo_3mm_col, ascending=False, na_position='last')
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in df_filtered.columns]
+    result_df = df_filtered[available_columns].copy()
+    
+    return result_df
+
+
+def create_carry_bonds_sorted_by_mtd_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    columns: list[str] = None,
+    cr01_threshold: float = 500.0,
+    bo_threshold: float = 6.0,
+    yrs_cvn_threshold: float = 2.0,
+    wo_3mm_threshold: float = 60.0
+) -> pd.DataFrame:
+    """
+    Create Carry Bonds Sorted by MTD Moves table.
+    
+    Filters out excluded Custom_Sector values, filters to rows where CR01 @ Wide Offer > threshold,
+    Bid/Offer>3mm < threshold, Yrs (Cvn) < threshold, and Wide Offer >3mm > threshold,
+    and shows all matching rows (no top/bottom limit).
+    Excludes DoD columns (between # of Offers >3mm and MTD Chg Tight Bid).
+    Sorted by MTD Chg Tight Bid descending (largest to smallest).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        columns: List of columns to include (defaults to UNIVERSE_MTD_MOVES_COLUMNS).
+        cr01_threshold: Minimum CR01 @ Wide Offer value (defaults to 500.0).
+        bo_threshold: Maximum Bid/Offer>3mm value (defaults to 6.0).
+        yrs_cvn_threshold: Maximum Yrs (Cvn) value (defaults to 2.0).
+        wo_3mm_threshold: Minimum Wide Offer >3mm value (defaults to 60.0).
+    
+    Returns:
+        Filtered DataFrame with selected columns, sorted by MTD Chg Tight Bid descending (largest to smallest).
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if columns is None:
+        columns = UNIVERSE_MTD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows where CR01 @ Wide Offer > threshold
+    cr01_wo_col = "CR01 @ Wide Offer"
+    if cr01_wo_col in df_filtered.columns:
+        # Convert to numeric and filter to > threshold
+        df_filtered[cr01_wo_col] = pd.to_numeric(df_filtered[cr01_wo_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[cr01_wo_col].notna() & (df_filtered[cr01_wo_col] > cr01_threshold)
+        ].copy()
+    
+    # Filter to rows where Bid/Offer>3mm < threshold
+    bo_3mm_col = "Bid/Offer>3mm"
+    if bo_3mm_col in df_filtered.columns:
+        # Convert to numeric and filter to < threshold
+        df_filtered[bo_3mm_col] = pd.to_numeric(df_filtered[bo_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[bo_3mm_col].notna() & (df_filtered[bo_3mm_col] < bo_threshold)
+        ].copy()
+    
+    # Filter to rows where Yrs (Cvn) < threshold
+    yrs_cvn_col = "Yrs (Cvn)"
+    if yrs_cvn_col in df_filtered.columns:
+        # Convert to numeric and filter to < threshold
+        df_filtered[yrs_cvn_col] = pd.to_numeric(df_filtered[yrs_cvn_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[yrs_cvn_col].notna() & (df_filtered[yrs_cvn_col] < yrs_cvn_threshold)
+        ].copy()
+    
+    # Filter to rows where Wide Offer >3mm > threshold
+    wo_3mm_col = "Wide Offer >3mm"
+    if wo_3mm_col in df_filtered.columns:
+        # Convert to numeric and filter to > threshold
+        df_filtered[wo_3mm_col] = pd.to_numeric(df_filtered[wo_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[wo_3mm_col].notna() & (df_filtered[wo_3mm_col] > wo_3mm_threshold)
+        ].copy()
+    
+    # Sort by MTD Chg Tight Bid descending (largest to smallest)
+    mtd_tb_col = "MTD Chg Tight Bid"
+    if mtd_tb_col in df_filtered.columns:
+        df_filtered[mtd_tb_col] = pd.to_numeric(df_filtered[mtd_tb_col], errors='coerce')
+        df_filtered = df_filtered.sort_values(mtd_tb_col, ascending=False, na_position='last')
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in df_filtered.columns]
+    result_df = df_filtered[available_columns].copy()
+    
+    return result_df
+
+
+def create_universe_dod_moves_wo_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    sort_column: str = None,
+    top_bottom_n: int = None,
+    columns: list[str] = None
+) -> pd.DataFrame:
+    """
+    Create Universe Sorted By DoD Moves table.
+    
+    Filters out excluded Custom_Sector values, excludes rows where sort column is 0 or blank,
+    and shows top N and bottom N rows by sort column (largest positive and most negative values).
+    Uses regular Wide Offer (not Wide Offer >3mm) for filtering and sorting.
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        sort_column: Column to sort by (defaults to "DoD Chg Wide Offer").
+        top_bottom_n: Number of top and bottom rows to show (defaults to UNIVERSE_TOP_BOTTOM_N).
+        columns: List of columns to include (defaults to UNIVERSE_DOD_MOVES_COLUMNS).
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if sort_column is None:
+        sort_column = "DoD Chg Wide Offer"
+    if top_bottom_n is None:
+        top_bottom_n = UNIVERSE_TOP_BOTTOM_N
+    if columns is None:
+        columns = UNIVERSE_DOD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows that had "Wide Offer" on both last date and second-to-last date
+    # This ensures DoD changes are meaningful (comparing apples to apples)
+    wo_col = "Wide Offer"
+    dod_wo_col = "DoD Chg Wide Offer"
+    
+    if wo_col in df_filtered.columns:
+        # Filter to rows where Wide Offer has a value on the last date
+        df_filtered = df_filtered[df_filtered[wo_col].notna()].copy()
+    
+    if dod_wo_col in df_filtered.columns:
+        # Filter to rows where DoD Chg Wide Offer exists (implies it had value on both dates)
+        df_filtered = df_filtered[df_filtered[dod_wo_col].notna()].copy()
+    
+    # Ensure sort column is numeric (convert to numeric, coerce errors to NaN)
+    if sort_column in df_filtered.columns:
+        df_filtered[sort_column] = pd.to_numeric(df_filtered[sort_column], errors='coerce')
+        
+        # Filter out rows where sort column is 0 or blank (NaN/null)
+        # Use numeric comparison: not NaN and not equal to 0
+        df_filtered = df_filtered[
+            df_filtered[sort_column].notna() & (df_filtered[sort_column] != 0)
+        ].copy()
+    
+    # Sort by sort column descending (largest to smallest)
+    if sort_column in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(sort_column, ascending=False, na_position='last')
+    
+    # Get top N and bottom N rows
+    total_rows = len(df_filtered)
+    if total_rows == 0:
+        # Return empty DataFrame with correct columns
+        available_columns = [col for col in columns if col in df.columns]
+        return pd.DataFrame(columns=available_columns)
+    
+    if total_rows <= (2 * top_bottom_n):
+        # If we have less than or equal to 2*N rows, show all
+        result_df = df_filtered.copy()
+    else:
+        # Get top N (largest positive values) - first N rows after descending sort
+        top_n = df_filtered.head(top_bottom_n).copy()
+        
+        # Get bottom N (most negative values) - last N rows after descending sort
+        # Since we sorted descending, tail() gives us the smallest values in ascending order
+        # We need to reverse them to get descending order (most negative first)
+        bottom_n = df_filtered.tail(top_bottom_n).copy()
+        
+        # Reverse the bottom N to get descending order (most negative first)
+        # This ensures -5 comes before -4, -4 before -3, etc.
+        bottom_n = bottom_n.iloc[::-1].reset_index(drop=True)
+        
+        # Combine top and bottom (top first, then bottom)
+        result_df = pd.concat([top_n, bottom_n], ignore_index=True)
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in result_df.columns]
+    result_df = result_df[available_columns].copy()
+    
+    return result_df
+
+
+def create_universe_mtd_moves_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    sort_column: str = None,
+    top_bottom_n: int = None,
+    columns: list[str] = None
+) -> pd.DataFrame:
+    """
+    Create Universe Sorted By MTD Moves With Size On Offer >3mm table.
+    
+    Filters out excluded Custom_Sector values, filters to rows where Wide Offer >3mm > 0,
+    excludes rows where sort column is 0 or blank, and shows top N and bottom N rows by sort column.
+    Excludes DoD columns (between # of Offers >3mm and MTD Chg Tight Bid).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        sort_column: Column to sort by (defaults to "MTD Chg Tight Bid").
+        top_bottom_n: Number of top and bottom rows to show (defaults to UNIVERSE_TOP_BOTTOM_N).
+        columns: List of columns to include (defaults to UNIVERSE_MTD_MOVES_COLUMNS).
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if sort_column is None:
+        sort_column = "MTD Chg Tight Bid"
+    if top_bottom_n is None:
+        top_bottom_n = UNIVERSE_TOP_BOTTOM_N
+    if columns is None:
+        columns = UNIVERSE_MTD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows where Wide Offer >3mm > 0
+    wo_3mm_col = "Wide Offer >3mm"
+    if wo_3mm_col in df_filtered.columns:
+        # Convert to numeric and filter to > 0
+        df_filtered[wo_3mm_col] = pd.to_numeric(df_filtered[wo_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[wo_3mm_col].notna() & (df_filtered[wo_3mm_col] > 0)
+        ].copy()
+    
+    # Ensure sort column is numeric (convert to numeric, coerce errors to NaN)
+    if sort_column in df_filtered.columns:
+        df_filtered[sort_column] = pd.to_numeric(df_filtered[sort_column], errors='coerce')
+        
+        # Filter out rows where sort column is 0 or blank (NaN/null)
+        # Use numeric comparison: not NaN and not equal to 0
+        df_filtered = df_filtered[
+            df_filtered[sort_column].notna() & (df_filtered[sort_column] != 0)
+        ].copy()
+    
+    # Sort by sort column descending (largest to smallest)
+    if sort_column in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(sort_column, ascending=False, na_position='last')
+    
+    # Get top N and bottom N rows
+    total_rows = len(df_filtered)
+    if total_rows == 0:
+        # Return empty DataFrame with correct columns
+        available_columns = [col for col in columns if col in df.columns]
+        return pd.DataFrame(columns=available_columns)
+    
+    if total_rows <= (2 * top_bottom_n):
+        # If we have less than or equal to 2*N rows, show all
+        result_df = df_filtered.copy()
+    else:
+        # Get top N (largest positive values) - first N rows after descending sort
+        top_n = df_filtered.head(top_bottom_n).copy()
+        
+        # Get bottom N (most negative values) - last N rows after descending sort
+        # Since we sorted descending, tail() gives us the smallest values in ascending order
+        # We need to reverse them to get descending order (most negative first)
+        bottom_n = df_filtered.tail(top_bottom_n).copy()
+        
+        # Reverse the bottom N to get descending order (most negative first)
+        # This ensures -5 comes before -4, -4 before -3, etc.
+        bottom_n = bottom_n.iloc[::-1].reset_index(drop=True)
+        
+        # Combine top and bottom (top first, then bottom)
+        result_df = pd.concat([top_n, bottom_n], ignore_index=True)
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in result_df.columns]
+    result_df = result_df[available_columns].copy()
+    
+    return result_df
+
+
+def create_universe_ytd_moves_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    sort_column: str = None,
+    top_bottom_n: int = None,
+    columns: list[str] = None
+) -> pd.DataFrame:
+    """
+    Create Universe Sorted By YTD Moves With Size On Offer >3mm table.
+    
+    Filters out excluded Custom_Sector values, filters to rows where Wide Offer >3mm > 0,
+    excludes rows where sort column is 0 or blank, and shows top N and bottom N rows by sort column.
+    Excludes DoD columns (between # of Offers >3mm and MTD Chg Tight Bid).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        sort_column: Column to sort by (defaults to "YTD Chg Tight Bid").
+        top_bottom_n: Number of top and bottom rows to show (defaults to UNIVERSE_TOP_BOTTOM_N).
+        columns: List of columns to include (defaults to UNIVERSE_MTD_MOVES_COLUMNS).
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if sort_column is None:
+        sort_column = "YTD Chg Tight Bid"
+    if top_bottom_n is None:
+        top_bottom_n = UNIVERSE_TOP_BOTTOM_N
+    if columns is None:
+        columns = UNIVERSE_MTD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows where Wide Offer >3mm > 0
+    wo_3mm_col = "Wide Offer >3mm"
+    if wo_3mm_col in df_filtered.columns:
+        # Convert to numeric and filter to > 0
+        df_filtered[wo_3mm_col] = pd.to_numeric(df_filtered[wo_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[wo_3mm_col].notna() & (df_filtered[wo_3mm_col] > 0)
+        ].copy()
+    
+    # Ensure sort column is numeric (convert to numeric, coerce errors to NaN)
+    if sort_column in df_filtered.columns:
+        df_filtered[sort_column] = pd.to_numeric(df_filtered[sort_column], errors='coerce')
+        
+        # Filter out rows where sort column is 0 or blank (NaN/null)
+        # Use numeric comparison: not NaN and not equal to 0
+        df_filtered = df_filtered[
+            df_filtered[sort_column].notna() & (df_filtered[sort_column] != 0)
+        ].copy()
+    
+    # Sort by sort column descending (largest to smallest)
+    if sort_column in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(sort_column, ascending=False, na_position='last')
+    
+    # Get top N and bottom N rows
+    total_rows = len(df_filtered)
+    if total_rows == 0:
+        # Return empty DataFrame with correct columns
+        available_columns = [col for col in columns if col in df.columns]
+        return pd.DataFrame(columns=available_columns)
+    
+    if total_rows <= (2 * top_bottom_n):
+        # If we have less than or equal to 2*N rows, show all
+        result_df = df_filtered.copy()
+    else:
+        # Get top N (largest positive values) - first N rows after descending sort
+        top_n = df_filtered.head(top_bottom_n).copy()
+        
+        # Get bottom N (most negative values) - last N rows after descending sort
+        # Since we sorted descending, tail() gives us the smallest values in ascending order
+        # We need to reverse them to get descending order (most negative first)
+        bottom_n = df_filtered.tail(top_bottom_n).copy()
+        
+        # Reverse the bottom N to get descending order (most negative first)
+        # This ensures -5 comes before -4, -4 before -3, etc.
+        bottom_n = bottom_n.iloc[::-1].reset_index(drop=True)
+        
+        # Combine top and bottom (top first, then bottom)
+        result_df = pd.concat([top_n, bottom_n], ignore_index=True)
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in result_df.columns]
+    result_df = result_df[available_columns].copy()
+    
+    return result_df
+
+
+def create_universe_1yr_moves_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    sort_column: str = None,
+    top_bottom_n: int = None,
+    columns: list[str] = None
+) -> pd.DataFrame:
+    """
+    Create Universe Sorted By 1yr Moves With Size On Offer >3mm table.
+    
+    Filters out excluded Custom_Sector values, filters to rows where Wide Offer >3mm > 0,
+    excludes rows where sort column is 0 or blank, and shows top N and bottom N rows by sort column.
+    Excludes DoD columns (between # of Offers >3mm and MTD Chg Tight Bid).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        sort_column: Column to sort by (defaults to "1yr Chg Tight Bid").
+        top_bottom_n: Number of top and bottom rows to show (defaults to UNIVERSE_TOP_BOTTOM_N).
+        columns: List of columns to include (defaults to UNIVERSE_MTD_MOVES_COLUMNS).
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if sort_column is None:
+        sort_column = "1yr Chg Tight Bid"
+    if top_bottom_n is None:
+        top_bottom_n = UNIVERSE_TOP_BOTTOM_N
+    if columns is None:
+        columns = UNIVERSE_MTD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows where Wide Offer >3mm > 0
+    wo_3mm_col = "Wide Offer >3mm"
+    if wo_3mm_col in df_filtered.columns:
+        # Convert to numeric and filter to > 0
+        df_filtered[wo_3mm_col] = pd.to_numeric(df_filtered[wo_3mm_col], errors='coerce')
+        df_filtered = df_filtered[
+            df_filtered[wo_3mm_col].notna() & (df_filtered[wo_3mm_col] > 0)
+        ].copy()
     
     # Ensure sort column is numeric (convert to numeric, coerce errors to NaN)
     if sort_column in df_filtered.columns:
@@ -1299,13 +2153,27 @@ def write_excel_file(
             # Remove invalid characters for Excel sheet names: / \ ? * [ ] :
             sanitized_title = table_title.replace('/', '-').replace('\\', '-').replace('?', '').replace('*', '').replace('[', '').replace(']', '').replace(':', '-')
             
+            # Initialize dealer_match for dealer-specific tables
+            dealer_match = ''
+            if 'Where' in sanitized_title:
+                # Extract dealer name from "Where {Dealer} Is..."
+                parts = sanitized_title.split('Where ')
+                if len(parts) > 1:
+                    dealer_part = parts[1].split(' Is')[0] if ' Is' in parts[1] else ''
+                    dealer_match = dealer_part.strip() if dealer_part else ''
+            
             # For dealer tables, use shorter unique names
-            if 'Where' in sanitized_title and 'Best Bid' in sanitized_title:
+            if 'Where' in sanitized_title and ('Best Bid' in sanitized_title or 'Wide Offer' in sanitized_title):
                 # Extract dealer name and create short unique sheet name
-                # Format: "Min BO - {Dealer}" (shorter to ensure uniqueness)
-                dealer_match = sanitized_title.split('Where ')[1].split(' Is')[0] if 'Where ' in sanitized_title else ''
                 if dealer_match:
-                    sheet_name = f"Min BO - {dealer_match}"[:31]
+                    if 'Best Bid' in sanitized_title:
+                        # Format: "Min BO - {Dealer}" (shorter to ensure uniqueness)
+                        sheet_name = f"Min BO - {dealer_match}"[:31]
+                    elif 'Wide Offer' in sanitized_title:
+                        # Format: "CR01 WO - {Dealer}" for Large CR01 On Offer dealer tables
+                        sheet_name = f"CR01 WO - {dealer_match}"[:31]
+                    else:
+                        sheet_name = sanitized_title[:31] if len(sanitized_title) <= 31 else sanitized_title[:28] + "..."
                 else:
                     sheet_name = sanitized_title[:31] if len(sanitized_title) <= 31 else sanitized_title[:28] + "..."
             else:
@@ -1321,9 +2189,16 @@ def write_excel_file(
             while sheet_name in write_excel_file._used_sheet_names:
                 if 'Where' in sanitized_title and dealer_match:
                     # Try even shorter name
-                    sheet_name = f"BO - {dealer_match}"[:31]
-                    if sheet_name in write_excel_file._used_sheet_names:
-                        sheet_name = f"{dealer_match} Best Bid"[:31]
+                    if 'Best Bid' in sanitized_title:
+                        sheet_name = f"BO - {dealer_match}"[:31]
+                        if sheet_name in write_excel_file._used_sheet_names:
+                            sheet_name = f"{dealer_match} Best Bid"[:31]
+                    elif 'Wide Offer' in sanitized_title:
+                        sheet_name = f"WO - {dealer_match}"[:31]
+                        if sheet_name in write_excel_file._used_sheet_names:
+                            sheet_name = f"{dealer_match} WO"[:31]
+                    else:
+                        sheet_name = f"{original_sheet_name[:27]}_{counter}"[:31]
                 else:
                     # Append number for other duplicates
                     sheet_name = f"{original_sheet_name[:27]}_{counter}"[:31]
@@ -1689,6 +2564,12 @@ def main() -> None:
             'df': portfolio_cr01_df,
             'summary': summary_dict_cr01
         }
+        filter_desc_cr01 = format_filter_description([
+            "QUANTITY > 0",
+            "Sorted by POSITION CR01 descending (largest to smallest)"
+        ])
+        f.write(filter_desc_cr01 + "\n")
+        f.write("="*100 + "\n\n")
         table_str = format_table(
             portfolio_cr01_df,
             table_title_cr01,
@@ -1704,6 +2585,13 @@ def main() -> None:
             'df': portfolio_less_liquid_df,
             'summary': summary_dict_less_liquid
         }
+        filter_desc_less_liquid = format_filter_description([
+            "QUANTITY > 0",
+            "Tight Bid >3mm is blank (NaN/null)",
+            "Sorted by POSITION CR01 descending (largest to smallest)"
+        ])
+        f.write(filter_desc_less_liquid + "\n")
+        f.write("="*100 + "\n\n")
         table_str = format_table(
             portfolio_less_liquid_df,
             table_title_less_liquid,
@@ -1715,6 +2603,14 @@ def main() -> None:
         # Write Portfolio Sorted By DoD Bid Chg table
         table_title_dod = "Portfolio Sorted By DoD Bid Chg With >3MM on Bid"
         excel_tables[table_title_dod] = {'df': portfolio_dod_bid_df, 'summary': {}}
+        filter_desc_dod = format_filter_description([
+            "QUANTITY > 0",
+            "Tight Bid >3mm has a value (non-blank)",
+            "DoD Chg Tight Bid >3mm is non-zero (positive or negative) and non-blank",
+            "Sorted by DoD Chg Tight Bid >3mm descending (largest changes first)"
+        ])
+        f.write(filter_desc_dod + "\n")
+        f.write("="*100 + "\n\n")
         table_str = format_table(
             portfolio_dod_bid_df,
             table_title_dod,
@@ -1725,6 +2621,14 @@ def main() -> None:
         # Write Portfolio Sorted By MTD Bid Chg table
         table_title_mtd = "Portfolio Sorted By MTD Bid Chg With >3MM on Bid"
         excel_tables[table_title_mtd] = {'df': portfolio_mtd_bid_df, 'summary': {}}
+        filter_desc_mtd = format_filter_description([
+            "QUANTITY > 0",
+            "Tight Bid >3mm has a value (non-blank)",
+            "MTD Chg Tight Bid is non-zero (positive or negative) and non-blank",
+            "Sorted by MTD Chg Tight Bid descending (largest changes first)"
+        ])
+        f.write(filter_desc_mtd + "\n")
+        f.write("="*100 + "\n\n")
         table_str = format_table(
             portfolio_mtd_bid_df,
             table_title_mtd,
@@ -1735,6 +2639,14 @@ def main() -> None:
         # Write Portfolio Sorted By YTD Bid Chg table
         table_title_ytd = "Portfolio Sorted By YTD Bid Chg With >3MM on Bid"
         excel_tables[table_title_ytd] = {'df': portfolio_ytd_bid_df, 'summary': {}}
+        filter_desc_ytd = format_filter_description([
+            "QUANTITY > 0",
+            "Tight Bid >3mm has a value (non-blank)",
+            "YTD Chg Tight Bid is non-zero (positive or negative) and non-blank",
+            "Sorted by YTD Chg Tight Bid descending (largest changes first)"
+        ])
+        f.write(filter_desc_ytd + "\n")
+        f.write("="*100 + "\n\n")
         table_str = format_table(
             portfolio_ytd_bid_df,
             table_title_ytd,
@@ -1745,6 +2657,14 @@ def main() -> None:
         # Write Portfolio Sorted By 1yr Bid Chg table
         table_title_1yr = "Portfolio Sorted By 1yr Bid Chg With >3MM on Bid"
         excel_tables[table_title_1yr] = {'df': portfolio_1yr_bid_df, 'summary': {}}
+        filter_desc_1yr = format_filter_description([
+            "QUANTITY > 0",
+            "Tight Bid >3mm has a value (non-blank)",
+            "1yr Chg Tight Bid is non-zero (positive or negative) and non-blank",
+            "Sorted by 1yr Chg Tight Bid descending (largest changes first)"
+        ])
+        f.write(filter_desc_1yr + "\n")
+        f.write("="*100 + "\n\n")
         table_str = format_table(
             portfolio_1yr_bid_df,
             table_title_1yr,
@@ -1756,6 +2676,14 @@ def main() -> None:
         table_title_size_bids = "Size Bids"
         summary_dict = {"Cumulative CR01 TB": cumulative_cr01_tb}
         excel_tables[table_title_size_bids] = {'df': size_bids_df, 'summary': summary_dict}
+        filter_desc_size_bids = format_filter_description([
+            "QUANTITY > 0",
+            "CR01 @ Tight Bid >= 1000",
+            "POSITION CR01 >= 1,000",
+            "Sorted by CR01 @ Tight Bid descending (largest first)"
+        ])
+        f.write(filter_desc_size_bids + "\n")
+        f.write("="*100 + "\n\n")
         table_str = format_table(
             size_bids_df,
             table_title_size_bids,
@@ -1768,6 +2696,15 @@ def main() -> None:
         table_title_struggling = "Size Bids Struggling Names"
         summary_dict_struggling_names = {"Cumulative CR01 TB": cumulative_cr01_tb_struggling_names}
         excel_tables[table_title_struggling] = {'df': size_bids_struggling_names_df, 'summary': summary_dict_struggling_names}
+        filter_desc_struggling = format_filter_description([
+            "QUANTITY > 0",
+            "CR01 @ Tight Bid >= 1000",
+            "POSITION CR01 >= 1,000",
+            "Retracement < 0.5 (Retracement < 50%)",
+            "Sorted by CR01 @ Tight Bid descending (largest first)"
+        ])
+        f.write(filter_desc_struggling + "\n")
+        f.write("="*100 + "\n\n")
         table_str = format_table(
             size_bids_struggling_names_df,
             table_title_struggling,
@@ -1780,6 +2717,16 @@ def main() -> None:
         table_title_heavily_offered = "Size Bids Heavily Offered Lines"
         summary_dict_heavily_offered_lines = {"Cumulative CR01 TB": cumulative_cr01_tb_heavily_offered_lines}
         excel_tables[table_title_heavily_offered] = {'df': size_bids_heavily_offered_lines_df, 'summary': summary_dict_heavily_offered_lines}
+        filter_desc_heavily_offered = format_filter_description([
+            "QUANTITY > 0",
+            "CR01 @ Tight Bid >= 1000",
+            "POSITION CR01 >= 1,000",
+            "Custom_Sector != \"Bail In\" (excludes Bail In sector)",
+            "# of Offers >3mm > 2",
+            "Sorted by CR01 @ Tight Bid descending (largest first)"
+        ])
+        f.write(filter_desc_heavily_offered + "\n")
+        f.write("="*100 + "\n\n")
         table_str = format_table(
             size_bids_heavily_offered_lines_df,
             table_title_heavily_offered,
@@ -1792,6 +2739,15 @@ def main() -> None:
         table_title_minimal_bo = "Size Bids With Minimal Bid/Offer"
         summary_dict_minimal_bo = {"Cumulative CR01 TB": cumulative_cr01_tb_minimal_bo}
         excel_tables[table_title_minimal_bo] = {'df': size_bids_minimal_bo_df, 'summary': summary_dict_minimal_bo}
+        filter_desc_minimal_bo = format_filter_description([
+            "QUANTITY > 0",
+            "CR01 @ Tight Bid >= 1000",
+            "POSITION CR01 >= 1,000",
+            "Bid/Offer>3mm <= 3 (excludes > 3 or blank)",
+            "Sorted by CR01 @ Tight Bid descending (largest first)"
+        ])
+        f.write(filter_desc_minimal_bo + "\n")
+        f.write("="*100 + "\n\n")
         table_str = format_table(
             size_bids_minimal_bo_df,
             table_title_minimal_bo,
@@ -1804,6 +2760,16 @@ def main() -> None:
         table_title_minimal_bo_no_bail = "Size Bids With Minimal Bid/Offer No Bail In"
         summary_dict_minimal_bo_no_bail_in = {"Cumulative CR01 TB": cumulative_cr01_tb_minimal_bo_no_bail_in}
         excel_tables[table_title_minimal_bo_no_bail] = {'df': size_bids_minimal_bo_no_bail_in_df, 'summary': summary_dict_minimal_bo_no_bail_in}
+        filter_desc_minimal_bo_no_bail = format_filter_description([
+            "QUANTITY > 0",
+            "CR01 @ Tight Bid >= 1000",
+            "POSITION CR01 >= 1,000",
+            "Bid/Offer>3mm <= 3 (excludes > 3 or blank)",
+            "Custom_Sector != \"Bail In\" (excludes Bail In sector)",
+            "Sorted by CR01 @ Tight Bid descending (largest first)"
+        ])
+        f.write(filter_desc_minimal_bo_no_bail + "\n")
+        f.write("="*100 + "\n\n")
         table_str = format_table(
             size_bids_minimal_bo_no_bail_in_df,
             table_title_minimal_bo_no_bail,
@@ -1819,6 +2785,16 @@ def main() -> None:
             table_title_dealer = f"Size Bids With Minimal Bid/Offer: Where {dealer} Is Best Bid"
             summary_dict_dealer = {"Cumulative CR01 TB": dealer_cumulative}
             excel_tables[table_title_dealer] = {'df': dealer_df, 'summary': summary_dict_dealer}
+            filter_desc_dealer = format_filter_description([
+                "QUANTITY > 0",
+                "CR01 @ Tight Bid >= 1000",
+                "POSITION CR01 >= 1,000",
+                "Bid/Offer>3mm <= 3 (excludes > 3 or blank)",
+                f"Dealer @ Tight Bid >3mm = {dealer}",
+                "Sorted by CR01 @ Tight Bid descending (largest first)"
+            ])
+            f.write(filter_desc_dealer + "\n")
+            f.write("="*100 + "\n\n")
             table_str = format_table(
                 dealer_df,
                 table_title_dealer,
@@ -1866,6 +2842,25 @@ def main() -> None:
     print("\nDone!")
 
 
+def format_filter_description(filter_parts: list[str]) -> str:
+    """
+    Format filter description as multi-line text for better readability.
+    
+    Args:
+        filter_parts: List of filter description parts (each part is a sentence or clause).
+    
+    Returns:
+        Multi-line formatted filter description string.
+    """
+    # Join parts with newlines and proper indentation
+    # Use ASCII-safe "-" instead of Unicode bullet points
+    formatted = "Filters Applied:\n"
+    for part in filter_parts:
+        # Add 2 spaces indentation for each filter line
+        formatted += f"  - {part.strip()}\n"
+    return formatted.rstrip()  # Remove trailing newline
+
+
 def generate_universe_views() -> None:
     """
     Generate universe RV views from runs_today.csv.
@@ -1906,21 +2901,187 @@ def generate_universe_views() -> None:
     print(f"MTD reference date: {mtd_ref_date}")
     print(f"YTD reference date: {ytd_ref_date}")
     
-    # Step 3: Create Universe Sorted By DoD Moves table
-    print("\n[STEP 3] Creating Universe Sorted By DoD Moves table...")
+    # Step 3: Create Universe Sorted By DoD Moves With Size On Offer >3mm table
+    print("\n[STEP 3] Creating Universe Sorted By DoD Moves With Size On Offer >3mm table...")
     universe_dod_df = create_universe_dod_moves_table(df)
     
-    # Build filter description
+    # Build filter description for >3mm table
     excluded_sectors_str = ", ".join(UNIVERSE_EXCLUDED_SECTORS)
-    filter_description = (
-        f"Filters Applied: Excluded Custom_Sector values ({excluded_sectors_str}). "
-        f"Only includes rows where Tight Bid >3mm had a value on both last date and second-to-last date. "
-        f"Excluded rows where {UNIVERSE_DOD_SORT_COLUMN} is 0 or blank. "
-        f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by {UNIVERSE_DOD_SORT_COLUMN}."
-    )
+    filter_description_3mm = format_filter_description([
+        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+        f"Only includes rows where Wide Offer >3mm had a value on both last date and second-to-last date",
+        f"Excluded rows where {UNIVERSE_DOD_SORT_COLUMN} is 0 or blank",
+        f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by {UNIVERSE_DOD_SORT_COLUMN}"
+    ])
     
     print(f"Filtered to {len(universe_dod_df):,} rows")
-    print(f"Filters: {filter_description}")
+    print(f"Filters: {filter_description_3mm}")
+    
+    # Step 3.5: Create Universe Sorted By DoD Moves table (sorted by DoD WO)
+    print("\n[STEP 3.5] Creating Universe Sorted By DoD Moves table...")
+    universe_dod_wo_df = create_universe_dod_moves_wo_table(df)
+    
+    # Build filter description for regular WO table
+    filter_description_wo = format_filter_description([
+        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+        f"Only includes rows where Wide Offer had a value on both last date and second-to-last date",
+        f"Excluded rows where DoD Chg Wide Offer is 0 or blank",
+        f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by DoD Chg Wide Offer"
+    ])
+    
+    print(f"Filtered to {len(universe_dod_wo_df):,} rows")
+    print(f"Filters: {filter_description_wo}")
+    
+    # Step 3.75: Create Universe Sorted By MTD Moves With Size On Offer >3mm table
+    print("\n[STEP 3.75] Creating Universe Sorted By MTD Moves With Size On Offer >3mm table...")
+    universe_mtd_df = create_universe_mtd_moves_table(df)
+    
+    # Build filter description for MTD table
+    filter_description_mtd = format_filter_description([
+        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+        f"Only includes rows where Wide Offer >3mm > 0",
+        f"Excluded rows where MTD Chg Tight Bid is 0 or blank",
+        f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by MTD Chg Tight Bid"
+    ])
+    
+    print(f"Filtered to {len(universe_mtd_df):,} rows")
+    print(f"Filters: {filter_description_mtd}")
+    
+    # Step 3.8: Create Universe Sorted By YTD Moves With Size On Offer >3mm table
+    print("\n[STEP 3.8] Creating Universe Sorted By YTD Moves With Size On Offer >3mm table...")
+    universe_ytd_df = create_universe_ytd_moves_table(df)
+    
+    # Build filter description for YTD table
+    filter_description_ytd = format_filter_description([
+        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+        f"Only includes rows where Wide Offer >3mm > 0",
+        f"Excluded rows where YTD Chg Tight Bid is 0 or blank",
+        f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by YTD Chg Tight Bid"
+    ])
+    
+    print(f"Filtered to {len(universe_ytd_df):,} rows")
+    print(f"Filters: {filter_description_ytd}")
+    
+    # Step 3.85: Create Universe Sorted By 1yr Moves With Size On Offer >3mm table
+    print("\n[STEP 3.85] Creating Universe Sorted By 1yr Moves With Size On Offer >3mm table...")
+    universe_1yr_df = create_universe_1yr_moves_table(df)
+    
+    # Build filter description for 1yr table
+    filter_description_1yr = format_filter_description([
+        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+        f"Only includes rows where Wide Offer >3mm > 0",
+        f"Excluded rows where 1yr Chg Tight Bid is 0 or blank",
+        f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by 1yr Chg Tight Bid"
+    ])
+    
+    print(f"Filtered to {len(universe_1yr_df):,} rows")
+    print(f"Filters: {filter_description_1yr}")
+    
+    # Step 3.9: Create Large CR01 On Offer table
+    print("\n[STEP 3.9] Creating Large CR01 On Offer table...")
+    large_cr01_df = create_large_cr01_on_offer_table(df)
+    
+    # Build filter description for Large CR01 On Offer table
+    filter_description_large_cr01 = format_filter_description([
+        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+        f"CR01 @ Wide Offer > 3000",
+        f"Bid/Offer>3mm < 3",
+        f"Showing all matching rows (sorted by Bid/Offer>3mm ascending, low to high)"
+    ])
+    
+    print(f"Filtered to {len(large_cr01_df):,} rows")
+    print(f"Filters: {filter_description_large_cr01}")
+    
+    # Step 3.92: Create Large CR01 On Offer tables by dealer
+    print("\n[STEP 3.92] Creating Large CR01 On Offer tables by dealer...")
+    dealer_wo_col = "Dealer @ Wide Offer >3mm"
+    large_cr01_by_dealer = {}
+    
+    if dealer_wo_col in large_cr01_df.columns:
+        # Get unique dealers (excluding NaN/null values)
+        unique_dealers = large_cr01_df[dealer_wo_col].dropna().unique()
+        unique_dealers = sorted([d for d in unique_dealers if pd.notna(d) and str(d).strip() != ''])
+        
+        print(f"Found {len(unique_dealers)} unique dealers: {', '.join(unique_dealers)}")
+        
+        for dealer in unique_dealers:
+            # Filter to rows where this dealer is the Dealer @ Wide Offer >3mm
+            dealer_df = large_cr01_df[
+                large_cr01_df[dealer_wo_col].notna() & 
+                (large_cr01_df[dealer_wo_col] == dealer)
+            ].copy()
+            
+            if len(dealer_df) > 0:
+                large_cr01_by_dealer[dealer] = dealer_df
+                print(f"  {dealer}: {len(dealer_df)} rows")
+    else:
+        print(f"Warning: Column '{dealer_wo_col}' not found in DataFrame")
+    
+    # Step 3.95: Create Large CR01 On Offer, No Longs table
+    print("\n[STEP 3.95] Creating Large CR01 On Offer, No Longs table...")
+    large_cr01_no_longs_df = create_large_cr01_on_offer_no_longs_table(df)
+    
+    # Build filter description for Large CR01 On Offer, No Longs table
+    filter_description_large_cr01_no_longs = format_filter_description([
+        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+        f"CR01 @ Wide Offer > 3000",
+        f"Bid/Offer>3mm < 3",
+        f"Yrs (Cvn) < 11",
+        f"Showing all matching rows (sorted by Bid/Offer>3mm ascending, low to high)"
+    ])
+    
+    print(f"Filtered to {len(large_cr01_no_longs_df):,} rows")
+    print(f"Filters: {filter_description_large_cr01_no_longs}")
+    
+    # Step 3.98: Create Tough To Find Offers table
+    print("\n[STEP 3.98] Creating Tough To Find Offers table...")
+    tough_to_find_offers_df = create_tough_to_find_offers_table(df)
+    
+    # Build filter description for Tough To Find Offers table
+    filter_description_tough_to_find = format_filter_description([
+        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+        f"CR01 @ Wide Offer > 2000",
+        f"Bid/Offer>3mm < 4",
+        f"# Offers>3mm < 2",
+        f"Showing all matching rows (sorted by Bid/Offer>3mm ascending, low to high)"
+    ])
+    
+    print(f"Filtered to {len(tough_to_find_offers_df):,} rows")
+    print(f"Filters: {filter_description_tough_to_find}")
+    
+    # Step 3.99: Create Carry Bonds table
+    print("\n[STEP 3.99] Creating Carry Bonds table...")
+    carry_bonds_df = create_carry_bonds_table(df)
+    
+    # Build filter description for Carry Bonds table
+    filter_description_carry_bonds = format_filter_description([
+        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+        f"CR01 @ Wide Offer > 500",
+        f"Bid/Offer>3mm < 6",
+        f"Yrs (Cvn) < 2",
+        f"Wide Offer >3mm > 60",
+        f"Showing all matching rows (sorted by Wide Offer >3mm descending, high to low)"
+    ])
+    
+    print(f"Filtered to {len(carry_bonds_df):,} rows")
+    print(f"Filters: {filter_description_carry_bonds}")
+    
+    # Step 3.995: Create Carry Bonds Sorted by MTD Moves table
+    print("\n[STEP 3.995] Creating Carry Bonds Sorted by MTD Moves table...")
+    carry_bonds_mtd_df = create_carry_bonds_sorted_by_mtd_table(df)
+    
+    # Build filter description for Carry Bonds Sorted by MTD Moves table
+    filter_description_carry_bonds_mtd = format_filter_description([
+        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+        f"CR01 @ Wide Offer > 500",
+        f"Bid/Offer>3mm < 6",
+        f"Yrs (Cvn) < 2",
+        f"Wide Offer >3mm > 60",
+        f"Showing all matching rows (sorted by MTD Chg Tight Bid descending, largest to smallest)"
+    ])
+    
+    print(f"Filtered to {len(carry_bonds_mtd_df):,} rows")
+    print(f"Filters: {filter_description_carry_bonds_mtd}")
     
     # Step 4: Format and write output
     print("\n[STEP 4] Formatting and writing output...")
@@ -1946,24 +3107,207 @@ def generate_universe_views() -> None:
             f.write(f"  YTD Reference Date: {ytd_ref_date.strftime('%Y-%m-%d')}\n")
         else:
             f.write(f"  YTD Reference Date: N/A\n")
-        f.write(f"\n{filter_description}\n")
+        f.write(f"\n{filter_description_3mm}\n")
         f.write("="*100 + "\n")
         
-        # Write Universe Sorted By DoD Moves table
-        table_title_dod = "Universe Sorted By DoD Moves"
-        excel_tables[table_title_dod] = {'df': universe_dod_df, 'summary': {}}
-        table_str = format_table(
+        # Write Universe Sorted By DoD Moves With Size On Offer >3mm table
+        table_title_dod_3mm = "Universe Sorted By DoD Moves With Size On Offer >3mm"
+        excel_tables[table_title_dod_3mm] = {'df': universe_dod_df, 'summary': {}}
+        table_str_3mm = format_table(
             universe_dod_df,
-            table_title_dod,
+            table_title_dod_3mm,
             COLUMN_DISPLAY_NAMES
         )
-        f.write(table_str)
+        f.write(table_str_3mm)
+        
+        f.write("\n" + "="*100 + "\n")
+        f.write(f"\n{filter_description_wo}\n")
+        f.write("="*100 + "\n")
+        
+        # Write Universe Sorted By DoD Moves table (sorted by DoD WO)
+        table_title_dod_wo = "Universe Sorted By DoD Moves"
+        excel_tables[table_title_dod_wo] = {'df': universe_dod_wo_df, 'summary': {}}
+        table_str_wo = format_table(
+            universe_dod_wo_df,
+            table_title_dod_wo,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str_wo)
+        
+        f.write("\n" + "="*100 + "\n")
+        f.write(f"\n{filter_description_mtd}\n")
+        f.write("="*100 + "\n")
+        
+        # Write Universe Sorted By MTD Moves With Size On Offer >3mm table
+        table_title_mtd = "Universe Sorted By MTD Moves With Size On Offer >3mm"
+        excel_tables[table_title_mtd] = {'df': universe_mtd_df, 'summary': {}}
+        table_str_mtd = format_table(
+            universe_mtd_df,
+            table_title_mtd,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str_mtd)
+        
+        f.write("\n" + "="*100 + "\n")
+        f.write(f"\n{filter_description_ytd}\n")
+        f.write("="*100 + "\n")
+        
+        # Write Universe Sorted By YTD Moves With Size On Offer >3mm table
+        table_title_ytd = "Universe Sorted By YTD Moves With Size On Offer >3mm"
+        excel_tables[table_title_ytd] = {'df': universe_ytd_df, 'summary': {}}
+        table_str_ytd = format_table(
+            universe_ytd_df,
+            table_title_ytd,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str_ytd)
+        
+        f.write("\n" + "="*100 + "\n")
+        f.write(f"\n{filter_description_1yr}\n")
+        f.write("="*100 + "\n")
+        
+        # Write Universe Sorted By 1yr Moves With Size On Offer >3mm table
+        table_title_1yr = "Universe Sorted By 1yr Moves With Size On Offer >3mm"
+        excel_tables[table_title_1yr] = {'df': universe_1yr_df, 'summary': {}}
+        table_str_1yr = format_table(
+            universe_1yr_df,
+            table_title_1yr,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str_1yr)
+        
+        f.write("\n" + "="*100 + "\n")
+        f.write(f"\n{filter_description_large_cr01}\n")
+        f.write("="*100 + "\n")
+        
+        # Write Large CR01 On Offer table
+        table_title_large_cr01 = "Large CR01 On Offer"
+        excel_tables[table_title_large_cr01] = {'df': large_cr01_df, 'summary': {}}
+        table_str_large_cr01 = format_table(
+            large_cr01_df,
+            table_title_large_cr01,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str_large_cr01)
+        
+        # Write Large CR01 On Offer tables by dealer
+        dealer_wo_col = "Dealer @ Wide Offer >3mm"
+        if dealer_wo_col in large_cr01_df.columns:
+            # Get unique dealers (excluding NaN/null values)
+            unique_dealers = large_cr01_df[dealer_wo_col].dropna().unique()
+            unique_dealers = sorted([d for d in unique_dealers if pd.notna(d) and str(d).strip() != ''])
+            
+            for dealer in unique_dealers:
+                # Filter to rows where this dealer is the Dealer @ Wide Offer >3mm
+                dealer_df = large_cr01_df[
+                    large_cr01_df[dealer_wo_col].notna() & 
+                    (large_cr01_df[dealer_wo_col] == dealer)
+                ].copy()
+                
+                if len(dealer_df) > 0:
+                    f.write("\n" + "="*100 + "\n")
+                    dealer_filter_description = format_filter_description([
+                        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+                        f"CR01 @ Wide Offer > 3000",
+                        f"Bid/Offer>3mm < 3",
+                        f"Dealer @ Wide Offer >3mm = {dealer}",
+                        f"Showing all matching rows (sorted by Bid/Offer>3mm ascending, low to high)"
+                    ])
+                    f.write(f"\n{dealer_filter_description}\n")
+                    f.write("="*100 + "\n")
+                    
+                    # Write dealer-specific table
+                    table_title_dealer = f"Large CR01 On Offer: Where {dealer} Is The Wide Offer"
+                    excel_tables[table_title_dealer] = {'df': dealer_df, 'summary': {}}
+                    table_str_dealer = format_table(
+                        dealer_df,
+                        table_title_dealer,
+                        COLUMN_DISPLAY_NAMES
+                    )
+                    f.write(table_str_dealer)
+        
+        f.write("\n" + "="*100 + "\n")
+        f.write(f"\n{filter_description_large_cr01_no_longs}\n")
+        f.write("="*100 + "\n")
+        
+        # Write Large CR01 On Offer, No Longs table
+        table_title_large_cr01_no_longs = "Large CR01 On Offer, No Longs"
+        excel_tables[table_title_large_cr01_no_longs] = {'df': large_cr01_no_longs_df, 'summary': {}}
+        table_str_large_cr01_no_longs = format_table(
+            large_cr01_no_longs_df,
+            table_title_large_cr01_no_longs,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str_large_cr01_no_longs)
+        
+        f.write("\n" + "="*100 + "\n")
+        f.write(f"\n{filter_description_tough_to_find}\n")
+        f.write("="*100 + "\n")
+        
+        # Write Tough To Find Offers table
+        table_title_tough_to_find = "Tough To Find Offers"
+        excel_tables[table_title_tough_to_find] = {'df': tough_to_find_offers_df, 'summary': {}}
+        table_str_tough_to_find = format_table(
+            tough_to_find_offers_df,
+            table_title_tough_to_find,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str_tough_to_find)
+        
+        f.write("\n" + "="*100 + "\n")
+        f.write(f"\n{filter_description_carry_bonds}\n")
+        f.write("="*100 + "\n")
+        
+        # Write Carry Bonds table
+        table_title_carry_bonds = "Carry Bonds"
+        excel_tables[table_title_carry_bonds] = {'df': carry_bonds_df, 'summary': {}}
+        table_str_carry_bonds = format_table(
+            carry_bonds_df,
+            table_title_carry_bonds,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str_carry_bonds)
+        
+        f.write("\n" + "="*100 + "\n")
+        f.write(f"\n{filter_description_carry_bonds_mtd}\n")
+        f.write("="*100 + "\n")
+        
+        # Write Carry Bonds Sorted by MTD Moves table
+        table_title_carry_bonds_mtd = "Carry Bonds Sorted by MTD Moves"
+        excel_tables[table_title_carry_bonds_mtd] = {'df': carry_bonds_mtd_df, 'summary': {}}
+        table_str_carry_bonds_mtd = format_table(
+            carry_bonds_mtd_df,
+            table_title_carry_bonds_mtd,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str_carry_bonds_mtd)
         
         f.write("\n" + "="*100 + "\n")
         f.write("END OF REPORT\n")
     
     print(f"\nOutput written to: {UNI_OUTPUT_FILE}")
-    print(f"Total rows in Universe DoD Moves table: {len(universe_dod_df):,}")
+    print(f"Total rows in Universe DoD Moves With Size On Offer >3mm table: {len(universe_dod_df):,}")
+    print(f"Total rows in Universe DoD Moves table: {len(universe_dod_wo_df):,}")
+    print(f"Total rows in Universe MTD Moves With Size On Offer >3mm table: {len(universe_mtd_df):,}")
+    print(f"Total rows in Universe YTD Moves With Size On Offer >3mm table: {len(universe_ytd_df):,}")
+    print(f"Total rows in Universe 1yr Moves With Size On Offer >3mm table: {len(universe_1yr_df):,}")
+    print(f"Total rows in Large CR01 On Offer table: {len(large_cr01_df):,}")
+    # Count dealer-specific tables
+    dealer_wo_col = "Dealer @ Wide Offer >3mm"
+    if dealer_wo_col in large_cr01_df.columns:
+        unique_dealers = large_cr01_df[dealer_wo_col].dropna().unique()
+        unique_dealers = sorted([d for d in unique_dealers if pd.notna(d) and str(d).strip() != ''])
+        for dealer in unique_dealers:
+            dealer_df = large_cr01_df[
+                large_cr01_df[dealer_wo_col].notna() & 
+                (large_cr01_df[dealer_wo_col] == dealer)
+            ].copy()
+            if len(dealer_df) > 0:
+                print(f"Total rows in Large CR01 On Offer: Where {dealer} Is The Wide Offer table: {len(dealer_df):,}")
+    print(f"Total rows in Large CR01 On Offer, No Longs table: {len(large_cr01_no_longs_df):,}")
+    print(f"Total rows in Tough To Find Offers table: {len(tough_to_find_offers_df):,}")
+    print(f"Total rows in Carry Bonds table: {len(carry_bonds_df):,}")
+    print(f"Total rows in Carry Bonds Sorted by MTD Moves table: {len(carry_bonds_mtd_df):,}")
     
     # Step 5: Write Excel file
     print("\n[STEP 5] Writing Excel file...")
