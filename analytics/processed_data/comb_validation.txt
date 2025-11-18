@@ -1,5 +1,5 @@
 PAIR ANALYTICS VALIDATION LOG
-Generated: 2025-11-14 17:09:32
+Generated: 2025-11-17 17:45:27
 ================================================================================
 
 Starting pair analytics execution...
@@ -174,9 +174,9 @@ Configuration:
 [custom_bond_vs_holdings] Starting analysis...
 [custom_bond_vs_holdings] Found 1701 CAD CUSIPs
 [custom_bond_vs_holdings] Found 29 target bond(s)
-[custom_bond_vs_holdings] Found 66 CR01 holdings CUSIPs
-[custom_bond_vs_holdings] After filtering: 6475 rows, 35 CUSIPs
-[custom_bond_vs_holdings] Success: 314 pairs generated
+[custom_bond_vs_holdings] Found 71 CR01 holdings CUSIPs
+[custom_bond_vs_holdings] After filtering: 6660 rows, 36 CUSIPs
+[custom_bond_vs_holdings] Success: 329 pairs generated
 [cad_cheap_vs_usd] Starting analysis...
 [cad_cheap_vs_usd] After filtering: 167425 rows, 905 CUSIPs
 [cad_cheap_vs_usd] Found 2382 CUSIPs with valid mappings
@@ -192,13 +192,13 @@ Configuration:
 [cad_rich_vs_usd] Found 443 valid pairs
 [cad_rich_vs_usd] Success: 443 pairs generated
 [executable_cr01_vs_holdings] Starting analysis...
-[executable_cr01_vs_holdings] Found 66 CR01 holdings CUSIPs
-[executable_cr01_vs_holdings] Found 210 CR01 universe CUSIPs
-[executable_cr01_vs_holdings] Success: 4410 pairs generated
+[executable_cr01_vs_holdings] Found 71 CR01 holdings CUSIPs
+[executable_cr01_vs_holdings] Found 215 CR01 universe CUSIPs
+[executable_cr01_vs_holdings] Success: 4730 pairs generated
 [executable_cr01_decent_bid_offer_vs_holdings] Starting analysis...
-[executable_cr01_decent_bid_offer_vs_holdings] Found 36 CR01 holdings CUSIPs
-[executable_cr01_decent_bid_offer_vs_holdings] Found 115 CR01 universe CUSIPs
-[executable_cr01_decent_bid_offer_vs_holdings] Success: 1265 pairs generated
+[executable_cr01_decent_bid_offer_vs_holdings] Found 43 CR01 holdings CUSIPs
+[executable_cr01_decent_bid_offer_vs_holdings] Found 119 CR01 universe CUSIPs
+[executable_cr01_decent_bid_offer_vs_holdings] Success: 1785 pairs generated
 [all_combos_vs_holdings] Starting analysis...
 [all_combos_vs_holdings] Found 258 portfolio CUSIPs
 [all_combos_vs_holdings] Success: 2916 pairs generated

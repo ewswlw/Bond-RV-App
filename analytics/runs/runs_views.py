@@ -269,6 +269,76 @@ def ensure_ascii(value: Optional[str]) -> str:
     return str(value).encode("ascii", errors="replace").decode("ascii")
 
 
+def ensure_numeric_types(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert all numeric columns to proper numeric types after reading CSV.
+    
+    This ensures that filtering operations (e.g., DoD TB>3mm) work correctly.
+    
+    Args:
+        df: DataFrame read from CSV (may have numeric columns as object/string types).
+    
+    Returns:
+        DataFrame with all numeric columns converted to float64.
+    """
+    df_converted = df.copy()
+    
+    # List of all numeric columns that should be converted
+    numeric_columns = [
+        # Spread columns
+        "Tight Bid >3mm",
+        "Wide Offer >3mm",
+        "Tight Bid",
+        "Wide Offer",
+        "Bid/Offer>3mm",
+        "Bid/Offer",
+        # Size columns
+        "Size @ Tight Bid >3mm",
+        "Size @ Wide Offer >3mm",
+        "Cumm. Bid Size",
+        "Cumm. Offer Size",
+        "Bid Size RBC",
+        "Offer Size RBC",
+        # CR01 columns
+        "CR01 @ Tight Bid",
+        "CR01 @ Wide Offer",
+        # RBC columns
+        "Bid RBC",
+        "Ask RBC",
+        # Count columns
+        "# of Bids >3mm",
+        "# of Offers >3mm",
+        # Portfolio columns
+        "QUANTITY",
+        "POSITION CR01",
+        # Bond details columns
+        "G Sprd",
+        "Yrs (Cvn)",
+        "vs BI",
+        "vs BCE",
+        "MTD Equity",
+        "YTD Equity",
+        "Retracement",
+        "Yrs Since Issue",
+        "Z Score",
+        "Retracement2",
+        # Risk column
+        "Bid Workout Risk",
+    ]
+    
+    # Convert each numeric column
+    for col in numeric_columns:
+        if col in df_converted.columns:
+            df_converted[col] = pd.to_numeric(df_converted[col], errors="coerce")
+    
+    # Convert all change columns (DoD Chg *, MTD Chg *, YTD Chg *, 1yr Chg *)
+    for col in df_converted.columns:
+        if any(col.startswith(prefix) for prefix in ["DoD Chg ", "MTD Chg ", "YTD Chg ", "1yr Chg "]):
+            df_converted[col] = pd.to_numeric(df_converted[col], errors="coerce")
+    
+    return df_converted
+
+
 def format_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Format numeric columns with thousand separators (no decimals, rounded).
@@ -346,6 +416,115 @@ def get_reference_dates(runs_path: Path) -> dict:
         "ytd_ref_date": ytd_ref_date,
         "one_yr_ref_date": one_yr_ref_date,
     }
+
+
+def validate_runs_today_csv_is_current(
+    csv_path: Path,
+    parquet_path: Path,
+    auto_regenerate: bool = True
+) -> pd.Timestamp:
+    """
+    Validate that runs_today.csv is current with runs_timeseries.parquet.
+    
+    Checks if the CSV file exists and reflects the latest date in the parquet file.
+    If CSV is stale or missing, optionally regenerates it.
+    
+    Args:
+        csv_path: Path to runs_today.csv file.
+        parquet_path: Path to runs_timeseries.parquet file.
+        auto_regenerate: If True, automatically regenerate CSV if stale. If False, raises error.
+    
+    Returns:
+        Last date from parquet file (pd.Timestamp).
+    
+    Raises:
+        FileNotFoundError: If parquet file doesn't exist.
+        ValueError: If CSV is stale and auto_regenerate is False.
+    """
+    # Check parquet file exists
+    if not parquet_path.exists():
+        raise FileNotFoundError(f"Parquet file not found: {parquet_path}")
+    
+    # Get last date from parquet
+    ref_dates = get_reference_dates(parquet_path)
+    parquet_last_date = ref_dates["last_date"]
+    
+    if parquet_last_date is None:
+        raise ValueError(f"No dates found in parquet file: {parquet_path}")
+    
+    # Check if CSV exists
+    csv_exists = csv_path.exists()
+    
+    # Check if CSV is stale (parquet modified more recently than CSV)
+    if csv_exists:
+        parquet_mtime = parquet_path.stat().st_mtime
+        csv_mtime = csv_path.stat().st_mtime
+        
+        # If parquet is newer than CSV, CSV might be stale
+        if parquet_mtime > csv_mtime:
+            if auto_regenerate:
+                print(f"\nWARNING: runs_today.csv is stale (parquet modified after CSV).")
+                print(f"  Parquet last modified: {datetime.fromtimestamp(parquet_mtime)}")
+                print(f"  CSV last modified: {datetime.fromtimestamp(csv_mtime)}")
+                print(f"  Auto-regenerating runs_today.csv...")
+                
+                # Import and run runs_today.py to regenerate CSV
+                import sys
+                import subprocess
+                runs_today_script = csv_path.parent.parent / "runs" / "runs_today.py"
+                if runs_today_script.exists():
+                    # Use current Python interpreter and set working directory to script location
+                    result = subprocess.run(
+                        [sys.executable, str(runs_today_script)],
+                        cwd=str(runs_today_script.parent),
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode != 0:
+                        raise RuntimeError(
+                            f"Failed to regenerate runs_today.csv:\n{result.stderr}\n{result.stdout}"
+                        )
+                    print("  Successfully regenerated runs_today.csv")
+                else:
+                    raise FileNotFoundError(
+                        f"Cannot auto-regenerate: runs_today.py not found at {runs_today_script}"
+                    )
+            else:
+                raise ValueError(
+                    f"runs_today.csv is stale. Parquet last date: {parquet_last_date}, "
+                    f"but CSV was generated earlier. Please regenerate runs_today.csv first."
+                )
+    else:
+        # CSV doesn't exist, regenerate if auto_regenerate is True
+        if auto_regenerate:
+            print(f"\nWARNING: runs_today.csv not found. Auto-generating...")
+            import sys
+            import subprocess
+            runs_today_script = csv_path.parent.parent / "runs" / "runs_today.py"
+            if runs_today_script.exists():
+                # Use current Python interpreter and set working directory to script location
+                result = subprocess.run(
+                    [sys.executable, str(runs_today_script)],
+                    cwd=str(runs_today_script.parent),
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode != 0:
+                    raise RuntimeError(
+                        f"Failed to generate runs_today.csv:\n{result.stderr}\n{result.stdout}"
+                    )
+                print("  Successfully generated runs_today.csv")
+            else:
+                raise FileNotFoundError(
+                    f"Cannot auto-generate: runs_today.py not found at {runs_today_script}"
+                )
+        else:
+            raise FileNotFoundError(
+                f"runs_today.csv not found: {csv_path}. "
+                f"Please generate it first by running runs_today.py"
+            )
+    
+    return parquet_last_date
 
 
 def format_table(df: pd.DataFrame, title: str, column_display_names: dict, summary_dict: dict = None) -> str:
@@ -1318,19 +1497,26 @@ def main() -> None:
     print("RUNS VIEWS - Portfolio Runs View Generator")
     print("="*100)
     
+    # Step 0: Validate runs_today.csv is current with parquet (auto-regenerate if stale)
+    print("\n[STEP 0] Validating runs_today.csv is current with runs_timeseries.parquet...")
+    parquet_last_date = validate_runs_today_csv_is_current(
+        RUNS_TODAY_CSV_PATH,
+        RUNS_PARQUET_PATH,
+        auto_regenerate=True
+    )
+    print(f"  Parquet last date: {parquet_last_date}")
+    
     # Step 1: Load runs_today.csv
     print("\n[STEP 1] Loading runs_today.csv...")
-    if not RUNS_TODAY_CSV_PATH.exists():
-        raise FileNotFoundError(f"CSV file not found: {RUNS_TODAY_CSV_PATH}")
-    
     df = pd.read_csv(RUNS_TODAY_CSV_PATH)
+    
+    # Convert all numeric columns to proper types (ensures filtering works correctly)
+    df = ensure_numeric_types(df)
+    
     print(f"Loaded {len(df):,} rows, {len(df.columns)} columns")
     
     # Step 2: Get reference dates from runs_timeseries.parquet
     print("\n[STEP 2] Extracting reference dates from runs_timeseries.parquet...")
-    if not RUNS_PARQUET_PATH.exists():
-        raise FileNotFoundError(f"Parquet file not found: {RUNS_PARQUET_PATH}")
-    
     ref_dates = get_reference_dates(RUNS_PARQUET_PATH)
     last_date = ref_dates["last_date"]
     mtd_ref_date = ref_dates["mtd_ref_date"]
@@ -1342,22 +1528,26 @@ def main() -> None:
     
     # Step 3: Create Portfolio Sorted By CR01 Risk table
     print("\n[STEP 3] Creating Portfolio Sorted By CR01 Risk table...")
+    
+    # Create the table first
     portfolio_cr01_df = create_portfolio_cr01_risk_table(df)
     print(f"Filtered to {len(portfolio_cr01_df):,} rows with QUANTITY > 0")
     
-    # Calculate Total CR01 (sum of POSITION CR01) for Portfolio CR01 Risk table
-    total_cr01 = 0
+    # Calculate Total CR01 from the actual displayed table rows (sum of POSITION CR01)
     pos_cr01_col = "POSITION CR01"
+    total_cr01 = 0
     if pos_cr01_col in portfolio_cr01_df.columns:
         total_cr01 = portfolio_cr01_df[pos_cr01_col].sum()
     print(f"Total CR01: {int(round(total_cr01)):,}")
     
     # Step 3.5: Create Portfolio Less Liquid Lines table
     print("\n[STEP 3.5] Creating Portfolio Less Liquid Lines table...")
+    
+    # Create the table first
     portfolio_less_liquid_df = create_portfolio_less_liquid_lines_table(df)
     print(f"Filtered to {len(portfolio_less_liquid_df):,} rows with QUANTITY > 0 and TB >3mm is blank")
     
-    # Calculate Total CR01 (sum of POSITION CR01) for Portfolio Less Liquid Lines table
+    # Calculate Total CR01 from the actual displayed table rows (sum of POSITION CR01)
     total_cr01_less_liquid = 0
     if pos_cr01_col in portfolio_less_liquid_df.columns:
         total_cr01_less_liquid = portfolio_less_liquid_df[pos_cr01_col].sum()
@@ -1655,14 +1845,23 @@ def main() -> None:
     
     # Step 15: Write Excel file
     print("\n[STEP 15] Writing Excel file...")
-    write_excel_file(
-        EXCEL_OUTPUT_FILE,
-        excel_tables,
-        timestamp,
-        last_date,
-        mtd_ref_date,
-        ytd_ref_date
-    )
+    
+    # Check if at least one table has data (openpyxl requires at least one visible sheet)
+    has_data = any(not table_data['df'].empty for table_data in excel_tables.values())
+    
+    if has_data:
+        write_excel_file(
+            EXCEL_OUTPUT_FILE,
+            excel_tables,
+            timestamp,
+            last_date,
+            mtd_ref_date,
+            ytd_ref_date
+        )
+        print(f"Excel file written to: {EXCEL_OUTPUT_FILE}")
+    else:
+        print("Warning: All tables are empty. Skipping Excel file generation.")
+        print("(openpyxl requires at least one visible sheet)")
     
     print("\nDone!")
 
@@ -1678,19 +1877,26 @@ def generate_universe_views() -> None:
     print("UNIVERSE RV VIEWS - Universe Runs View Generator")
     print("="*100)
     
+    # Step 0: Validate runs_today.csv is current with parquet (auto-regenerate if stale)
+    print("\n[STEP 0] Validating runs_today.csv is current with runs_timeseries.parquet...")
+    parquet_last_date = validate_runs_today_csv_is_current(
+        RUNS_TODAY_CSV_PATH,
+        RUNS_PARQUET_PATH,
+        auto_regenerate=True
+    )
+    print(f"  Parquet last date: {parquet_last_date}")
+    
     # Step 1: Load runs_today.csv
     print("\n[STEP 1] Loading runs_today.csv...")
-    if not RUNS_TODAY_CSV_PATH.exists():
-        raise FileNotFoundError(f"CSV file not found: {RUNS_TODAY_CSV_PATH}")
-    
     df = pd.read_csv(RUNS_TODAY_CSV_PATH)
+    
+    # Convert all numeric columns to proper types (ensures filtering works correctly)
+    df = ensure_numeric_types(df)
+    
     print(f"Loaded {len(df):,} rows, {len(df.columns)} columns")
     
     # Step 2: Get reference dates from runs_timeseries.parquet
     print("\n[STEP 2] Extracting reference dates from runs_timeseries.parquet...")
-    if not RUNS_PARQUET_PATH.exists():
-        raise FileNotFoundError(f"Parquet file not found: {RUNS_PARQUET_PATH}")
-    
     ref_dates = get_reference_dates(RUNS_PARQUET_PATH)
     last_date = ref_dates["last_date"]
     mtd_ref_date = ref_dates["mtd_ref_date"]
@@ -1761,14 +1967,23 @@ def generate_universe_views() -> None:
     
     # Step 5: Write Excel file
     print("\n[STEP 5] Writing Excel file...")
-    write_excel_file(
-        UNI_EXCEL_OUTPUT_FILE,
-        excel_tables,
-        timestamp,
-        last_date,
-        mtd_ref_date,
-        ytd_ref_date
-    )
+    
+    # Check if at least one table has data (openpyxl requires at least one visible sheet)
+    has_data = any(not table_data['df'].empty for table_data in excel_tables.values())
+    
+    if has_data:
+        write_excel_file(
+            UNI_EXCEL_OUTPUT_FILE,
+            excel_tables,
+            timestamp,
+            last_date,
+            mtd_ref_date,
+            ytd_ref_date
+        )
+        print(f"Excel file written to: {UNI_EXCEL_OUTPUT_FILE}")
+    else:
+        print("Warning: All tables are empty. Skipping Excel file generation.")
+        print("(openpyxl requires at least one visible sheet)")
     
     print("\nDone!")
 

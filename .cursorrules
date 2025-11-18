@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-15 19:30 ET - Added negative spread filtering to runs pipeline (filters negative Bid/Ask Spreads to NaN in parquet storage and aggregation), fixed DoD calculation Benchmark matching (uses (CUSIP, Benchmark) tuples instead of CUSIP-only), added universe RV views to runs_views.py  
+**Last Updated**: 2025-11-17 19:30 ET - Added automatic validation and regeneration of runs_today.csv in runs_views.py and comb.py (ensures all scripts always use latest date from runs_timeseries.parquet), fixed Total CR01 calculation in runs_views.py (now sums POSITION CR01 from displayed table rows instead of pre-filtered data), added negative spread filtering to runs pipeline (filters negative Bid/Ask Spreads to NaN in parquet storage and aggregation), fixed DoD calculation Benchmark matching (uses (CUSIP, Benchmark) tuples instead of CUSIP-only), added universe RV views to runs_views.py  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -497,7 +497,7 @@ Bond-RV-App/
 │   │   └── all combos vs holdings.py  # All combinations vs holdings pair analytics (all portfolio CUSIPs from last date, no CR01 filters)
 │   ├── runs/             # Runs analytics scripts
 │   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/1yr changes, filters negative spreads, matches by (CUSIP, Benchmark) tuples)
-│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs)
+│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, auto-validates and regenerates CSV if stale)
 │   └── processed_data/   # Outputs from analytics scripts
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
@@ -1216,13 +1216,13 @@ pytest tests/unit/test_utils.py -v
     1. **Portfolio Sorted By CR01 Risk**: 
        - Filters to rows where QUANTITY > 0
        - Sorts by POSITION CR01 descending (largest to smallest)
-       - Shows "Total CR01" summary at top (sum of POSITION CR01)
+       - Shows "Total CR01" summary at top (sum of POSITION CR01 from displayed table rows, calculated after table creation)
        - Includes all 31 columns (Security, QUANTITY, POSITION CR01, Yrs (Cvn), spread metrics, dealer info, CR01 metrics, DoD/MTD/YTD/1yr changes, equity metrics, Retracement, Custom_Sector)
     2. **Portfolio Less Liquid Lines**:
        - Replica of Portfolio Sorted By CR01 Risk table
        - Filters to rows where QUANTITY > 0 and Tight Bid >3mm is blank (NaN/null)
        - Sorts by POSITION CR01 descending (largest to smallest)
-       - Shows "Total CR01" summary at top (sum of POSITION CR01)
+       - Shows "Total CR01" summary at top (sum of POSITION CR01 from displayed table rows, calculated after table creation)
        - Includes all 31 columns (same as CR01 Risk table)
     3. **Portfolio Sorted By DoD Bid Chg With >3MM on Bid**:
        - Filters to QUANTITY > 0, TB >3mm has value, and DoD TB>3mm non-zero
@@ -1337,4 +1337,20 @@ pytest tests/unit/test_utils.py -v
       - Uses same formatting as portfolio views (thousand separators, Yrs (Cvn) to 1 decimal, Retracement as percentage)
     - Outputs to `uni_runs_view.txt` and `uni_runs_view.xlsx` in `analytics/processed_data/`
     - Configuration section at top for flexible customization (excluded sectors, top/bottom N, sort column, column list)
+- **2025-11-15 20:00 ET**: Fixed Total CR01 calculation in runs_views.py:
+  - Updated `main()` function in `analytics/runs/runs_views.py` to calculate Total CR01 from displayed table rows instead of pre-filtered data
+  - Total CR01 for "Portfolio Sorted By CR01 Risk" table now sums POSITION CR01 from `portfolio_cr01_df` after table creation (ensures accuracy when CUSIPs appear multiple times with different Benchmarks)
+  - Total CR01 for "Portfolio Less Liquid Lines" table now sums POSITION CR01 from `portfolio_less_liquid_df` after table creation
+  - Calculation happens after all filtering and column selection, ensuring the summary matches exactly what's displayed in the table
+  - "Cumulative CR01 TB" values for Size Bids tables were already correct (calculated from displayed table rows)
+- **2025-11-17 19:30 ET**: Added automatic validation and regeneration of runs_today.csv:
+  - Created `validate_runs_today_csv_is_current()` function in `analytics/runs/runs_views.py` and `analytics/comb/comb.py`
+  - Validates that `runs_today.csv` is current with `runs_timeseries.parquet` by comparing file modification times
+  - If parquet file is newer than CSV (or CSV doesn't exist), automatically regenerates CSV by running `runs_today.py`
+  - Added validation step to `main()` and `generate_universe_views()` functions in `runs_views.py`
+  - Added validation step to `main()` function in `comb.py`
+  - Ensures all scripts that use data from `runs_timeseries.parquet` (directly or indirectly via `runs_today.csv`) always use the latest date
+  - Prevents stale data issues by auto-regenerating CSV when parquet is updated
+  - Provides clear warnings when regeneration occurs, with timestamps of parquet and CSV modification times
+  - Uses subprocess to run `runs_today.py` with proper working directory and error handling
 

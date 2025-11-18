@@ -30,6 +30,7 @@ BQL_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "bql.par
 HISTORICAL_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "historical_bond_details.parquet"
 UNIVERSE_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "universe.parquet"
 RUNS_TODAY_CSV_PATH = SCRIPT_DIR.parent / "processed_data" / "runs_today.csv"
+RUNS_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "runs_timeseries.parquet"
 PORTFOLIO_PARQUET_PATH = SCRIPT_DIR.parent.parent / "bond_data" / "parquet" / "historical_portfolio.parquet"
 OUTPUT_DIR = SCRIPT_DIR.parent / "processed_data"
 
@@ -1697,8 +1698,113 @@ def write_validation_txt(output_dir: Path, validation_log: io.StringIO) -> None:
 # MAIN EXECUTION FUNCTION
 # ============================================================================
 
+def validate_runs_today_csv_is_current(
+    csv_path: Path,
+    parquet_path: Path,
+    auto_regenerate: bool = True
+) -> None:
+    """
+    Validate that runs_today.csv is current with runs_timeseries.parquet.
+    
+    Checks if the CSV file exists and reflects the latest date in the parquet file.
+    If CSV is stale or missing, optionally regenerates it.
+    
+    Args:
+        csv_path: Path to runs_today.csv file.
+        parquet_path: Path to runs_timeseries.parquet file.
+        auto_regenerate: If True, automatically regenerate CSV if stale. If False, raises error.
+    
+    Raises:
+        FileNotFoundError: If parquet file doesn't exist.
+        ValueError: If CSV is stale and auto_regenerate is False.
+    """
+    # Check parquet file exists
+    if not parquet_path.exists():
+        raise FileNotFoundError(f"Parquet file not found: {parquet_path}")
+    
+    # Check if CSV exists
+    csv_exists = csv_path.exists()
+    
+    # Check if CSV is stale (parquet modified more recently than CSV)
+    if csv_exists:
+        parquet_mtime = parquet_path.stat().st_mtime
+        csv_mtime = csv_path.stat().st_mtime
+        
+        # If parquet is newer than CSV, CSV might be stale
+        if parquet_mtime > csv_mtime:
+            if auto_regenerate:
+                print(f"\nWARNING: runs_today.csv is stale (parquet modified after CSV).")
+                print(f"  Parquet last modified: {datetime.fromtimestamp(parquet_mtime)}")
+                print(f"  CSV last modified: {datetime.fromtimestamp(csv_mtime)}")
+                print(f"  Auto-regenerating runs_today.csv...")
+                
+                # Import and run runs_today.py to regenerate CSV
+                import sys
+                import subprocess
+                runs_today_script = csv_path.parent.parent / "runs" / "runs_today.py"
+                if runs_today_script.exists():
+                    # Use current Python interpreter and set working directory to script location
+                    result = subprocess.run(
+                        [sys.executable, str(runs_today_script)],
+                        cwd=str(runs_today_script.parent),
+                        capture_output=True,
+                        text=True
+                    )
+                    if result.returncode != 0:
+                        raise RuntimeError(
+                            f"Failed to regenerate runs_today.csv:\n{result.stderr}\n{result.stdout}"
+                        )
+                    print("  Successfully regenerated runs_today.csv")
+                else:
+                    raise FileNotFoundError(
+                        f"Cannot auto-regenerate: runs_today.py not found at {runs_today_script}"
+                    )
+            else:
+                raise ValueError(
+                    f"runs_today.csv is stale. Parquet was modified after CSV. "
+                    f"Please regenerate runs_today.csv first."
+                )
+    else:
+        # CSV doesn't exist, regenerate if auto_regenerate is True
+        if auto_regenerate:
+            print(f"\nWARNING: runs_today.csv not found. Auto-generating...")
+            import sys
+            import subprocess
+            runs_today_script = csv_path.parent.parent / "runs" / "runs_today.py"
+            if runs_today_script.exists():
+                # Use current Python interpreter and set working directory to script location
+                result = subprocess.run(
+                    [sys.executable, str(runs_today_script)],
+                    cwd=str(runs_today_script.parent),
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode != 0:
+                    raise RuntimeError(
+                        f"Failed to generate runs_today.csv:\n{result.stderr}\n{result.stdout}"
+                    )
+                print("  Successfully generated runs_today.csv")
+            else:
+                raise FileNotFoundError(
+                    f"Cannot auto-generate: runs_today.py not found at {runs_today_script}"
+                )
+        else:
+            raise FileNotFoundError(
+                f"runs_today.csv not found: {csv_path}. "
+                f"Please generate it first by running runs_today.py"
+            )
+
+
 def main() -> None:
     """Main execution function that runs all analyses."""
+    # Validate runs_today.csv is current with parquet (auto-regenerate if stale)
+    print("Validating runs_today.csv is current with runs_timeseries.parquet...")
+    validate_runs_today_csv_is_current(
+        RUNS_TODAY_CSV_PATH,
+        RUNS_PARQUET_PATH,
+        auto_regenerate=True
+    )
+    
     validation_log = io.StringIO()
     results: Dict[str, pd.DataFrame] = {}
     

@@ -343,7 +343,20 @@ def merge_external_columns(
     try:
         portfolio_df = pd.read_parquet(portfolio_path)
         if "Date" in portfolio_df.columns and "CUSIP" in portfolio_df.columns:
-            portfolio_last_date = portfolio_df[portfolio_df["Date"] == last_date].copy()
+            # Find the most recent date available (may not be exactly last_date)
+            portfolio_dates = sorted(portfolio_df["Date"].unique())
+            portfolio_most_recent_date = portfolio_dates[-1] if portfolio_dates else None
+            
+            log_func(f"  Portfolio parquet date range: {portfolio_dates[0] if portfolio_dates else 'N/A'} to {portfolio_most_recent_date}")
+            log_func(f"  Looking for data on date: {last_date}")
+            
+            if portfolio_most_recent_date and portfolio_most_recent_date != last_date:
+                log_warn(f"  Warning: Portfolio last date ({portfolio_most_recent_date}) differs from runs last date ({last_date})")
+                log_func(f"  Using portfolio date: {portfolio_most_recent_date}")
+                portfolio_last_date = portfolio_df[portfolio_df["Date"] == portfolio_most_recent_date].copy()
+            else:
+                portfolio_last_date = portfolio_df[portfolio_df["Date"] == last_date].copy()
+            
             if len(portfolio_last_date) > 0:
                 # Portfolio CUSIPs are already normalized (portfolio pipeline normalizes them)
                 # Normalize to be safe
@@ -392,7 +405,7 @@ def merge_external_columns(
                         log_warn(f"  Warning: Portfolio column '{col}' not found in parquet file")
                         result_df[col] = pd.NA
             else:
-                log_warn(f"  Warning: No portfolio data found for last date {last_date}")
+                log_warn(f"  Warning: No portfolio data found (checked date: {portfolio_most_recent_date if portfolio_most_recent_date else 'N/A'})")
                 for col in portfolio_columns:
                     result_df[col] = pd.NA
         else:
