@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-17 21:00 ET - Replaced all "1yr" references with "Custom Date" throughout runs_today.py and runs_views.py (column names, display names, table titles, filter descriptions, console output); updated documentation to reflect Custom Date naming convention  
+**Last Updated**: 2025-01-17 22:00 ET - Added all_combinations.csv export for All Combinations Pair Analytics (contains all pairs, not just top 80, sorted by Z Score descending); clarified that analysis filters to CAD CUSIPs only (~550 out of 905 total CUSIPs in bql.parquet)  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -510,7 +510,7 @@ poetry run pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_c
 Bond-RV-App/
 ├── analytics/             # Analytics scripts and processed outputs
 │   ├── comb/             # Pair analytics scripts
-│   │   └── comb.py           # Consolidated pair analytics script (contains 11 analysis functions: all_comb, term_comb, ticker_comb, custom_sector, custom_bond_comb, custom_bond_vs_holdings, cad_cheap_vs_usd, cad_rich_vs_usd, executable_cr01_vs_holdings, executable_cr01_decent_bid_offer_vs_holdings, all_combos_vs_holdings; outputs single Excel file with multiple sheets, plus comb.txt and comb_validation.txt)
+│   │   └── comb.py           # Consolidated pair analytics script (contains 11 analysis functions: all_comb, term_comb, ticker_comb, custom_sector, custom_bond_comb, custom_bond_vs_holdings, cad_cheap_vs_usd, cad_rich_vs_usd, executable_cr01_vs_holdings, executable_cr01_decent_bid_offer_vs_holdings, all_combos_vs_holdings; outputs single Excel file with multiple sheets, plus comb.txt, comb_validation.txt, and all_combinations.csv with all pairs from all_comb analysis)
 │   ├── runs/             # Runs analytics scripts
 │   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/Custom Date changes, filters negative spreads, matches by (CUSIP, Benchmark) tuples)
 │   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, includes "Filters Applied:" sections for all tables, auto-validates and regenerates CSV if stale; entry point calls both main() for portfolio views and generate_universe_views() for universe views)
@@ -518,6 +518,7 @@ Bond-RV-App/
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets, one sheet per analysis type)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
 │       ├── comb_validation.txt  # Validation log for pair analytics (from comb.py)
+│       ├── all_combinations.csv  # All pairs from All Combinations analysis (from comb.py, contains all rows not just top 80, sorted by Z Score descending, includes CAD CUSIPs only after recent date filtering)
 │       ├── runs_today.csv    # Daily runs analytics output (from runs_today.py, used by runs_views.py and comb.py)
 │       ├── portfolio_runs_view.txt  # Formatted portfolio tables (from runs_views.py, text output, 16 tables)
 │       ├── portfolio_runs_view.xlsx  # Excel file with 16 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
@@ -1418,4 +1419,15 @@ pytest tests/unit/test_utils.py -v
   - Text/Excel outputs: `portfolio_runs_view.txt/xlsx` and `uni_runs_view.txt/xlsx` display "Custom Date TB" instead of "1yr TB"
   - All user-facing references now use "Custom Date" instead of "1yr"
   - Internal variable names like `one_yr_ref_date` remain unchanged as implementation details
+- **2025-01-17 22:00 ET**: Added all_combinations.csv export for All Combinations Pair Analytics:
+  - Created `write_all_combinations_csv()` function in `analytics/comb/comb.py` to export all pairs from All Combinations analysis
+  - CSV file `all_combinations.csv` contains all pairs (not just top 80), sorted by Z Score descending
+  - Includes all rows with valid z_scores (positive, negative, or any value), excludes only pairs with None z_score
+  - File written to `analytics/processed_data/all_combinations.csv` in addition to existing Excel and text outputs
+  - Formatting matches Excel output (1 decimal place for numeric columns, ASCII-safe bond names)
+  - **Important**: Analysis filters to CAD CUSIPs only (not all bonds from bql.parquet):
+    - Filters to CAD CUSIPs from `historical_bond_details.parquet` (Currency="CAD" on last date)
+    - Then filters to CUSIPs present in most recent 75% of dates with at least 90% coverage
+    - Typically results in ~550 CAD CUSIPs out of 905 total CUSIPs in bql.parquet
+    - Generates ~150,970 pairs (n*(n-1)/2 combinations of filtered CUSIPs)
 
