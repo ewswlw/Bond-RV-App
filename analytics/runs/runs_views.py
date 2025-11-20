@@ -3333,5 +3333,8 @@ def generate_universe_views() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # Generate both portfolio and universe views
+    main()  # Generates portfolio_runs_view.txt and portfolio_runs_view.xlsx
+    print("\n" + "="*100 + "\n")
+    generate_universe_views()  # Generates uni_runs_view.txt and uni_runs_view.xlsx
 

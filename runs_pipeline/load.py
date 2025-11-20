@@ -11,7 +11,7 @@ from datetime import datetime
 import logging
 
 from bond_pipeline import config as bond_config
-from bond_pipeline.config import RUNS_PRIMARY_KEY
+from bond_pipeline.config import RUNS_PRIMARY_KEY, UNIVERSE_PARQUET
 from bond_pipeline.utils import (
     setup_logging,
     format_date_string
@@ -19,6 +19,9 @@ from bond_pipeline.utils import (
 
 # Allowed dealers for runs_timeseries.parquet
 ALLOWED_DEALERS = ['BMO', 'BNS', 'NBF', 'RBC', 'TD']
+
+# Custom_Sector values to exclude from spread outlier filtering
+EXCLUDED_SECTORS = ['Non Financial Hybrid', 'Non Financial Hybrids', 'Financial Hybrid', 'HY']
 
 
 @dataclass
@@ -187,6 +190,221 @@ class RunsLoader:
         )
         
         return True
+    
+    def filter_outlier_spreads(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Filter out rows with outlier negative spreads based on Date+CUSIP group statistics.
+        
+        For each Date+CUSIP group:
+        - Calculate high and low of Bid Spread (excluding negatives/zeros/NaN)
+        - Calculate high and low of Ask Spread (excluding negatives/zeros/NaN)
+        - If Bid Spread < 0 and outside [low - 20, high + 20], drop the row
+        - If Ask Spread < 0 and outside [low - 20, high + 20], drop the row
+        - Skip this check for CUSIPs with excluded Custom_Sector values
+        
+        Args:
+            df: DataFrame with Date, CUSIP, Bid Spread, Ask Spread columns
+        
+        Returns:
+            DataFrame with outlier rows removed
+        """
+        if df is None or len(df) == 0:
+            return df
+        
+        # Check required columns
+        required_cols = ['Date', 'CUSIP']
+        if not all(col in df.columns for col in required_cols):
+            missing = [col for col in required_cols if col not in df.columns]
+            self.logger.warning(
+                f"Cannot perform spread outlier filtering: missing columns {missing}"
+            )
+            return df
+        
+        if 'Bid Spread' not in df.columns and 'Ask Spread' not in df.columns:
+            self.logger.info("No Bid Spread or Ask Spread columns found, skipping outlier filtering")
+            return df
+        
+        initial_count = len(df)
+        
+        # Read universe.parquet to build CUSIP → Custom_Sector mapping
+        cusip_sector_map = {}
+        excluded_cusips = set()
+        
+        if UNIVERSE_PARQUET.exists():
+            try:
+                universe_df = pd.read_parquet(UNIVERSE_PARQUET, columns=['CUSIP', 'Custom_Sector'])
+                # Build mapping: CUSIP -> Custom_Sector (normalize to uppercase for comparison)
+                for _, row in universe_df.iterrows():
+                    cusip = str(row['CUSIP']).strip().upper() if pd.notna(row['CUSIP']) else None
+                    sector = str(row['Custom_Sector']).strip() if pd.notna(row['Custom_Sector']) else None
+                    if cusip and sector:
+                        cusip_sector_map[cusip] = sector
+                        if sector in EXCLUDED_SECTORS:
+                            excluded_cusips.add(cusip)
+                
+                self.logger.info(
+                    f"Loaded {len(cusip_sector_map)} CUSIPs from universe.parquet, "
+                    f"{len(excluded_cusips)} excluded from outlier filtering"
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"Error reading universe.parquet for Custom_Sector mapping: {e}. "
+                    "Proceeding without sector-based exclusions."
+                )
+        else:
+            self.logger.warning(
+                "universe.parquet not found. Proceeding without sector-based exclusions."
+            )
+        
+        # Create a copy to avoid SettingWithCopyWarning
+        df_check = df.copy()
+        
+        # Track rows to drop
+        rows_to_drop = []
+        dropped_details = []
+        
+        # Group by Date+CUSIP
+        grouped = df_check.groupby(['Date', 'CUSIP'], group_keys=False)
+        
+        for (date, cusip), group in grouped:
+            # Skip if CUSIP is in excluded sectors (normalize to uppercase for comparison)
+            cusip_str = str(cusip).strip().upper() if pd.notna(cusip) else None
+            if cusip_str and cusip_str in excluded_cusips:
+                continue
+            
+            # Calculate high/low for Bid Spread (excluding negatives, zeros, NaN)
+            bid_spread_col = 'Bid Spread' if 'Bid Spread' in group.columns else None
+            ask_spread_col = 'Ask Spread' if 'Ask Spread' in group.columns else None
+            
+            # Check each row in the group
+            for idx, row in group.iterrows():
+                drop_reasons = []
+                
+                # Calculate high/low EXCLUDING current row to avoid outlier skewing the calculation
+                if bid_spread_col:
+                    # Filter to positive values only, excluding current row
+                    bid_valid = group[bid_spread_col].dropna()
+                    bid_valid = bid_valid[bid_valid > 0]
+                    # Exclude current row's value from calculation
+                    if idx in bid_valid.index:
+                        bid_valid = bid_valid.drop(index=idx)
+                    
+                    if len(bid_valid) > 0:
+                        bid_high = float(bid_valid.max())
+                        bid_low = float(bid_valid.min())
+                        
+                        # Check Bid Spread (both positive and negative outliers)
+                        if pd.notna(row[bid_spread_col]):
+                            bid_val = float(row[bid_spread_col])
+                            # Check if outside [low - 20, high + 20] (for both positive and negative values)
+                            if bid_val < (bid_low - 20) or bid_val > (bid_high + 20):
+                                drop_reasons.append(
+                                    f"Bid Spread={bid_val:.2f} outside range "
+                                    f"[{bid_low - 20:.2f}, {bid_high + 20:.2f}] "
+                                    f"(group range excluding this row: [{bid_low:.2f}, {bid_high:.2f}])"
+                                )
+                    else:
+                        # Edge case: no valid positive spreads in group (only negatives/zeros/NaN or only current row)
+                        if pd.notna(row[bid_spread_col]):
+                            bid_val = float(row[bid_spread_col])
+                            if bid_val < 0:
+                                self.logger.warning(
+                                    f"Date={format_date_string(date)}, CUSIP={cusip_str}: "
+                                    f"No valid positive Bid Spread values found in group "
+                                    f"(excluding current row). Bid Spread={bid_val:.2f}"
+                                )
+                                # Drop negative spreads when no valid high/low exists
+                                drop_reasons.append(
+                                    f"Bid Spread={bid_val:.2f} (no valid high/low in group)"
+                                )
+                
+                # Calculate high/low EXCLUDING current row to avoid outlier skewing the calculation
+                if ask_spread_col:
+                    # Filter to positive values only, excluding current row
+                    ask_valid = group[ask_spread_col].dropna()
+                    ask_valid = ask_valid[ask_valid > 0]
+                    # Exclude current row's value from calculation
+                    if idx in ask_valid.index:
+                        ask_valid = ask_valid.drop(index=idx)
+                    
+                    if len(ask_valid) > 0:
+                        ask_high = float(ask_valid.max())
+                        ask_low = float(ask_valid.min())
+                        
+                        # Check Ask Spread (both positive and negative outliers)
+                        if pd.notna(row[ask_spread_col]):
+                            ask_val = float(row[ask_spread_col])
+                            # Check if outside [low - 20, high + 20] (for both positive and negative values)
+                            if ask_val < (ask_low - 20) or ask_val > (ask_high + 20):
+                                drop_reasons.append(
+                                    f"Ask Spread={ask_val:.2f} outside range "
+                                    f"[{ask_low - 20:.2f}, {ask_high + 20:.2f}] "
+                                    f"(group range excluding this row: [{ask_low:.2f}, {ask_high:.2f}])"
+                                )
+                    else:
+                        # Edge case: no valid positive spreads in group (only negatives/zeros/NaN or only current row)
+                        if pd.notna(row[ask_spread_col]):
+                            ask_val = float(row[ask_spread_col])
+                            if ask_val < 0:
+                                self.logger.warning(
+                                    f"Date={format_date_string(date)}, CUSIP={cusip_str}: "
+                                    f"No valid positive Ask Spread values found in group "
+                                    f"(excluding current row). Ask Spread={ask_val:.2f}"
+                                )
+                                # Drop negative spreads when no valid high/low exists
+                                drop_reasons.append(
+                                    f"Ask Spread={ask_val:.2f} (no valid high/low in group)"
+                                )
+                
+                # If any reason to drop, mark the row
+                if drop_reasons:
+                    rows_to_drop.append(idx)
+                    dealer = row.get('Dealer', 'N/A')
+                    security = row.get('Security', 'N/A')
+                    time_val = row.get('Time', 'N/A')
+                    
+                    dropped_details.append({
+                        'Date': date,
+                        'CUSIP': cusip_str,
+                        'Dealer': dealer,
+                        'Security': security,
+                        'Time': time_val,
+                        'Reasons': '; '.join(drop_reasons)
+                    })
+        
+        # Drop marked rows
+        if rows_to_drop:
+            df_filtered = df_check.drop(index=rows_to_drop).reset_index(drop=True)
+            dropped_count = len(rows_to_drop)
+            
+            # Log summary
+            self.logger.info(
+                f"Spread outlier filtering: Dropped {dropped_count} rows "
+                f"({initial_count} -> {len(df_filtered)})"
+            )
+            
+            # Log details (limit to first 50 for readability)
+            self.logger.info("Dropped rows details:")
+            for i, detail in enumerate(dropped_details[:50]):
+                self.logger.info(
+                    f"  [{i+1}] Date={format_date_string(detail['Date'])}, "
+                    f"CUSIP={detail['CUSIP']}, Dealer={detail['Dealer']}, "
+                    f"Security={detail['Security']}, Time={detail['Time']}, "
+                    f"Reasons: {detail['Reasons']}"
+                )
+            
+            if len(dropped_details) > 50:
+                self.logger.info(
+                    f"  ... and {len(dropped_details) - 50} more rows "
+                    f"(total {len(dropped_details)} dropped)"
+                )
+            
+            return df_filtered
+        else:
+            self.logger.info(
+                f"No outlier spreads found. All {initial_count} rows passed the check."
+            )
+            return df_check
     
     def load_append(
         self,
@@ -372,6 +590,10 @@ class RunsLoader:
                         f"Filtered out {filtered_out} rows from dealers not in {ALLOWED_DEALERS}"
                     )
             
+            # Data quality check: Filter outlier negative spreads
+            self.logger.info("Performing spread outlier filtering...")
+            write_df = self.filter_outlier_spreads(write_df)
+            
             if 'Time' in write_df.columns:
                 write_df['Time'] = write_df['Time'].apply(
                     lambda x: x.strftime('%H:%M')
@@ -474,6 +696,10 @@ class RunsLoader:
                     self.logger.info(
                         f"Filtered out {filtered_out} rows from dealers not in {ALLOWED_DEALERS}"
                     )
+            
+            # Data quality check: Filter outlier negative spreads
+            self.logger.info("Performing spread outlier filtering...")
+            data_write = self.filter_outlier_spreads(data_write)
             
             if 'Time' in data_write.columns:
                 data_write['Time'] = data_write['Time'].apply(

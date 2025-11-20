@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-17 20:00 ET - Updated documentation to reflect actual codebase structure: consolidated all individual pair analytics scripts into single comb.py file (11 analysis functions), removed references to individual CSV outputs (now consolidated into comb.xlsx), documented empty utils/ directory, added tests/patterns/ directory documentation, cleaned up outdated file references  
+**Last Updated**: 2025-11-19 19:33 ET - Updated documentation to reflect actual codebase structure: added spread outlier filtering documentation for runs pipeline, updated test structure to reflect actual integration tests, documented runs_views.py entry point behavior (generates both portfolio and universe views), added runs_today.log to log file organization  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -170,7 +170,7 @@ Each pipeline stage is a class with clear responsibilities:
 **Runs Pipeline:**
 - **RunsExtractor**: RUNS Excel reading, Date/Time parsing (from columns, not filename)
 - **RunsTransformer**: End-of-day deduplication (vectorized, ~100x faster), CUSIP validation/orphan tracking (vectorized), schema alignment
-– **RunsLoader**: Runs parquet writing, Date+Dealer+CUSIP primary key enforcement, granular load metrics (new rows/dates/CUSIPs/Dealers)
+– **RunsLoader**: Runs parquet writing, Date+Dealer+CUSIP primary key enforcement, granular load metrics (new rows/dates/CUSIPs/Dealers), spread outlier filtering (filters rows outside [low - 20, high + 20] range based on Date+CUSIP group statistics)
 – **RunsDataPipeline**: Orchestrates all components, CLI interface, append-mode file selection + enhanced run summaries
 
 **Portfolio Pipeline:**
@@ -264,8 +264,13 @@ Each pipeline stage is a class with clear responsibilities:
 - **Primary Key**: `Date + Dealer + CUSIP` (unique combination, enforced after deduplication)
 - **Schema**: All 30 columns with Date and Time as first columns
 - **Dealer Filtering**: Only includes dealers: BMO, BNS, NBF, RBC, TD (other dealers filtered out during load)
-- **Data Quality**: Negative Bid Spread and Ask Spread values are filtered out (set to NaN) before writing to parquet
-- **Row count**: ~19,000+ rows (after deduplication and dealer filtering) spanning 2022-2025
+- **Data Quality**: 
+  - Negative Bid Spread and Ask Spread values are filtered out (set to NaN) before writing to parquet and during aggregation
+  - **Outlier Spread Filtering**: Rows with Bid Spread or Ask Spread values outside `[low - 20, high + 20]` range (based on Date+CUSIP group statistics) are dropped before writing to parquet
+  - Outlier filtering excludes CUSIPs with Custom_Sector values: "Non Financial Hybrid", "Non Financial Hybrids", "Financial Hybrid", "HY"
+  - Outlier calculation excludes the current row's value from group statistics to prevent self-skewing
+  - Both positive and negative outliers are filtered (not just negative values)
+- **Row count**: ~19,000+ rows (after deduplication, dealer filtering, and outlier filtering) spanning 2022-2025
 - **Storage**: `bond_data/parquet/runs_timeseries.parquet`
 - **Deduplication**: Keep latest Time per Date+Dealer+CUSIP (end-of-day snapshot)
 
@@ -304,6 +309,13 @@ Each pipeline stage is a class with clear responsibilities:
 - **Enhanced Orphan Tracking**: Log orphans with context (Security, Date, Dealer, Time, Ticker) to validation.log
 - **Dealer Filtering**: Only dealers BMO, BNS, NBF, RBC, TD are stored in `runs_timeseries.parquet` (other dealers filtered out during load)
 - **Negative Spread Filtering**: Negative Bid Spread and Ask Spread values are filtered out (set to NaN) before writing to parquet and during aggregation (data quality issue)
+- **Outlier Spread Filtering**: Implemented in `runs_pipeline/load.py` via `filter_outlier_spreads()` method:
+  - Groups data by Date+CUSIP
+  - For each group, calculates high/low of Bid Spread and Ask Spread from valid positive values (excluding current row to prevent self-skewing)
+  - Drops rows where Bid Spread or Ask Spread is outside `[low - 20, high + 20]` range (filters both positive and negative outliers)
+  - Excludes CUSIPs with Custom_Sector values: "Non Financial Hybrid", "Non Financial Hybrids", "Financial Hybrid", "HY"
+  - Logs dropped row count and detailed information (Date, CUSIP, Dealer, Security, Time, reason) for first 50 dropped rows
+  - Runs after deduplication but before writing to parquet (in both append and override modes)
 - Primary key enforcement: No duplicate Date+Dealer+CUSIP combinations (after deduplication)
 - Append mode inspects existing parquet dates, skips fully-loaded files, and filters mixed files down to unseen dates before extraction.
 - Pipeline summaries surface files processed/skipped plus new rows, dates, CUSIPs, and dealers added during each run.
@@ -347,6 +359,15 @@ Each pipeline stage is a class with clear responsibilities:
 - Convert NA values to NULL: `#N/A Field Not Applicable`, `#N/A Invalid Security`, `N/A`, etc.
 - Empty cells → NULL/NaN
 - **Negative Spread Filtering**: Negative Bid Spread and Ask Spread values are filtered out (set to NaN) in runs pipeline (both parquet storage and aggregation) - these are data quality issues
+- **Outlier Spread Filtering** (Runs Pipeline only):
+  - Implemented in `runs_pipeline/load.py` via `filter_outlier_spreads()` method
+  - Groups data by Date+CUSIP before writing to parquet
+  - For each group, calculates high/low from valid positive Bid Spread and Ask Spread values (excluding current row)
+  - Drops rows where Bid Spread or Ask Spread is outside `[low - 20, high + 20]` range
+  - Filters both positive and negative outliers
+  - Excludes CUSIPs with Custom_Sector: "Non Financial Hybrid", "Non Financial Hybrids", "Financial Hybrid", "HY"
+  - Runs after deduplication but before writing to parquet
+  - Logs dropped row details (Date, CUSIP, Dealer, Security, Time, reason) for first 50 rows
 - Preserve all other values as-is
 
 #### Numeric Column Conversion
@@ -380,7 +401,7 @@ bond_data/logs/
 ├── validation.log      # CUSIP validation warnings
 ├── summary.log         # Pipeline execution summary (run headers, stats)
 ├── parquet_stats.log   # Snapshot diagnostics for each parquet dataset (df.info/head/tail)
-└── runs_today.log     # Runs today analytics execution log (merge statistics, df.info, matching details)
+└── runs_today.log      # Runs today analytics execution log (merge statistics, df.info, matching details)
 ```
 
 ### Logging Levels
@@ -426,11 +447,20 @@ tests/
 ├── conftest.py              # Shared fixtures (sample data, mocks)
 ├── unit/                    # Unit tests
 │   ├── test_utils.py       # ✅ Bond utility & BQL helper tests
+│   ├── test_utils_runs.py  # ✅ Runs utility tests
+│   ├── test_extract_runs.py # ✅ Runs extract tests
+│   ├── test_transform_runs.py # ✅ Runs transform tests
+│   ├── test_load_runs.py   # ✅ Runs load tests
 │   ├── test_extract.py     # TODO
 │   ├── test_transform.py   # TODO
 │   └── test_load.py        # TODO
-└── integration/             # Integration tests
-    └── test_pipeline.py    # TODO
+├── integration/             # Integration tests
+│   ├── test_pipeline_runs.py # ✅ Runs pipeline integration tests
+│   └── test_run_pipeline.py  # ✅ Unified pipeline orchestrator tests
+└── patterns/                 # Pattern analysis and data exploration scripts (not production tests)
+    ├── analyze_runs_data.py
+    ├── data_analysis_and_questions.md
+    └── deep_duplicate_analysis.py
 ```
 
 ### Testing Requirements
@@ -483,7 +513,7 @@ Bond-RV-App/
 │   │   └── comb.py           # Consolidated pair analytics script (contains 11 analysis functions: all_comb, term_comb, ticker_comb, custom_sector, custom_bond_comb, custom_bond_vs_holdings, cad_cheap_vs_usd, cad_rich_vs_usd, executable_cr01_vs_holdings, executable_cr01_decent_bid_offer_vs_holdings, all_combos_vs_holdings; outputs single Excel file with multiple sheets, plus comb.txt and comb_validation.txt)
 │   ├── runs/             # Runs analytics scripts
 │   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/1yr changes, filters negative spreads, matches by (CUSIP, Benchmark) tuples)
-│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, includes "Filters Applied:" sections for all tables, auto-validates and regenerates CSV if stale)
+│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, includes "Filters Applied:" sections for all tables, auto-validates and regenerates CSV if stale; entry point calls both main() for portfolio views and generate_universe_views() for universe views)
 │   └── processed_data/   # Outputs from analytics scripts
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets, one sheet per analysis type)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
@@ -1365,4 +1395,13 @@ pytest tests/unit/test_utils.py -v
   - Text outputs remain: `comb.txt` (summary) and `comb_validation.txt` (validation log)
   - All individual CSV files referenced in earlier change log entries are no longer generated
   - Historical change log entries documenting individual script creation are preserved for reference but scripts no longer exist as separate files
+- **2025-01-XX XX:XX ET**: Added spread outlier filtering to runs pipeline:
+  - Implemented `filter_outlier_spreads()` method in `runs_pipeline/load.py`
+  - Filters rows where Bid Spread or Ask Spread values are outside `[low - 20, high + 20]` range based on Date+CUSIP group statistics
+  - Filters both positive and negative outliers (not just negative values)
+  - Excludes CUSIPs with Custom_Sector values: "Non Financial Hybrid", "Non Financial Hybrids", "Financial Hybrid", "HY"
+  - Outlier calculation excludes current row's value from group statistics to prevent self-skewing
+  - Runs after deduplication but before writing to parquet (in both append and override modes)
+  - Logs dropped row count and detailed information (Date, CUSIP, Dealer, Security, Time, reason) for first 50 dropped rows
+  - Integrated into both `load_append()` and `load_override()` methods
 
