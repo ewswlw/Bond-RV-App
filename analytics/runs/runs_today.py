@@ -3,7 +3,7 @@ Runs today analytics script.
 
 This module reads `bond_data/parquet/runs_timeseries.parquet`, aggregates metrics by Date+CUSIP+Benchmark,
 filters to the most recent date, computes Day-over-Day (DoD), Month-to-Date (MTD), Year-to-Date (YTD), and
-1-year (1yr) changes by comparing the last date with reference dates, and exports the results to CSV for
+Custom Date changes by comparing the last date with reference dates, and exports the results to CSV for
 daily monitoring.
 """
 
@@ -537,7 +537,7 @@ def run_analysis(
     Execute the runs today analytics workflow.
 
     Reads parquet, aggregates metrics for required dates only, filters to today,
-    computes DoD/MTD/YTD/1yr changes, and exports to CSV.
+    computes DoD/MTD/YTD/Custom Date changes, and exports to CSV.
 
     Args:
         runs_path: Path to runs_timeseries.parquet file.
@@ -545,7 +545,7 @@ def run_analysis(
         logger: Logger instance for detailed logging.
 
     Returns:
-        DataFrame containing today's data with DoD, MTD, YTD, and 1yr changes.
+        DataFrame containing today's data with DoD, MTD, YTD, and Custom Date changes.
     """
     log_func = logger.info if logger else print
     
@@ -596,8 +596,8 @@ def run_analysis(
     log_func(f"Last date: {last_date}")
     log_func(f"Second-to-last date: {second_last_date}")
     
-    # Find reference dates for MTD, YTD, and 1yr calculations
-    log_func("\n[STEP 2] Finding reference dates for MTD, YTD, and 1yr calculations...")
+    # Find reference dates for MTD, YTD, and Custom Date calculations
+    log_func("\n[STEP 2] Finding reference dates for MTD, YTD, and Custom Date calculations...")
     
     # MTD: First date of current month
     mtd_ref_date = pd.Timestamp(last_date.year, last_date.month, 1)
@@ -609,14 +609,14 @@ def run_analysis(
     ytd_dates = [d for d in unique_dates if d >= ytd_ref_date and d < last_date]
     ytd_ref_date = ytd_dates[0] if ytd_dates else None
     
-    # 1yr: Approximately 1 year ago (closest available date)
+    # Custom Date: Approximately 1 year ago (closest available date)
     one_year_ago = last_date - pd.DateOffset(years=1)
     one_yr_dates = [d for d in unique_dates if d <= one_year_ago]
     one_yr_ref_date = one_yr_dates[-1] if one_yr_dates else None
     
     log_func(f"  MTD reference date: {mtd_ref_date}")
     log_func(f"  YTD reference date: {ytd_ref_date}")
-    log_func(f"  1yr reference date: {one_yr_ref_date}")
+    log_func(f"  Custom Date reference date: {one_yr_ref_date}")
     
     # Collect all dates we need to process
     required_dates = {last_date, second_last_date}
@@ -824,8 +824,8 @@ def run_analysis(
         
         result_df[dod_col_name] = dod_values
     
-    # Step 9: Calculate MTD, YTD, and 1yr changes
-    print("\nCalculating MTD, YTD, and 1yr changes...")
+    # Step 9: Calculate MTD, YTD, and Custom Date changes
+    print("\nCalculating MTD, YTD, and Custom Date changes...")
     for col in DOD_COLUMNS:
         if col not in result_df.columns:
             continue
@@ -866,8 +866,8 @@ def run_analysis(
                 ytd_values.append(pd.NA)
         result_df[ytd_col_name] = ytd_values
         
-        # 1yr changes
-        one_yr_col_name = f"1yr Chg {col}"
+        # Custom Date changes
+        one_yr_col_name = f"Custom Date Chg {col}"
         one_yr_values = []
         for idx, row in result_df.iterrows():
             cusip = row["CUSIP"]
@@ -985,9 +985,9 @@ def run_analysis(
         if ytd_col_name in result_df.columns:
             column_order.append(ytd_col_name)
     
-    # Add 1yr columns after YTD columns
+    # Add Custom Date columns after YTD columns
     for col in DOD_COLUMNS:
-        one_yr_col_name = f"1yr Chg {col}"
+        one_yr_col_name = f"Custom Date Chg {col}"
         if one_yr_col_name in result_df.columns:
             column_order.append(one_yr_col_name)
     
@@ -1009,7 +1009,7 @@ def run_analysis(
             result_df[col] = pd.to_numeric(result_df[col], errors="coerce")
     
     for col in DOD_COLUMNS:
-        for prefix in ["DoD Chg ", "MTD Chg ", "YTD Chg ", "1yr Chg "]:
+        for prefix in ["DoD Chg ", "MTD Chg ", "YTD Chg ", "Custom Date Chg "]:
             col_name = f"{prefix}{col}"
             if col_name in result_df.columns:
                 result_df[col_name] = pd.to_numeric(result_df[col_name], errors="coerce")
@@ -1084,7 +1084,7 @@ def run_analysis(
     log_func(f"  DoD change columns: {len([c for c in result_df.columns if c.startswith('DoD Chg ')])}")
     log_func(f"  MTD change columns: {len([c for c in result_df.columns if c.startswith('MTD Chg ')])}")
     log_func(f"  YTD change columns: {len([c for c in result_df.columns if c.startswith('YTD Chg ')])}")
-    log_func(f"  1yr change columns: {len([c for c in result_df.columns if c.startswith('1yr Chg ')])}")
+    log_func(f"  Custom Date change columns: {len([c for c in result_df.columns if c.startswith('Custom Date Chg ')])}")
     
     # Log sample data from CSV
     log_func("\n" + "-" * 80)

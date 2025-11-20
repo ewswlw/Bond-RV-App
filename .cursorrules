@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-19 19:33 ET - Updated documentation to reflect actual codebase structure: added spread outlier filtering documentation for runs pipeline, updated test structure to reflect actual integration tests, documented runs_views.py entry point behavior (generates both portfolio and universe views), added runs_today.log to log file organization  
+**Last Updated**: 2025-01-17 21:00 ET - Replaced all "1yr" references with "Custom Date" throughout runs_today.py and runs_views.py (column names, display names, table titles, filter descriptions, console output); updated documentation to reflect Custom Date naming convention  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -512,7 +512,7 @@ Bond-RV-App/
 │   ├── comb/             # Pair analytics scripts
 │   │   └── comb.py           # Consolidated pair analytics script (contains 11 analysis functions: all_comb, term_comb, ticker_comb, custom_sector, custom_bond_comb, custom_bond_vs_holdings, cad_cheap_vs_usd, cad_rich_vs_usd, executable_cr01_vs_holdings, executable_cr01_decent_bid_offer_vs_holdings, all_combos_vs_holdings; outputs single Excel file with multiple sheets, plus comb.txt and comb_validation.txt)
 │   ├── runs/             # Runs analytics scripts
-│   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/1yr changes, filters negative spreads, matches by (CUSIP, Benchmark) tuples)
+│   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/Custom Date changes, filters negative spreads, matches by (CUSIP, Benchmark) tuples)
 │   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, includes "Filters Applied:" sections for all tables, auto-validates and regenerates CSV if stale; entry point calls both main() for portfolio views and generate_universe_views() for universe views)
 │   └── processed_data/   # Outputs from analytics scripts
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets, one sheet per analysis type)
@@ -988,7 +988,7 @@ pytest tests/unit/test_utils.py -v
       - 16 Day-over-Day (DoD) change columns (Last Date - Second Last Date)
       - 16 MTD change columns (Last Date - First Date of Month)
       - 16 YTD change columns (Last Date - First Date of Year)
-      - 16 1yr change columns (Last Date - Closest Date ~1 Year Ago)
+      - 16 Custom Date change columns (Last Date - Closest Date ~1 Year Ago)
     - Merges external columns from `historical_portfolio.parquet` (last date): QUANTITY, POSITION CR01
     - Merges external columns from `historical_bond_details.parquet` (most recent available date): G Sprd, Yrs (Cvn), vs BI, vs BCE, MTD Equity, YTD Equity, Retracement, Yrs Since Issue, Z Score, Retracement2, Rating, Custom_Sector
     - CUSIP normalization: Normalizes CUSIPs for matching (runs CUSIPs may not be normalized, bond/portfolio CUSIPs are normalized)
@@ -1008,19 +1008,19 @@ pytest tests/unit/test_utils.py -v
 - **2025-01-XX XX:XX ET**: Merged runs-adjusted_ts.py into runs_today.py and optimized date processing:
   - Merged `analytics/runs/runs-adjusted_ts.py` into `analytics/runs/runs_today.py` (single flow)
   - Removed intermediate `runs_adjusted_ts.csv` output file (no longer generated)
-  - Optimized to process only required dates (last, second-to-last, MTD ref, YTD ref, 1yr ref) instead of all dates
+  - Optimized to process only required dates (last, second-to-last, MTD ref, YTD ref, Custom Date ref) instead of all dates
   - Reads directly from `runs_timeseries.parquet` instead of intermediate CSV
   - Single workflow: aggregation → today analysis → CSV output
   - Keeps `compute_group_metrics()` and `ensure_ascii()` as helper functions
   - Improved performance by filtering parquet data before grouping/aggregation
   - Deleted `runs-adjusted_ts.py` file
-- **2025-01-XX XX:XX ET**: Enhanced runs today analytics with MTD, YTD, and 1yr changes:
+- **2025-01-XX XX:XX ET**: Enhanced runs today analytics with MTD, YTD, and Custom Date changes:
   - Added Month-to-Date (MTD) change columns for all DoD columns (compares last date with first available date of current month)
   - Added Year-to-Date (YTD) change columns for all DoD columns (compares last date with first available date of current year)
-  - Added 1-year (1yr) change columns for all DoD columns (compares last date with closest available date approximately 1 year ago)
-  - Naming convention: `DoD Chg {column}` → `MTD Chg {column}`, `YTD Chg {column}`, `1yr Chg {column}`
-  - All MTD, YTD, and 1yr columns properly typed as `float64`
-  - Column ordering: DoD columns first, then MTD, then YTD, then 1yr (grouped by change type)
+  - Added Custom Date change columns for all DoD columns (compares last date with closest available date approximately 1 year ago)
+  - Naming convention: `DoD Chg {column}` → `MTD Chg {column}`, `YTD Chg {column}`, `Custom Date Chg {column}`
+  - All MTD, YTD, and Custom Date columns properly typed as `float64`
+  - Column ordering: DoD columns first, then MTD, then YTD, then Custom Date (grouped by change type)
   - Handles cases where reference dates don't exist (returns NA values)
   - Updated module and function docstrings to reflect new change calculations
 - **2025-01-XX XX:XX ET**: Created portfolio combinations pair analytics script:
@@ -1224,7 +1224,7 @@ pytest tests/unit/test_utils.py -v
        - Filters to rows where QUANTITY > 0
        - Sorts by POSITION CR01 descending (largest to smallest)
        - Shows "Total CR01" summary at top (sum of POSITION CR01 from displayed table rows, calculated after table creation)
-       - Includes all 31 columns (Security, QUANTITY, POSITION CR01, Yrs (Cvn), spread metrics, dealer info, CR01 metrics, DoD/MTD/YTD/1yr changes, equity metrics, Retracement, Custom_Sector)
+       - Includes all 31 columns (Security, QUANTITY, POSITION CR01, Yrs (Cvn), spread metrics, dealer info, CR01 metrics, DoD/MTD/YTD/Custom Date changes, equity metrics, Retracement, Custom_Sector)
     2. **Portfolio Less Liquid Lines**:
        - Replica of Portfolio Sorted By CR01 Risk table
        - Filters to rows where QUANTITY > 0 and Tight Bid >3mm is blank (NaN/null)
@@ -1243,10 +1243,10 @@ pytest tests/unit/test_utils.py -v
        - Filters to QUANTITY > 0, TB >3mm has value, and YTD TB non-zero
        - Sorts by YTD Chg Tight Bid descending
        - Excludes DoD and MTD columns (uses PORTFOLIO_YTD_COLUMNS)
-    6. **Portfolio Sorted By 1yr Bid Chg With >3MM on Bid**:
-       - Filters to QUANTITY > 0, TB >3mm has value, and 1yr TB non-zero
-       - Sorts by 1yr Chg Tight Bid descending
-       - Excludes DoD, MTD, and YTD columns (uses PORTFOLIO_1YR_COLUMNS)
+    6. **Portfolio Sorted By Custom Date Bid Chg With >3MM on Bid**:
+       - Filters to QUANTITY > 0, TB >3mm has value, and Custom Date TB non-zero
+       - Sorts by Custom Date Chg Tight Bid descending
+       - Excludes DoD, MTD, and YTD columns (uses PORTFOLIO_CUSTOM_DATE_COLUMNS)
     7. **Size Bids**:
        - Same columns as CR01 Risk table
        - Filters to QUANTITY > 0, CR01 @ Tight Bid >= 1000, POSITION CR01 >= 1,000
@@ -1291,7 +1291,7 @@ pytest tests/unit/test_utils.py -v
     - Full column names used (not display names)
     - Auto-fitted column widths
   - Header includes refresh timestamp and MTD/YTD reference dates from runs_timeseries.parquet
-  - Configuration section at top for column display names and column order (PORTFOLIO_CR01_RISK_COLUMNS, PORTFOLIO_MTD_COLUMNS, PORTFOLIO_YTD_COLUMNS, PORTFOLIO_1YR_COLUMNS)
+  - Configuration section at top for column display names and column order (PORTFOLIO_CR01_RISK_COLUMNS, PORTFOLIO_MTD_COLUMNS, PORTFOLIO_YTD_COLUMNS, PORTFOLIO_CUSTOM_DATE_COLUMNS)
   - Enhanced `format_table()` function to support optional `summary_dict` parameter for displaying summary statistics at top of tables
   - Added Custom_Sector to runs_today.py merge:
     - Added "Custom_Sector" to BOND_DETAILS_MERGE_COLUMNS in `analytics/runs/runs_today.py`
@@ -1332,7 +1332,7 @@ pytest tests/unit/test_utils.py -v
   - Fixed DoD calculation Benchmark matching in `analytics/runs/runs_today.py`:
     - Changed all lookups from CUSIP-only to `(CUSIP, Benchmark)` tuple matching
     - Ensures correct pairing when CUSIPs have multiple benchmarks
-    - Applied to DoD, MTD, YTD, 1yr, and T-1 dealer lookups
+    - Applied to DoD, MTD, YTD, Custom Date, and T-1 dealer lookups
     - Updated filtering logic to match by `(CUSIP, Benchmark)` pairs instead of CUSIP only
     - Added Benchmark column to `compute_group_metrics()` output and aggregated column order
   - Created universe RV views in `analytics/runs/runs_views.py`:
@@ -1370,7 +1370,7 @@ pytest tests/unit/test_utils.py -v
     - Spread filters (Tight Bid >3mm, Bid/Offer>3mm <= 3)
     - Custom_Sector exclusions (Bail In)
     - Dealer-specific filters
-    - Change filters (DoD/MTD/YTD/1yr non-zero)
+    - Change filters (DoD/MTD/YTD/Custom Date non-zero)
     - Sort order descriptions
   - Uses existing `format_filter_description()` function for consistent formatting
   - Filter descriptions are written before each table with separator lines (`===`)
@@ -1381,7 +1381,7 @@ pytest tests/unit/test_utils.py -v
     3. Portfolio Sorted By DoD Bid Chg With >3MM on Bid
     4. Portfolio Sorted By MTD Bid Chg With >3MM on Bid
     5. Portfolio Sorted By YTD Bid Chg With >3MM on Bid
-    6. Portfolio Sorted By 1yr Bid Chg With >3MM on Bid
+    6. Portfolio Sorted By Custom Date Bid Chg With >3MM on Bid
     7. Size Bids
     8. Size Bids Struggling Names
     9. Size Bids Heavily Offered Lines
@@ -1404,4 +1404,18 @@ pytest tests/unit/test_utils.py -v
   - Runs after deduplication but before writing to parquet (in both append and override modes)
   - Logs dropped row count and detailed information (Date, CUSIP, Dealer, Security, Time, reason) for first 50 dropped rows
   - Integrated into both `load_append()` and `load_override()` methods
+- **2025-01-17 21:00 ET**: Replaced "1yr" with "Custom Date" throughout analytics scripts:
+  - Updated `analytics/runs/runs_today.py`: All column names changed from `"1yr Chg {col}"` to `"Custom Date Chg {col}"`
+  - Updated `analytics/runs/runs_views.py`: 
+    - Display names changed from `"1yr TB"` to `"Custom Date TB"`
+    - Column lists updated from `"1yr Chg Tight Bid"` to `"Custom Date Chg Tight Bid"`
+    - Function names: `create_portfolio_1yr_bid_chg_table` → `create_portfolio_custom_date_bid_chg_table`
+    - Function names: `create_universe_1yr_moves_table` → `create_universe_custom_date_moves_table`
+    - Constant names: `PORTFOLIO_1YR_COLUMNS` → `PORTFOLIO_CUSTOM_DATE_COLUMNS`
+    - Variable names: `portfolio_1yr_bid_df` → `portfolio_custom_date_bid_df`, `universe_1yr_df` → `universe_custom_date_df`
+    - All table titles, filter descriptions, and print statements updated
+  - CSV output: `runs_today.csv` now contains 16 "Custom Date Chg" columns instead of "1yr Chg" columns
+  - Text/Excel outputs: `portfolio_runs_view.txt/xlsx` and `uni_runs_view.txt/xlsx` display "Custom Date TB" instead of "1yr TB"
+  - All user-facing references now use "Custom Date" instead of "1yr"
+  - Internal variable names like `one_yr_ref_date` remain unchanged as implementation details
 

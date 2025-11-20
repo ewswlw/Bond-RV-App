@@ -58,7 +58,7 @@ COLUMN_DISPLAY_NAMES = {
     "DoD Chg Size @ Wide Offer >3mm": "DoD Size WO>3mm",
     "MTD Chg Tight Bid": "MTD TB",
     "YTD Chg Tight Bid": "YTD TB",
-    "1yr Chg Tight Bid": "1yr TB",
+    "Custom Date Chg Tight Bid": "Custom Date TB",
     "MTD Equity": "MTD Equity",
     "YTD Equity": "YTD Equity",
     "Retracement": "Retracement",
@@ -93,7 +93,7 @@ PORTFOLIO_CR01_RISK_COLUMNS = [
     "DoD Chg Size @ Wide Offer >3mm",
     "MTD Chg Tight Bid",
     "YTD Chg Tight Bid",
-    "1yr Chg Tight Bid",
+    "Custom Date Chg Tight Bid",
     "MTD Equity",
     "YTD Equity",
     "Retracement",
@@ -122,7 +122,7 @@ PORTFOLIO_MTD_COLUMNS = [
     "# of Offers >3mm",
     "MTD Chg Tight Bid",
     "YTD Chg Tight Bid",
-    "1yr Chg Tight Bid",
+    "Custom Date Chg Tight Bid",
     "MTD Equity",
     "YTD Equity",
     "Retracement",
@@ -150,15 +150,15 @@ PORTFOLIO_YTD_COLUMNS = [
     "# of Bids >3mm",
     "# of Offers >3mm",
     "YTD Chg Tight Bid",
-    "1yr Chg Tight Bid",
+    "Custom Date Chg Tight Bid",
     "MTD Equity",
     "YTD Equity",
     "Retracement",
     "Custom_Sector",
 ]
 
-# Column order for 1yr table (excludes DoD, MTD, and YTD columns)
-PORTFOLIO_1YR_COLUMNS = [
+# Column order for Custom Date table (excludes DoD, MTD, and YTD columns)
+PORTFOLIO_CUSTOM_DATE_COLUMNS = [
     "Security",
     "QUANTITY",
     "POSITION CR01",
@@ -177,7 +177,7 @@ PORTFOLIO_1YR_COLUMNS = [
     "CR01 @ Wide Offer",
     "# of Bids >3mm",
     "# of Offers >3mm",
-    "1yr Chg Tight Bid",
+    "Custom Date Chg Tight Bid",
     "MTD Equity",
     "YTD Equity",
     "Retracement",
@@ -241,7 +241,7 @@ UNIVERSE_DOD_MOVES_COLUMNS = [
     "DoD Chg Size @ Wide Offer >3mm",
     "MTD Chg Tight Bid",
     "YTD Chg Tight Bid",
-    "1yr Chg Tight Bid",
+    "Custom Date Chg Tight Bid",
     "MTD Equity",
     "YTD Equity",
     "Retracement",
@@ -269,7 +269,7 @@ UNIVERSE_MTD_MOVES_COLUMNS = [
     "# of Offers >3mm",
     "MTD Chg Tight Bid",
     "YTD Chg Tight Bid",
-    "1yr Chg Tight Bid",
+    "Custom Date Chg Tight Bid",
     "MTD Equity",
     "YTD Equity",
     "Retracement",
@@ -360,9 +360,9 @@ def ensure_numeric_types(df: pd.DataFrame) -> pd.DataFrame:
         if col in df_converted.columns:
             df_converted[col] = pd.to_numeric(df_converted[col], errors="coerce")
     
-    # Convert all change columns (DoD Chg *, MTD Chg *, YTD Chg *, 1yr Chg *)
+    # Convert all change columns (DoD Chg *, MTD Chg *, YTD Chg *, Custom Date Chg *)
     for col in df_converted.columns:
-        if any(col.startswith(prefix) for prefix in ["DoD Chg ", "MTD Chg ", "YTD Chg ", "1yr Chg "]):
+        if any(col.startswith(prefix) for prefix in ["DoD Chg ", "MTD Chg ", "YTD Chg ", "Custom Date Chg "]):
             df_converted[col] = pd.to_numeric(df_converted[col], errors="coerce")
     
     return df_converted
@@ -409,7 +409,7 @@ def get_reference_dates(runs_path: Path) -> dict:
         runs_path: Path to runs_timeseries.parquet file.
     
     Returns:
-        Dictionary with 'last_date', 'mtd_ref_date', 'ytd_ref_date', 'one_yr_ref_date'.
+        Dictionary with 'last_date', 'mtd_ref_date', 'ytd_ref_date', 'one_yr_ref_date' (Custom Date reference date).
     """
     df = pd.read_parquet(runs_path)
     unique_dates = sorted(df["Date"].unique())
@@ -434,7 +434,7 @@ def get_reference_dates(runs_path: Path) -> dict:
     ytd_dates = [d for d in unique_dates if d >= ytd_ref_date and d < last_date]
     ytd_ref_date = ytd_dates[0] if ytd_dates else None
     
-    # 1yr: Approximately 1 year ago (closest available date)
+    # Custom Date: Approximately 1 year ago (closest available date)
     one_year_ago = last_date - pd.DateOffset(years=1)
     one_yr_dates = [d for d in unique_dates if d <= one_year_ago]
     one_yr_ref_date = one_yr_dates[-1] if one_yr_dates else None
@@ -816,11 +816,11 @@ def create_portfolio_ytd_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
     return df_filtered
 
 
-def create_portfolio_1yr_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
+def create_portfolio_custom_date_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Create Portfolio Sorted By 1yr Bid Chg With >3MM on Bid table.
+    Create Portfolio Sorted By Custom Date Bid Chg With >3MM on Bid table.
     
-    Filters to rows where Tight Bid >3mm has a value (non-blank) and 1yr Chg Tight Bid is non-zero (positive or negative).
+    Filters to rows where Tight Bid >3mm has a value (non-blank) and Custom Date Chg Tight Bid is non-zero (positive or negative).
     
     Args:
         df: Input DataFrame from runs_today.csv.
@@ -836,19 +836,19 @@ def create_portfolio_1yr_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
     if tb_col in df_filtered.columns:
         df_filtered = df_filtered[df_filtered[tb_col].notna()].copy()
     
-    # Filter to rows where 1yr Chg Tight Bid is non-zero (positive or negative) and non-blank
-    one_yr_col = "1yr Chg Tight Bid"
-    if one_yr_col in df_filtered.columns:
+    # Filter to rows where Custom Date Chg Tight Bid is non-zero (positive or negative) and non-blank
+    custom_date_col = "Custom Date Chg Tight Bid"
+    if custom_date_col in df_filtered.columns:
         df_filtered = df_filtered[
-            df_filtered[one_yr_col].notna() & (df_filtered[one_yr_col] != 0)
+            df_filtered[custom_date_col].notna() & (df_filtered[custom_date_col] != 0)
         ].copy()
     
-    # Sort by 1yr Chg Tight Bid descending (largest changes first)
-    if one_yr_col in df_filtered.columns:
-        df_filtered = df_filtered.sort_values(one_yr_col, ascending=False, na_position='last')
+    # Sort by Custom Date Chg Tight Bid descending (largest changes first)
+    if custom_date_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(custom_date_col, ascending=False, na_position='last')
     
     # Select only required columns (in order) - excludes DoD, MTD, and YTD columns
-    available_columns = [col for col in PORTFOLIO_1YR_COLUMNS if col in df_filtered.columns]
+    available_columns = [col for col in PORTFOLIO_CUSTOM_DATE_COLUMNS if col in df_filtered.columns]
     df_filtered = df_filtered[available_columns].copy()
     
     return df_filtered
@@ -2019,7 +2019,7 @@ def create_universe_ytd_moves_table(
     return result_df
 
 
-def create_universe_1yr_moves_table(
+def create_universe_custom_date_moves_table(
     df: pd.DataFrame,
     excluded_sectors: list[str] = None,
     sort_column: str = None,
@@ -2027,7 +2027,7 @@ def create_universe_1yr_moves_table(
     columns: list[str] = None
 ) -> pd.DataFrame:
     """
-    Create Universe Sorted By 1yr Moves With Size On Offer >3mm table.
+    Create Universe Sorted By Custom Date Moves With Size On Offer >3mm table.
     
     Filters out excluded Custom_Sector values, filters to rows where Wide Offer >3mm > 0,
     excludes rows where sort column is 0 or blank, and shows top N and bottom N rows by sort column.
@@ -2036,7 +2036,7 @@ def create_universe_1yr_moves_table(
     Args:
         df: Input DataFrame from runs_today.csv.
         excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
-        sort_column: Column to sort by (defaults to "1yr Chg Tight Bid").
+        sort_column: Column to sort by (defaults to "Custom Date Chg Tight Bid").
         top_bottom_n: Number of top and bottom rows to show (defaults to UNIVERSE_TOP_BOTTOM_N).
         columns: List of columns to include (defaults to UNIVERSE_MTD_MOVES_COLUMNS).
     
@@ -2047,7 +2047,7 @@ def create_universe_1yr_moves_table(
     if excluded_sectors is None:
         excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
     if sort_column is None:
-        sort_column = "1yr Chg Tight Bid"
+        sort_column = "Custom Date Chg Tight Bid"
     if top_bottom_n is None:
         top_bottom_n = UNIVERSE_TOP_BOTTOM_N
     if columns is None:
@@ -2443,10 +2443,10 @@ def main() -> None:
     portfolio_ytd_bid_df = create_portfolio_ytd_bid_chg_table(df)
     print(f"Filtered to {len(portfolio_ytd_bid_df):,} rows with QUANTITY > 0, TB >3mm has value, and YTD TB non-zero")
     
-    # Step 7: Create Portfolio Sorted By 1yr Bid Chg table
-    print("\n[STEP 7] Creating Portfolio Sorted By 1yr Bid Chg With >3MM on Bid table...")
-    portfolio_1yr_bid_df = create_portfolio_1yr_bid_chg_table(df)
-    print(f"Filtered to {len(portfolio_1yr_bid_df):,} rows with QUANTITY > 0, TB >3mm has value, and 1yr TB non-zero")
+    # Step 7: Create Portfolio Sorted By Custom Date Bid Chg table
+    print("\n[STEP 7] Creating Portfolio Sorted By Custom Date Bid Chg With >3MM on Bid table...")
+    portfolio_custom_date_bid_df = create_portfolio_custom_date_bid_chg_table(df)
+    print(f"Filtered to {len(portfolio_custom_date_bid_df):,} rows with QUANTITY > 0, TB >3mm has value, and Custom Date TB non-zero")
     
     # Step 8: Create Size Bids table
     print("\n[STEP 8] Creating Size Bids table...")
@@ -2654,20 +2654,20 @@ def main() -> None:
         )
         f.write(table_str)
         
-        # Write Portfolio Sorted By 1yr Bid Chg table
-        table_title_1yr = "Portfolio Sorted By 1yr Bid Chg With >3MM on Bid"
-        excel_tables[table_title_1yr] = {'df': portfolio_1yr_bid_df, 'summary': {}}
-        filter_desc_1yr = format_filter_description([
+        # Write Portfolio Sorted By Custom Date Bid Chg table
+        table_title_custom_date = "Portfolio Sorted By Custom Date Bid Chg With >3MM on Bid"
+        excel_tables[table_title_custom_date] = {'df': portfolio_custom_date_bid_df, 'summary': {}}
+        filter_desc_custom_date = format_filter_description([
             "QUANTITY > 0",
             "Tight Bid >3mm has a value (non-blank)",
-            "1yr Chg Tight Bid is non-zero (positive or negative) and non-blank",
-            "Sorted by 1yr Chg Tight Bid descending (largest changes first)"
+            "Custom Date Chg Tight Bid is non-zero (positive or negative) and non-blank",
+            "Sorted by Custom Date Chg Tight Bid descending (largest changes first)"
         ])
-        f.write(filter_desc_1yr + "\n")
+        f.write(filter_desc_custom_date + "\n")
         f.write("="*100 + "\n\n")
         table_str = format_table(
-            portfolio_1yr_bid_df,
-            table_title_1yr,
+            portfolio_custom_date_bid_df,
+            table_title_custom_date,
             COLUMN_DISPLAY_NAMES
         )
         f.write(table_str)
@@ -2812,7 +2812,7 @@ def main() -> None:
     print(f"Total rows in Portfolio DoD Bid Chg table: {len(portfolio_dod_bid_df):,}")
     print(f"Total rows in Portfolio MTD Bid Chg table: {len(portfolio_mtd_bid_df):,}")
     print(f"Total rows in Portfolio YTD Bid Chg table: {len(portfolio_ytd_bid_df):,}")
-    print(f"Total rows in Portfolio 1yr Bid Chg table: {len(portfolio_1yr_bid_df):,}")
+    print(f"Total rows in Portfolio Custom Date Bid Chg table: {len(portfolio_custom_date_bid_df):,}")
     print(f"Total rows in Size Bids table: {len(size_bids_df):,}")
     print(f"Total rows in Size Bids Struggling Names table: {len(size_bids_struggling_names_df):,}")
     print(f"Total rows in Size Bids Heavily Offered Lines table: {len(size_bids_heavily_offered_lines_df):,}")
@@ -2962,20 +2962,20 @@ def generate_universe_views() -> None:
     print(f"Filtered to {len(universe_ytd_df):,} rows")
     print(f"Filters: {filter_description_ytd}")
     
-    # Step 3.85: Create Universe Sorted By 1yr Moves With Size On Offer >3mm table
-    print("\n[STEP 3.85] Creating Universe Sorted By 1yr Moves With Size On Offer >3mm table...")
-    universe_1yr_df = create_universe_1yr_moves_table(df)
+    # Step 3.85: Create Universe Sorted By Custom Date Moves With Size On Offer >3mm table
+    print("\n[STEP 3.85] Creating Universe Sorted By Custom Date Moves With Size On Offer >3mm table...")
+    universe_custom_date_df = create_universe_custom_date_moves_table(df)
     
-    # Build filter description for 1yr table
-    filter_description_1yr = format_filter_description([
+    # Build filter description for Custom Date table
+    filter_description_custom_date = format_filter_description([
         f"Excluded Custom_Sector values: {excluded_sectors_str}",
         f"Only includes rows where Wide Offer >3mm > 0",
-        f"Excluded rows where 1yr Chg Tight Bid is 0 or blank",
-        f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by 1yr Chg Tight Bid"
+        f"Excluded rows where Custom Date Chg Tight Bid is 0 or blank",
+        f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by Custom Date Chg Tight Bid"
     ])
     
-    print(f"Filtered to {len(universe_1yr_df):,} rows")
-    print(f"Filters: {filter_description_1yr}")
+    print(f"Filtered to {len(universe_custom_date_df):,} rows")
+    print(f"Filters: {filter_description_custom_date}")
     
     # Step 3.9: Create Large CR01 On Offer table
     print("\n[STEP 3.9] Creating Large CR01 On Offer table...")
@@ -3163,18 +3163,18 @@ def generate_universe_views() -> None:
         f.write(table_str_ytd)
         
         f.write("\n" + "="*100 + "\n")
-        f.write(f"\n{filter_description_1yr}\n")
+        f.write(f"\n{filter_description_custom_date}\n")
         f.write("="*100 + "\n")
         
-        # Write Universe Sorted By 1yr Moves With Size On Offer >3mm table
-        table_title_1yr = "Universe Sorted By 1yr Moves With Size On Offer >3mm"
-        excel_tables[table_title_1yr] = {'df': universe_1yr_df, 'summary': {}}
-        table_str_1yr = format_table(
-            universe_1yr_df,
-            table_title_1yr,
+        # Write Universe Sorted By Custom Date Moves With Size On Offer >3mm table
+        table_title_custom_date = "Universe Sorted By Custom Date Moves With Size On Offer >3mm"
+        excel_tables[table_title_custom_date] = {'df': universe_custom_date_df, 'summary': {}}
+        table_str_custom_date = format_table(
+            universe_custom_date_df,
+            table_title_custom_date,
             COLUMN_DISPLAY_NAMES
         )
-        f.write(table_str_1yr)
+        f.write(table_str_custom_date)
         
         f.write("\n" + "="*100 + "\n")
         f.write(f"\n{filter_description_large_cr01}\n")
@@ -3290,7 +3290,7 @@ def generate_universe_views() -> None:
     print(f"Total rows in Universe DoD Moves table: {len(universe_dod_wo_df):,}")
     print(f"Total rows in Universe MTD Moves With Size On Offer >3mm table: {len(universe_mtd_df):,}")
     print(f"Total rows in Universe YTD Moves With Size On Offer >3mm table: {len(universe_ytd_df):,}")
-    print(f"Total rows in Universe 1yr Moves With Size On Offer >3mm table: {len(universe_1yr_df):,}")
+    print(f"Total rows in Universe Custom Date Moves With Size On Offer >3mm table: {len(universe_custom_date_df):,}")
     print(f"Total rows in Large CR01 On Offer table: {len(large_cr01_df):,}")
     # Count dealer-specific tables
     dealer_wo_col = "Dealer @ Wide Offer >3mm"
