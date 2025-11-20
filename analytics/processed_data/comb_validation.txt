@@ -1,5 +1,5 @@
 PAIR ANALYTICS VALIDATION LOG
-Generated: 2025-11-20 14:17:04
+Generated: 2025-11-20 17:34:23
 ================================================================================
 
 Starting pair analytics execution...
@@ -13,7 +13,7 @@ Configuration:
   Bid/Offer threshold: 3
 
 [all_comb] Starting analysis...
-[all_comb] Found 1704 CAD CUSIPs
+[all_comb] Found 1711 CAD CUSIPs
 [all_comb] After filtering: 101750 rows, 550 CUSIPs
 [all_comb] Processed 1,509 / 150,975 pairs (1.0%)
 [all_comb] Processed 3,018 / 150,975 pairs (2.0%)
@@ -117,7 +117,7 @@ Configuration:
 [all_comb] Processed 150,900 / 150,975 pairs (100.0%)
 [all_comb] Success: 150970 pairs generated
 [term_comb] Starting analysis...
-[term_comb] Found 1704 CAD CUSIPs, 1656 with Yrs (Cvn) data
+[term_comb] Found 1711 CAD CUSIPs, 1662 with Yrs (Cvn) data
 [term_comb] After filtering: 101750 rows, 550 CUSIPs
 [term_comb] Found 26,479 valid pairs (out of 150,975 possible)
 [term_comb] Processed 1,000 / 26,479 pairs (3.8%)
@@ -148,13 +148,13 @@ Configuration:
 [term_comb] Processed 26,000 / 26,479 pairs (98.2%)
 [term_comb] Success: 26474 pairs generated
 [ticker_comb] Starting analysis...
-[ticker_comb] Found 1704 CAD CUSIPs, 1704 with Ticker data
+[ticker_comb] Found 1711 CAD CUSIPs, 1711 with Ticker data
 [ticker_comb] After filtering: 101750 rows, 550 CUSIPs
 [ticker_comb] Found 1,422 valid pairs (out of 150,975 possible)
 [ticker_comb] Processed 1,000 / 1,422 pairs (70.3%)
 [ticker_comb] Success: 1417 pairs generated
 [custom_sector] Starting analysis...
-[custom_sector] Found 1704 CAD CUSIPs, 1704 with Custom_Sector data
+[custom_sector] Found 1711 CAD CUSIPs, 1711 with Custom_Sector data
 [custom_sector] After filtering: 101750 rows, 550 CUSIPs
 [custom_sector] Found 8,576 valid pairs (out of 150,975 possible)
 [custom_sector] Processed 1,000 / 8,576 pairs (11.7%)
@@ -167,40 +167,40 @@ Configuration:
 [custom_sector] Processed 8,000 / 8,576 pairs (93.3%)
 [custom_sector] Success: 8573 pairs generated
 [custom_bond_comb] Starting analysis...
-[custom_bond_comb] Found 1704 CAD CUSIPs
+[custom_bond_comb] Found 1711 CAD CUSIPs
 [custom_bond_comb] Found 29 target bond(s)
 [custom_bond_comb] After filtering: 101750 rows, 550 CUSIPs
 [custom_bond_comb] Success: 8235 pairs generated
 [custom_bond_vs_holdings] Starting analysis...
-[custom_bond_vs_holdings] Found 1704 CAD CUSIPs
+[custom_bond_vs_holdings] Found 1711 CAD CUSIPs
 [custom_bond_vs_holdings] Found 29 target bond(s)
-[custom_bond_vs_holdings] Found 73 CR01 holdings CUSIPs
-[custom_bond_vs_holdings] After filtering: 6475 rows, 35 CUSIPs
-[custom_bond_vs_holdings] Success: 314 pairs generated
+[custom_bond_vs_holdings] Found 72 CR01 holdings CUSIPs
+[custom_bond_vs_holdings] After filtering: 6105 rows, 33 CUSIPs
+[custom_bond_vs_holdings] Success: 284 pairs generated
 [cad_cheap_vs_usd] Starting analysis...
 [cad_cheap_vs_usd] After filtering: 167425 rows, 905 CUSIPs
-[cad_cheap_vs_usd] Found 2385 CUSIPs with valid mappings
-[cad_cheap_vs_usd] Found 2249 CUSIPs with CAD Equiv Swap data
+[cad_cheap_vs_usd] Found 2392 CUSIPs with valid mappings
+[cad_cheap_vs_usd] Found 2255 CUSIPs with CAD Equiv Swap data
 [cad_cheap_vs_usd] Found 550 CAD and 354 USD CUSIPs
 [cad_cheap_vs_usd] Found 440 valid pairs
 [cad_cheap_vs_usd] Success: 440 pairs generated
 [cad_rich_vs_usd] Starting analysis...
 [cad_rich_vs_usd] After filtering: 167425 rows, 905 CUSIPs
-[cad_rich_vs_usd] Found 2385 CUSIPs with valid mappings
-[cad_rich_vs_usd] Found 2249 CUSIPs with CAD Equiv Swap data
+[cad_rich_vs_usd] Found 2392 CUSIPs with valid mappings
+[cad_rich_vs_usd] Found 2255 CUSIPs with CAD Equiv Swap data
 [cad_rich_vs_usd] Found 354 USD and 550 CAD CUSIPs
 [cad_rich_vs_usd] Found 440 valid pairs
 [cad_rich_vs_usd] Success: 440 pairs generated
 [executable_cr01_vs_holdings] Starting analysis...
-[executable_cr01_vs_holdings] Found 73 CR01 holdings CUSIPs
-[executable_cr01_vs_holdings] Found 216 CR01 universe CUSIPs
-[executable_cr01_vs_holdings] Success: 4536 pairs generated
+[executable_cr01_vs_holdings] Found 72 CR01 holdings CUSIPs
+[executable_cr01_vs_holdings] Found 219 CR01 universe CUSIPs
+[executable_cr01_vs_holdings] Success: 4161 pairs generated
 [executable_cr01_decent_bid_offer_vs_holdings] Starting analysis...
-[executable_cr01_decent_bid_offer_vs_holdings] Found 41 CR01 holdings CUSIPs
-[executable_cr01_decent_bid_offer_vs_holdings] Found 99 CR01 universe CUSIPs
-[executable_cr01_decent_bid_offer_vs_holdings] Success: 1188 pairs generated
+[executable_cr01_decent_bid_offer_vs_holdings] Found 39 CR01 holdings CUSIPs
+[executable_cr01_decent_bid_offer_vs_holdings] Found 105 CR01 universe CUSIPs
+[executable_cr01_decent_bid_offer_vs_holdings] Success: 1260 pairs generated
 [all_combos_vs_holdings] Starting analysis...
-[all_combos_vs_holdings] Found 258 portfolio CUSIPs
+[all_combos_vs_holdings] Found 260 portfolio CUSIPs
 [all_combos_vs_holdings] Success: 2916 pairs generated
 
 ================================================================================
