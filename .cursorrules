@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-XX XX:XX ET - Comprehensive update to reflect current project state: added interactive Jupyter notebook documentation (Untitled-1.ipynb with ipywidgets), updated dependencies list, documented all three pipelines (bond, runs, portfolio), consolidated analytics structure, and comprehensive testing framework  
+**Last Updated**: 2025-11-21 11:05 ET - Added "# Qutoes" column to runs analytics (counts unique Dealers per CUSIP on last date, appears after "Yrs (Cvn)" in all portfolio and universe tables)  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -937,7 +937,7 @@ pytest tests/unit/test_utils.py -v
 ---
 
 **File Created**: January 2025  
-**Last Major Update**: 2025-01-17 20:00 ET  
+**Last Major Update**: 2025-11-21 11:05 ET  
 **Project**: Bond RV App - Data Pipeline  
 **Version**: 1.0
 
@@ -1040,6 +1040,7 @@ pytest tests/unit/test_utils.py -v
       - Dealer columns: Current dealers and T-1 dealers (from second-to-last date)
       - Size, CR01, cumulative, and count metrics
       - RBC dealer columns
+      - "# Qutoes": Count of unique Dealers per CUSIP on last date (aggregated across all Benchmarks)
       - 16 Day-over-Day (DoD) change columns (Last Date - Second Last Date)
       - 16 MTD change columns (Last Date - First Date of Month)
       - 16 YTD change columns (Last Date - First Date of Year)
@@ -1279,13 +1280,13 @@ pytest tests/unit/test_utils.py -v
        - Filters to rows where QUANTITY > 0
        - Sorts by POSITION CR01 descending (largest to smallest)
        - Shows "Total CR01" summary at top (sum of POSITION CR01 from displayed table rows, calculated after table creation)
-       - Includes all 31 columns (Security, QUANTITY, POSITION CR01, Yrs (Cvn), spread metrics, dealer info, CR01 metrics, DoD/MTD/YTD/Custom Date changes, equity metrics, Retracement, Custom_Sector)
+       - Includes all 32 columns (Security, QUANTITY, POSITION CR01, Yrs (Cvn), # Qutoes, spread metrics, dealer info, CR01 metrics, DoD/MTD/YTD/Custom Date changes, equity metrics, Retracement, Custom_Sector)
     2. **Portfolio Less Liquid Lines**:
        - Replica of Portfolio Sorted By CR01 Risk table
        - Filters to rows where QUANTITY > 0 and Tight Bid >3mm is blank (NaN/null)
        - Sorts by POSITION CR01 descending (largest to smallest)
        - Shows "Total CR01" summary at top (sum of POSITION CR01 from displayed table rows, calculated after table creation)
-       - Includes all 31 columns (same as CR01 Risk table)
+       - Includes all 32 columns (same as CR01 Risk table)
     3. **Portfolio Sorted By DoD Bid Chg With >3MM on Bid**:
        - Filters to QUANTITY > 0, TB >3mm has value, and DoD TB>3mm non-zero
        - Sorts by DoD Chg Tight Bid >3mm descending
@@ -1347,6 +1348,7 @@ pytest tests/unit/test_utils.py -v
     - Auto-fitted column widths
   - Header includes refresh timestamp and MTD/YTD reference dates from runs_timeseries.parquet
   - Configuration section at top for column display names and column order (PORTFOLIO_CR01_RISK_COLUMNS, PORTFOLIO_MTD_COLUMNS, PORTFOLIO_YTD_COLUMNS, PORTFOLIO_CUSTOM_DATE_COLUMNS)
+  - "# Qutoes" column appears after "Yrs (Cvn)" in all portfolio and universe tables
   - Enhanced `format_table()` function to support optional `summary_dict` parameter for displaying summary statistics at top of tables
   - Added Custom_Sector to runs_today.py merge:
     - Added "Custom_Sector" to BOND_DETAILS_MERGE_COLUMNS in `analytics/runs/runs_today.py`
@@ -1491,4 +1493,18 @@ pytest tests/unit/test_utils.py -v
   - Column resizing via drag handles, clear buttons for all filter types
   - Uses ipywidgets and BeautifulSoup4 (not currently in pyproject.toml, may need separate installation)
   - Reads from `analytics/processed_data/portfolio_runs_view.xlsx` for interactive exploration
+- **2025-11-21 11:05 ET**: Added "# Qutoes" column to runs analytics:
+  - Added "# Qutoes" calculation to `analytics/runs/runs_today.py`:
+    - Counts unique Dealers per CUSIP on last date (aggregated across all Benchmarks)
+    - Calculated from `runs_timeseries.parquet` by grouping by CUSIP and counting unique Dealers
+    - Values range from 1 to 5 unique Dealers per CUSIP
+    - Missing CUSIPs (no quotes) default to 0
+    - Added to column order and numeric conversion
+  - Added "# Qutoes" to all column lists in `analytics/runs/runs_views.py`:
+    - Added after "Yrs (Cvn)" in PORTFOLIO_CR01_RISK_COLUMNS, PORTFOLIO_MTD_COLUMNS, PORTFOLIO_YTD_COLUMNS, PORTFOLIO_CUSTOM_DATE_COLUMNS
+    - Added after "Yrs (Cvn)" in UNIVERSE_DOD_MOVES_COLUMNS, UNIVERSE_MTD_MOVES_COLUMNS
+    - Added to display names (COLUMN_DISPLAY_NAMES) and numeric conversion list
+    - Formatted as whole number with thousand separators (same as other count columns)
+  - Appears in all 16 portfolio tables and all 15 universe tables in both text and Excel outputs
+  - Positioned immediately after "Yrs Cvn" column in all table views
 

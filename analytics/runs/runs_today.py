@@ -906,6 +906,28 @@ def run_analysis(
         axis=1
     )
     
+    # Step 10.5: Calculate "# Qutoes" - count unique Dealers per CUSIP on last date
+    print("\nCalculating '# Qutoes' (unique Dealers per CUSIP on last date)...")
+    
+    # Filter original df to last date only
+    df_last_date = df[df["Date"] == last_date].copy()
+    
+    # Count unique Dealers per CUSIP (aggregate across all Benchmarks)
+    quotes_per_cusip = df_last_date.groupby("CUSIP")["Dealer"].nunique().reset_index()
+    quotes_per_cusip.columns = ["CUSIP", "# Qutoes"]
+    
+    # Fill missing CUSIPs with 0 (CUSIPs with no quotes)
+    all_cusips = result_df["CUSIP"].unique()
+    quotes_dict = dict(zip(quotes_per_cusip["CUSIP"], quotes_per_cusip["# Qutoes"]))
+    quotes_values = [quotes_dict.get(cusip, 0) for cusip in result_df["CUSIP"]]
+    result_df["# Qutoes"] = quotes_values
+    
+    # Convert to numeric (should already be int, but ensure it's numeric)
+    result_df["# Qutoes"] = pd.to_numeric(result_df["# Qutoes"], errors="coerce").fillna(0).astype(int)
+    
+    print(f"  Calculated '# Qutoes' for {len(quotes_per_cusip):,} unique CUSIPs")
+    print(f"  Range: {result_df['# Qutoes'].min()} to {result_df['# Qutoes'].max()} unique Dealers")
+    
     # Step 11: Add T-1 dealer columns (from second last date)
     print("\nAdding T-1 dealer columns...")
     dealer_tight_t1_values = []
@@ -951,6 +973,7 @@ def run_analysis(
         "Cumm. Offer Size",
         "# of Bids >3mm",
         "# of Offers >3mm",
+        "# Qutoes",
         "Bid RBC",
         "Ask RBC",
         "Bid Size RBC",
@@ -999,7 +1022,7 @@ def run_analysis(
     result_df = result_df[column_order]
     
     # Step 13: Convert all change columns to float64
-    for col in ["Bid/Offer>3mm", "Bid/Offer"]:
+    for col in ["Bid/Offer>3mm", "Bid/Offer", "# Qutoes"]:
         if col in result_df.columns:
             result_df[col] = pd.to_numeric(result_df[col], errors="coerce")
     

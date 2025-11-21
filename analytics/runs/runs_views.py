@@ -36,6 +36,7 @@ COLUMN_DISPLAY_NAMES = {
     "QUANTITY": "Qty",
     "POSITION CR01": "Pos CR01",
     "Yrs (Cvn)": "Yrs Cvn",
+    "# Qutoes": "# Qutoes",
     "Tight Bid >3mm": "TB >3mm",
     "Wide Offer >3mm": "WO >3mm",
     "Tight Bid": "TB",
@@ -71,6 +72,7 @@ PORTFOLIO_CR01_RISK_COLUMNS = [
     "QUANTITY",
     "POSITION CR01",
     "Yrs (Cvn)",
+    "# Qutoes",
     "Tight Bid >3mm",
     "Wide Offer >3mm",
     "Tight Bid",
@@ -106,6 +108,7 @@ PORTFOLIO_MTD_COLUMNS = [
     "QUANTITY",
     "POSITION CR01",
     "Yrs (Cvn)",
+    "# Qutoes",
     "Tight Bid >3mm",
     "Wide Offer >3mm",
     "Tight Bid",
@@ -135,6 +138,7 @@ PORTFOLIO_YTD_COLUMNS = [
     "QUANTITY",
     "POSITION CR01",
     "Yrs (Cvn)",
+    "# Qutoes",
     "Tight Bid >3mm",
     "Wide Offer >3mm",
     "Tight Bid",
@@ -163,6 +167,7 @@ PORTFOLIO_CUSTOM_DATE_COLUMNS = [
     "QUANTITY",
     "POSITION CR01",
     "Yrs (Cvn)",
+    "# Qutoes",
     "Tight Bid >3mm",
     "Wide Offer >3mm",
     "Tight Bid",
@@ -219,6 +224,7 @@ UNIVERSE_DOD_SORT_COLUMN = "DoD Chg Wide Offer >3mm"
 UNIVERSE_DOD_MOVES_COLUMNS = [
     "Security",
     "Yrs (Cvn)",
+    "# Qutoes",
     "Tight Bid >3mm",
     "Wide Offer >3mm",
     "Tight Bid",
@@ -253,6 +259,7 @@ UNIVERSE_DOD_MOVES_COLUMNS = [
 UNIVERSE_MTD_MOVES_COLUMNS = [
     "Security",
     "Yrs (Cvn)",
+    "# Qutoes",
     "Tight Bid >3mm",
     "Wide Offer >3mm",
     "Tight Bid",
@@ -337,6 +344,7 @@ def ensure_numeric_types(df: pd.DataFrame) -> pd.DataFrame:
         # Count columns
         "# of Bids >3mm",
         "# of Offers >3mm",
+        "# Qutoes",
         # Portfolio columns
         "QUANTITY",
         "POSITION CR01",
