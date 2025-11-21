@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-21 11:05 ET - Added "# Quotes" column to runs analytics (counts unique Dealers per CUSIP on last date, appears after "Yrs (Cvn)" in all portfolio and universe tables)  
+**Last Updated**: 2025-11-21 15:30 ET - Updated runs_views.py column ordering and sorting logic (DoD columns after B/O, DoD Offer Chg table uses DoD WO>3mm, new Universe DoD Moves table)  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -528,7 +528,7 @@ Bond-RV-App/
 │   │   └── comb.py           # Consolidated pair analytics script (contains 11 analysis functions: all_comb, term_comb, ticker_comb, custom_sector, custom_bond_comb, custom_bond_vs_holdings, cad_cheap_vs_usd, cad_rich_vs_usd, executable_cr01_vs_holdings, executable_cr01_decent_bid_offer_vs_holdings, all_combos_vs_holdings; outputs single Excel file with multiple sheets, plus comb.txt, comb_validation.txt, and all_combinations.csv with all pairs from all_comb analysis)
 │   ├── runs/             # Runs analytics scripts
 │   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/Custom Date changes, filters negative spreads, matches by (CUSIP, Benchmark) tuples)
-│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, includes "Filters Applied:" sections for all tables, auto-validates and regenerates CSV if stale; entry point calls both main() for portfolio views and generate_universe_views() for universe views)
+│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, includes "Filters Applied:" sections for all tables, auto-validates and regenerates CSV if stale; column order: DoD TB>3mm and DoD WO>3mm appear after B/O column; Portfolio DoD Offer Chg table sorts by DoD WO>3mm; Universe DoD Moves table (first table) shows all rows sorted by DoD WO>3mm with 50 rows in .txt, all rows in Excel; entry point calls both main() for portfolio views and generate_universe_views() for universe views)
 │   └── processed_data/   # Outputs from analytics scripts
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets, one sheet per analysis type)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
@@ -537,8 +537,8 @@ Bond-RV-App/
 │       ├── runs_today.csv    # Daily runs analytics output (from runs_today.py, used by runs_views.py and comb.py)
 │       ├── portfolio_runs_view.txt  # Formatted portfolio tables (from runs_views.py, text output, 16 tables)
 │       ├── portfolio_runs_view.xlsx  # Excel file with 16 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
-│       ├── uni_runs_view.txt  # Formatted universe tables (from runs_views.py, text output)
-│       └── uni_runs_view.xlsx  # Excel file with universe tables (from runs_views.py, formatted Excel tables on separate sheets)
+│       ├── uni_runs_view.txt  # Formatted universe tables (from runs_views.py, text output, 16 tables including new "Universe Sorted By DoD Moves" as first table with 50 rows)
+│       └── uni_runs_view.xlsx  # Excel file with universe tables (from runs_views.py, formatted Excel tables on separate sheets, 16 tables including new "Universe Sorted By DoD Moves" as first table with all rows)
 ├── bond_pipeline/          # Bond pipeline code (7 modules: config, utils, extract, transform, load, pipeline, README)
 ├── runs_pipeline/          # Runs pipeline code (5 modules: __init__, extract, transform, load, pipeline)
 ├── portfolio_pipeline/     # Portfolio pipeline code (5 modules: __init__, extract, transform, load, pipeline)
@@ -965,7 +965,7 @@ pytest tests/unit/test_utils.py -v
 ---
 
 **File Created**: January 2025  
-**Last Major Update**: 2025-11-21 11:05 ET  
+**Last Major Update**: 2025-11-21 15:30 ET  
 **Project**: Bond RV App - Data Pipeline  
 **Version**: 1.0
 

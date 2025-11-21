@@ -365,6 +365,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **2025-01-17 22:00 ET**: Added all_combinations.csv export for All Combinations Pair Analytics
 - **2025-01-XX XX:XX ET**: Added interactive Jupyter notebook for data exploration
 - **2025-11-21 11:05 ET**: Added "# Quotes" column to runs analytics
+- **2025-11-21 15:30 ET**: Updated runs_views.py column ordering, sorting logic, and added new Universe DoD Moves table:
+  - Rearranged column order in all tables: "DoD TB>3mm" and "DoD WO>3mm" columns now appear immediately after "B/O" (Bid/Offer) column in both portfolio and universe tables
+  - Changed "Portfolio Sorted By DoD Bid Chg" table to sort/filter by "DoD WO>3mm" instead of "DoD TB>3mm"
+  - Updated table title from "Portfolio Sorted By DoD Bid Chg With >3MM on Bid" to "Portfolio Sorted By DoD Offer Chg With >3MM on Offer"
+  - Created new "Universe Sorted By DoD Moves" table (simple version) as the first table in universe views:
+    - Shows all rows from runs_today.csv sorted by "DoD Chg Wide Offer >3mm" descending (largest to smallest)
+    - Only filters out excluded Custom_Sector values (no filtering for Wide Offer >3mm values or DoD being non-zero)
+    - Displays 50 rows in .txt file, all rows in Excel file
+    - Renamed existing "Universe Sorted By DoD Moves" table to "Universe Sorted By DoD Moves (Wide Offer)" to avoid naming conflict
+  - Updated column order definitions: PORTFOLIO_CR01_RISK_COLUMNS and UNIVERSE_DOD_MOVES_COLUMNS
 - **2025-01-XX XX:XX ET**: Moved Change Log from `.cursorrules` to separate `CHANGELOG.md` file:
   - Created `CHANGELOG.md` file with all historical change log entries
   - Removed Change Log section from `.cursorrules`

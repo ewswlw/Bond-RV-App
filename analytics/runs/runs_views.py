@@ -79,6 +79,8 @@ PORTFOLIO_CR01_RISK_COLUMNS = [
     "Wide Offer",
     "Bid/Offer>3mm",
     "Bid/Offer",
+    "DoD Chg Tight Bid >3mm",
+    "DoD Chg Wide Offer >3mm",
     "Dealer @ Tight Bid >3mm",
     "Dealer @ Wide Offer >3mm",
     "Size @ Tight Bid >3mm",
@@ -87,8 +89,6 @@ PORTFOLIO_CR01_RISK_COLUMNS = [
     "CR01 @ Wide Offer",
     "# of Bids >3mm",
     "# of Offers >3mm",
-    "DoD Chg Tight Bid >3mm",
-    "DoD Chg Wide Offer >3mm",
     "DoD Chg Tight Bid",
     "DoD Chg Wide Offer",
     "DoD Chg Size @ Tight Bid >3mm",
@@ -231,6 +231,8 @@ UNIVERSE_DOD_MOVES_COLUMNS = [
     "Wide Offer",
     "Bid/Offer>3mm",
     "Bid/Offer",
+    "DoD Chg Tight Bid >3mm",
+    "DoD Chg Wide Offer >3mm",
     "Dealer @ Tight Bid >3mm",
     "Dealer @ Wide Offer >3mm",
     "Size @ Tight Bid >3mm",
@@ -239,8 +241,6 @@ UNIVERSE_DOD_MOVES_COLUMNS = [
     "CR01 @ Wide Offer",
     "# of Bids >3mm",
     "# of Offers >3mm",
-    "DoD Chg Tight Bid >3mm",
-    "DoD Chg Wide Offer >3mm",
     "DoD Chg Tight Bid",
     "DoD Chg Wide Offer",
     "DoD Chg Size @ Tight Bid >3mm",
@@ -712,9 +712,9 @@ def create_portfolio_less_liquid_lines_table(df: pd.DataFrame) -> pd.DataFrame:
 
 def create_portfolio_dod_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Create Portfolio Sorted By DoD Bid Chg With >3MM on Bid table.
+    Create Portfolio Sorted By DoD Offer Chg With >3MM on Offer table.
     
-    Filters to rows where Tight Bid >3mm has a value (non-blank) and DoD Chg Tight Bid >3mm is non-zero (positive or negative).
+    Filters to rows where Tight Bid >3mm has a value (non-blank) and DoD Chg Wide Offer >3mm is non-zero (positive or negative).
     
     Args:
         df: Input DataFrame from runs_today.csv.
@@ -730,14 +730,14 @@ def create_portfolio_dod_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
     if tb_col in df_filtered.columns:
         df_filtered = df_filtered[df_filtered[tb_col].notna()].copy()
     
-    # Filter to rows where DoD Chg Tight Bid >3mm is non-zero (positive or negative) and non-blank
-    dod_col = "DoD Chg Tight Bid >3mm"
+    # Filter to rows where DoD Chg Wide Offer >3mm is non-zero (positive or negative) and non-blank
+    dod_col = "DoD Chg Wide Offer >3mm"
     if dod_col in df_filtered.columns:
         df_filtered = df_filtered[
             df_filtered[dod_col].notna() & (df_filtered[dod_col] != 0)
         ].copy()
     
-    # Sort by DoD Chg Tight Bid >3mm descending (largest changes first)
+    # Sort by DoD Chg Wide Offer >3mm descending (largest changes first)
     if dod_col in df_filtered.columns:
         df_filtered = df_filtered.sort_values(dod_col, ascending=False, na_position='last')
     
@@ -1825,6 +1825,60 @@ def create_universe_dod_moves_wo_table(
     return result_df
 
 
+def create_universe_dod_moves_simple_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    sort_column: str = "DoD Chg Wide Offer >3mm",
+    columns: list[str] = None
+) -> pd.DataFrame:
+    """
+    Create Universe Sorted By DoD Moves table (simple version).
+    
+    Filters out excluded Custom_Sector values and sorts all rows by DoD Chg Wide Offer >3mm descending.
+    No filtering for Wide Offer >3mm having values on both dates or DoD being non-zero.
+    Shows all rows sorted by DoD WO>3mm from large to small.
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        sort_column: Column to sort by (defaults to "DoD Chg Wide Offer >3mm").
+        columns: List of columns to include (defaults to UNIVERSE_DOD_MOVES_COLUMNS).
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns (all rows).
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if columns is None:
+        columns = UNIVERSE_DOD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Ensure sort column is numeric (convert to numeric, coerce errors to NaN)
+    if sort_column in df_filtered.columns:
+        df_filtered[sort_column] = pd.to_numeric(df_filtered[sort_column], errors='coerce')
+    
+    # Sort by sort column descending (largest to smallest), with NaN values last
+    if sort_column in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(sort_column, ascending=False, na_position='last')
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in df_filtered.columns]
+    result_df = df_filtered[available_columns].copy()
+    
+    return result_df
+
+
 def create_universe_mtd_moves_table(
     df: pd.DataFrame,
     excluded_sectors: list[str] = None,
@@ -2413,10 +2467,10 @@ def main() -> None:
         total_cr01_less_liquid = portfolio_less_liquid_df[pos_cr01_col].sum()
     print(f"Total CR01: {int(round(total_cr01_less_liquid)):,}")
     
-    # Step 4: Create Portfolio Sorted By DoD Bid Chg table
-    print("\n[STEP 4] Creating Portfolio Sorted By DoD Bid Chg With >3MM on Bid table...")
+    # Step 4: Create Portfolio Sorted By DoD Offer Chg table
+    print("\n[STEP 4] Creating Portfolio Sorted By DoD Offer Chg With >3MM on Offer table...")
     portfolio_dod_bid_df = create_portfolio_dod_bid_chg_table(df)
-    print(f"Filtered to {len(portfolio_dod_bid_df):,} rows with QUANTITY > 0, TB >3mm has value, and DoD TB>3mm non-zero")
+    print(f"Filtered to {len(portfolio_dod_bid_df):,} rows with QUANTITY > 0, TB >3mm has value, and DoD WO>3mm non-zero")
     
     # Step 5: Create Portfolio Sorted By MTD Bid Chg table
     print("\n[STEP 5] Creating Portfolio Sorted By MTD Bid Chg With >3MM on Bid table...")
@@ -2585,14 +2639,14 @@ def main() -> None:
         )
         f.write(table_str)
         
-        # Write Portfolio Sorted By DoD Bid Chg table
-        table_title_dod = "Portfolio Sorted By DoD Bid Chg With >3MM on Bid"
+        # Write Portfolio Sorted By DoD Offer Chg table
+        table_title_dod = "Portfolio Sorted By DoD Offer Chg With >3MM on Offer"
         excel_tables[table_title_dod] = {'df': portfolio_dod_bid_df, 'summary': {}}
         filter_desc_dod = format_filter_description([
             "QUANTITY > 0",
             "Tight Bid >3mm has a value (non-blank)",
-            "DoD Chg Tight Bid >3mm is non-zero (positive or negative) and non-blank",
-            "Sorted by DoD Chg Tight Bid >3mm descending (largest changes first)"
+            "DoD Chg Wide Offer >3mm is non-zero (positive or negative) and non-blank",
+            "Sorted by DoD Chg Wide Offer >3mm descending (largest changes first)"
         ])
         f.write(filter_desc_dod + "\n")
         f.write("="*100 + "\n\n")
@@ -2794,7 +2848,7 @@ def main() -> None:
     print(f"\nOutput written to: {OUTPUT_FILE}")
     print(f"Total rows in Portfolio CR01 Risk table: {len(portfolio_cr01_df):,}")
     print(f"Total rows in Portfolio Less Liquid Lines table: {len(portfolio_less_liquid_df):,}")
-    print(f"Total rows in Portfolio DoD Bid Chg table: {len(portfolio_dod_bid_df):,}")
+    print(f"Total rows in Portfolio DoD Offer Chg table: {len(portfolio_dod_bid_df):,}")
     print(f"Total rows in Portfolio MTD Bid Chg table: {len(portfolio_mtd_bid_df):,}")
     print(f"Total rows in Portfolio YTD Bid Chg table: {len(portfolio_ytd_bid_df):,}")
     print(f"Total rows in Portfolio Custom Date Bid Chg table: {len(portfolio_custom_date_bid_df):,}")
@@ -2885,6 +2939,21 @@ def generate_universe_views() -> None:
     print(f"Last date: {last_date}")
     print(f"MTD reference date: {mtd_ref_date}")
     print(f"YTD reference date: {ytd_ref_date}")
+    
+    # Step 2.5: Create Universe Sorted By DoD Moves table (simple version - all rows sorted by DoD WO>3mm)
+    print("\n[STEP 2.5] Creating Universe Sorted By DoD Moves table (all rows sorted by DoD WO>3mm)...")
+    universe_dod_simple_df = create_universe_dod_moves_simple_table(df)
+    
+    # Build filter description for simple DoD table
+    excluded_sectors_str = ", ".join(UNIVERSE_EXCLUDED_SECTORS)
+    filter_description_simple = format_filter_description([
+        f"Excluded Custom_Sector values: {excluded_sectors_str}",
+        f"Sorted by DoD Chg Wide Offer >3mm descending (largest to smallest)",
+        f"Showing all rows (no filtering for Wide Offer >3mm values or DoD being non-zero)"
+    ])
+    
+    print(f"Filtered to {len(universe_dod_simple_df):,} rows")
+    print(f"Filters: {filter_description_simple}")
     
     # Step 3: Create Universe Sorted By DoD Moves With Size On Offer >3mm table
     print("\n[STEP 3] Creating Universe Sorted By DoD Moves With Size On Offer >3mm table...")
@@ -3092,6 +3161,23 @@ def generate_universe_views() -> None:
             f.write(f"  YTD Reference Date: {ytd_ref_date.strftime('%Y-%m-%d')}\n")
         else:
             f.write(f"  YTD Reference Date: N/A\n")
+        
+        # Write Universe Sorted By DoD Moves table (simple version - first table)
+        f.write(f"\n{filter_description_simple}\n")
+        f.write("="*100 + "\n")
+        
+        # For .txt file: limit to 50 rows, for Excel: include all rows
+        table_title_dod_simple = "Universe Sorted By DoD Moves"
+        universe_dod_simple_txt_df = universe_dod_simple_df.head(50).copy()  # Limit to 50 rows for .txt
+        excel_tables[table_title_dod_simple] = {'df': universe_dod_simple_df, 'summary': {}}  # All rows for Excel
+        table_str_simple = format_table(
+            universe_dod_simple_txt_df,
+            table_title_dod_simple,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str_simple)
+        
+        f.write("\n" + "="*100 + "\n")
         f.write(f"\n{filter_description_3mm}\n")
         f.write("="*100 + "\n")
         
@@ -3110,7 +3196,7 @@ def generate_universe_views() -> None:
         f.write("="*100 + "\n")
         
         # Write Universe Sorted By DoD Moves table (sorted by DoD WO)
-        table_title_dod_wo = "Universe Sorted By DoD Moves"
+        table_title_dod_wo = "Universe Sorted By DoD Moves (Wide Offer)"
         excel_tables[table_title_dod_wo] = {'df': universe_dod_wo_df, 'summary': {}}
         table_str_wo = format_table(
             universe_dod_wo_df,
@@ -3271,6 +3357,7 @@ def generate_universe_views() -> None:
         f.write("END OF REPORT\n")
     
     print(f"\nOutput written to: {UNI_OUTPUT_FILE}")
+    print(f"Total rows in Universe DoD Moves table (simple): {len(universe_dod_simple_df):,}")
     print(f"Total rows in Universe DoD Moves With Size On Offer >3mm table: {len(universe_dod_df):,}")
     print(f"Total rows in Universe DoD Moves table: {len(universe_dod_wo_df):,}")
     print(f"Total rows in Universe MTD Moves With Size On Offer >3mm table: {len(universe_mtd_df):,}")
