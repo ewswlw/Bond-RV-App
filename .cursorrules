@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-17 22:00 ET - Added all_combinations.csv export for All Combinations Pair Analytics (contains all pairs, not just top 80, sorted by Z Score descending); clarified that analysis filters to CAD CUSIPs only (~550 out of 905 total CUSIPs in bql.parquet)  
+**Last Updated**: 2025-01-XX XX:XX ET - Comprehensive update to reflect current project state: added interactive Jupyter notebook documentation (Untitled-1.ipynb with ipywidgets), updated dependencies list, documented all three pipelines (bond, runs, portfolio), consolidated analytics structure, and comprehensive testing framework  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -81,7 +81,14 @@ This is a **modular data engineering pipeline** for processing bond data for rel
 - `ipykernel>=7.1.0` (dev) - Jupyter kernel integration for notebooks (added 2025-11-08 11:05 ET)
 - `nbconvert>=7.16.6` (dev) - Automated notebook execution (added 2025-11-08 11:20 ET)
 - `notebook>=7.4.7` (dev) - Local Jupyter server for VS Code kernel selection (added 2025-11-08 11:35 ET)
+- `jupyter>=1.1.1` (dev) - Jupyter notebook interface
+- `jupyterlab>=4.4.10` (dev) - JupyterLab interface
+- `matplotlib>=3.7.0` (dev) - Plotting library
 - `pytest>=7.0.0` - Testing framework
+- `pytest-cov>=4.0.0` (dev) - Coverage reporting
+- `pytest-mock>=3.10.0` (dev) - Mocking utilities
+- `ipywidgets` (notebook usage) - Interactive widgets for Jupyter notebooks (used in Untitled-1.ipynb, not in pyproject.toml)
+- `beautifulsoup4` (notebook usage) - HTML parsing for notebook table manipulation (used in Untitled-1.ipynb, not in pyproject.toml)
 
 ### Environment Management
 - **Environment manager**: Poetry (`pyproject.toml`, `poetry.lock`)
@@ -524,10 +531,23 @@ Bond-RV-App/
 │       ├── portfolio_runs_view.xlsx  # Excel file with 16 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
 │       ├── uni_runs_view.txt  # Formatted universe tables (from runs_views.py, text output)
 │       └── uni_runs_view.xlsx  # Excel file with universe tables (from runs_views.py, formatted Excel tables on separate sheets)
-├── bond_pipeline/          # Pipeline code (7 modules)
+├── bond_pipeline/          # Bond pipeline code (7 modules: config, utils, extract, transform, load, pipeline, README)
+├── runs_pipeline/          # Runs pipeline code (5 modules: __init__, extract, transform, load, pipeline)
+├── portfolio_pipeline/     # Portfolio pipeline code (5 modules: __init__, extract, transform, load, pipeline)
 ├── bond_data/              # Data directory (local only, git-ignored)
 │   ├── parquet/           # Output parquet files
+│   │   ├── historical_bond_details.parquet
+│   │   ├── universe.parquet
+│   │   ├── bql.parquet
+│   │   ├── runs_timeseries.parquet
+│   │   └── historical_portfolio.parquet
 │   └── logs/              # Processing logs
+│       ├── processing.log
+│       ├── duplicates.log
+│       ├── validation.log
+│       ├── summary.log
+│       ├── parquet_stats.log
+│       └── runs_today.log
 ├── .venv/                 # Poetry-managed virtual environment (git-ignored)
 ├── Documentation/          # Complete documentation
 │   ├── Setup/             # Getting started guides
@@ -537,19 +557,27 @@ Bond-RV-App/
 ├── References and Documentation/  # Ignored by Cursor
 ├── tests/                 # Test suite
 │   ├── unit/              # Unit tests
+│   │   ├── test_utils.py
+│   │   ├── test_utils_runs.py
+│   │   ├── test_extract_runs.py
+│   │   ├── test_transform_runs.py
+│   │   └── test_load_runs.py
 │   ├── integration/       # Integration tests
+│   │   ├── test_pipeline_runs.py
+│   │   └── test_run_pipeline.py
 │   └── patterns/          # Pattern analysis and data exploration scripts (not production tests)
 │       ├── analyze_runs_data.py
 │       ├── data_analysis_and_questions.md
 │       └── deep_duplicate_analysis.py
 ├── utils/                 # Utility scripts (currently empty, reserved for future utility scripts)
+├── Untitled-1.ipynb       # Interactive Jupyter notebook with ipywidgets for data exploration (dark mode, sortable/filterable tables with range sliders)
 ├── .cursorrules           # This file
 ├── .cursorignore          # Files to ignore
 ├── pyproject.toml         # Poetry project configuration
 ├── poetry.lock            # Locked dependency versions
 ├── requirements.txt       # Legacy dependency snapshot (reference only)
 ├── README.md              # Project overview
-└── run_pipeline.py        # Simple pipeline runner
+└── run_pipeline.py        # Unified pipeline orchestrator (bond, runs, portfolio, individual parquet files)
 ```
 
 ### File Naming Conventions
@@ -590,11 +618,12 @@ Bond-RV-App/
 
 ### Git-Tracked Files
 - Parquet files: `bond_data/parquet/*.parquet` (processed data)
-- Source code: `bond_pipeline/`, `utils/`
+- Source code: `bond_pipeline/`, `runs_pipeline/`, `portfolio_pipeline/`, `analytics/`
 - Tests: `tests/`
 - Documentation: `Documentation/`
 - Config: `pyproject.toml`, `poetry.lock`, `requirements.txt`, `.cursorrules`, `.cursorignore`
 - Scripts: `run_pipeline.py`
+- Notebooks: `Untitled-1.ipynb` (interactive exploration notebook)
 
 ### Git Commit Protocol
 - **Update `.cursorrules`** before every git commit
@@ -649,6 +678,31 @@ Bond-RV-App/
 # 5. Add tests in tests/unit/test_utils.py
 # 6. Update module docstring if needed
 ```
+
+---
+
+## Interactive Data Exploration
+
+### Jupyter Notebook
+- **File**: `Untitled-1.ipynb` - Interactive data exploration notebook
+- **Purpose**: Interactive table viewer with sorting, filtering, and range sliders for portfolio runs data
+- **Features**:
+  - Dark mode interface with custom CSS styling
+  - Sortable columns (ascending/descending buttons)
+  - Filterable non-numeric columns (contains/does not contain with multi-select dropdowns)
+  - Range sliders for numeric columns (IntRangeSlider/FloatRangeSlider with formatted readouts)
+  - Pinned "Security" column with horizontal scrolling for remaining columns
+  - Formatted numeric display matching column formatting rules:
+    - Whole numbers with thousand separators (most columns)
+    - 1 decimal place: "Yrs (Cvn)", "MTD Equity", "YTD Equity"
+    - 2 decimal places: "Retracement"
+  - Column resizing via drag handles
+  - Clear buttons for sorts, filters, and ranges
+- **Dependencies**: 
+  - `ipywidgets` - Interactive widgets (not in pyproject.toml, install separately if needed)
+  - `beautifulsoup4` - HTML parsing for table manipulation (not in pyproject.toml, install separately if needed)
+- **Data Source**: Reads from `analytics/processed_data/portfolio_runs_view.xlsx`
+- **Usage**: Open in Jupyter/JupyterLab, execute cells to display interactive table
 
 ---
 
@@ -1430,4 +1484,11 @@ pytest tests/unit/test_utils.py -v
     - Then filters to CUSIPs present in most recent 75% of dates with at least 90% coverage
     - Typically results in ~550 CAD CUSIPs out of 905 total CUSIPs in bql.parquet
     - Generates ~150,970 pairs (n*(n-1)/2 combinations of filtered CUSIPs)
+- **2025-01-XX XX:XX ET**: Added interactive Jupyter notebook for data exploration:
+  - Created `Untitled-1.ipynb` with ipywidgets-based interactive table viewer
+  - Features: dark mode UI, sortable columns, filterable non-numeric columns, range sliders for numeric columns
+  - Pinned Security column with horizontal scrolling, formatted numeric displays matching column rules
+  - Column resizing via drag handles, clear buttons for all filter types
+  - Uses ipywidgets and BeautifulSoup4 (not currently in pyproject.toml, may need separate installation)
+  - Reads from `analytics/processed_data/portfolio_runs_view.xlsx` for interactive exploration
 

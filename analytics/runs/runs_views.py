@@ -2133,9 +2133,13 @@ def write_excel_file(
     """
     Write all portfolio tables to Excel file with formatted tables on separate sheets.
     
+    Note: Summary statistics (e.g., "Total CR01", "Cumulative CR01 TB") are NOT written to Excel.
+    They are only included in the text output files. Excel tables start with headers in row 1.
+    
     Args:
         output_path: Path to Excel output file.
         tables: Dictionary mapping table titles to dicts with 'df' (DataFrame) and 'summary' (dict).
+                The 'summary' dict is used for text output only, not Excel.
         timestamp: Timestamp string for header.
         last_date: Last date from runs data.
         mtd_ref_date: MTD reference date.
@@ -2220,13 +2224,9 @@ def write_excel_file(
                         lambda x: ensure_ascii(str(x)) if x is not None and x != "" else None
                     )
             
-            # Calculate start row for DataFrame (after summary statistics if any)
-            summary_rows = len(summary_dict) if summary_dict else 0
-            start_row = summary_rows
-            
-            # Write DataFrame to Excel sheet (starting after summary rows)
+            # Write DataFrame to Excel sheet (headers start at row 1)
             # Keep numeric types - we'll format via openpyxl
-            df_excel.to_excel(writer, sheet_name=sheet_name, index=False, startrow=start_row)
+            df_excel.to_excel(writer, sheet_name=sheet_name, index=False, startrow=0)
             
             # Get the worksheet
             worksheet = writer.sheets[sheet_name]
@@ -2247,9 +2247,9 @@ def write_excel_file(
                         number_format = "#,##0"
                     
                     # Apply format to all data cells in this column
-                    # Data starts at start_row + 2 (start_row is 0-indexed for DataFrame, +1 for header row, +1 for 1-indexed Excel)
-                    data_start_row = start_row + 2  # Header row is at start_row + 1, data starts at start_row + 2
-                    data_end_row = start_row + len(df_excel) + 1  # Last data row
+                    # Header row is at row 1, data starts at row 2
+                    data_start_row = 2  # First data row (after header at row 1)
+                    data_end_row = len(df_excel) + 1  # Last data row
                     for row_idx in range(data_start_row, data_end_row + 1):
                         cell = worksheet.cell(row=row_idx, column=col_idx)
                         # Apply format if cell has a numeric value
@@ -2262,30 +2262,11 @@ def write_excel_file(
                                 # Not a number, skip formatting
                                 pass
             
-            # Write summary statistics FIRST (before creating table)
-            # This ensures summary rows are in place before table validation
-            if summary_dict:
-                # Write summary statistics starting at row 1
-                for idx, (key, value) in enumerate(summary_dict.items(), start=1):
-                    # Write summary text to first cell
-                    # Keep numeric values as numbers, format display via Excel formatting
-                    cell = worksheet.cell(row=idx, column=1)
-                    if isinstance(value, (int, float)):
-                        # Store as number with thousand separator format
-                        cell.value = value
-                        cell.number_format = "#,##0"
-                        # Update cell to show label + formatted value
-                        # We'll use a formula or keep it as text with formatted number
-                        # Actually, let's keep it simple: text label + formatted number
-                        formatted_value = f"{int(round(value)):,}"
-                        cell.value = f"{key}: {formatted_value}"
-                    else:
-                        cell.value = f"{key}: {str(value)}"
+            # Summary statistics are NOT written to Excel (only kept in text output)
+            # Headers start at row 1
+            start_row_table = 1
             
-            # Calculate start row for table (header row)
-            start_row_table = summary_rows + 1 if summary_rows > 0 else 1
-            
-            # Create Excel table AFTER summary rows are written
+            # Create Excel table (headers start at row 1)
             # Table name must be unique and valid (no spaces, starts with letter)
             sanitized_name = table_title.replace(' ', '_').replace('-', '_').replace('.', '_').replace(':', '_')
             sanitized_name = ''.join(c if c.isalnum() or c == '_' else '' for c in sanitized_name)
@@ -2293,7 +2274,7 @@ def write_excel_file(
                 sanitized_name = 'T_' + sanitized_name
             table_name = f"Table_{sanitized_name}"[:255]  # Excel table name max length is 255
             
-            # Table range includes header + data (summary rows are above the table)
+            # Table range includes header + data (headers start at row 1)
             # Excel tables: range includes header row + all data rows
             table_start_row = start_row_table  # Header row (1-indexed)
             # End row = header row + number of data rows
@@ -2301,25 +2282,21 @@ def write_excel_file(
             table_end_row = table_start_row + len(df_excel)  # Last data row
             table_range = f"A{table_start_row}:{get_column_letter(len(df_excel.columns))}{table_end_row}"
             
-            # Create table - ensure range is valid and doesn't include summary rows
-            # Verify table range doesn't overlap with summary rows
-            if table_start_row > summary_rows:
-                table = Table(displayName=table_name, ref=table_range)
+            # Create table - headers start at row 1
+            table = Table(displayName=table_name, ref=table_range)
                 
-                # Apply table style with banded rows and filters
-                style = TableStyleInfo(
-                    name="TableStyleMedium9",  # Medium style with banded rows
-                    showFirstColumn=False,
-                    showLastColumn=False,
-                    showRowStripes=True,  # Banded rows
-                    showColumnStripes=False
-                )
-                table.tableStyleInfo = style
-                
-                # Add table to worksheet
-                worksheet.add_table(table)
-            else:
-                print(f"Warning: Skipping table for '{sheet_name}' - invalid table range")
+            # Apply table style with banded rows and filters
+            style = TableStyleInfo(
+                name="TableStyleMedium9",  # Medium style with banded rows
+                showFirstColumn=False,
+                showLastColumn=False,
+                showRowStripes=True,  # Banded rows
+                showColumnStripes=False
+            )
+            table.tableStyleInfo = style
+            
+            # Add table to worksheet
+            worksheet.add_table(table)
             
             # Find Security column index for freeze panes
             security_col_idx = None
@@ -2329,10 +2306,10 @@ def write_excel_file(
                     break
             
             # Freeze panes after Security column (if Security column exists)
-            # Freeze at row after summary rows + header row
+            # Freeze at first data row (header is at row 1)
             if security_col_idx is not None:
-                # Freeze after Security column, starting at first data row (after summary + header)
-                freeze_row = start_row_table + 1  # +1 for first data row (header is at start_row_table)
+                # Freeze after Security column, starting at first data row (row 2, after header at row 1)
+                freeze_row = 2  # First data row (header is at row 1)
                 freeze_cell = f"{get_column_letter(security_col_idx + 1)}{freeze_row}"
                 worksheet.freeze_panes = freeze_cell
             
