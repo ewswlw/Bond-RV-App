@@ -1,0 +1,373 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## Change Log
+
+> **REMINDER**: This Change Log must be updated whenever significant changes are made to the codebase. See "Change Log Maintenance" section in `.cursorrules` for guidelines on what to document. Each entry should include date/time (ET) and a clear description of the change.
+
+- **2025-01**: Initial comprehensive `.cursorrules` file created
+- **2025-01**: Added AI Assistant Core Workflow section
+- **2025-01**: Added git commit protocol and unicode handling
+- **2025-01**: Enhanced documentation timestamp requirements
+- **2025-01**: Added path handling and encoding rules
+- **2025-01**: Removed poetry environment references, switched to standard pip/virtual environment
+- **2025-01**: Removed all Outlook email pipeline functionality (monitor_outlook.py, runs_miner.py, utils/outlook_monitor.py, related documentation, and pywin32 dependency)
+- **2025-01**: Added runs_pipeline module documentation:
+  - Added runs_pipeline/ to module structure section
+  - Added runs_timeseries.parquet to output data format section
+  - Documented RUNS file pattern, header row, primary key (Date+Dealer+CUSIP)
+  - Documented end-of-day snapshot deduplication logic (latest Time per Date+Dealer+CUSIP)
+  - Documented CUSIP orphan tracking requirements (compare with universe.parquet)
+  - Added runs_pipeline execution examples to workflow section
+  - Updated class-based architecture section with runs pipeline classes
+- **2025-01-02**: Performance optimizations:
+  - Documented vectorized deduplication (~100x faster, O(n log n) vs O(n*groups))
+  - Documented vectorized CUSIP validation (~100x faster, vectorized string operations)
+  - Updated logging patterns to reflect summary logging instead of row-by-row
+- **2025-01-02**: Enhanced orphan CUSIP logging:
+  - Documented enhanced logging with context (Security, Date, Dealer, Time, Ticker)
+  - Updated orphan tracking section to reflect detailed context in logs
+- **2025-01-02**: Added unified pipeline orchestrator (run_pipeline.py):
+  - Documented run_pipeline.py as recommended entry point
+  - Added user selection for pipeline(s) and mode
+- **2025-11-07 15:30 ET**: Added BQL workbook ingestion pipeline:
+  - Documented `bql.xlsx` processing and `bql.parquet` output
+  - Updated CLI/orchestrator guidance with `--process-bql` flag and prompt
+  - Captured orphan logging requirements (CUSIP + Name) for BQL dataset
+  - Added testing coverage notes for BQL helpers in `tests/unit/test_utils.py`
+- **2025-11-07 16:20 ET**: Created/activated standard `Bond-RV-App` virtual environment and installed dependencies from `requirements.txt`
+- **2025-11-07 16:45 ET**: Migrated to Poetry-based workflow (`pyproject.toml`, `poetry.lock`, in-project `.venv`), updated execution/testing instructions, and removed legacy `Bond-RV-App/` virtualenv
+- **2025-11-08 11:05 ET**: Added `ipykernel` dev dependency and registered `Bond RV App (.venv)` Jupyter kernel for notebook execution
+- **2025-11-08 11:20 ET**: Added `nbconvert` dev dependency to support automated notebook execution for testing kernels
+- **2025-11-08 11:30 ET**: Added VS Code workspace settings to pin notebooks to the Poetry-managed `.venv` interpreter
+- **2025-11-08 11:35 ET**: Added `notebook` dev dependency to ensure VS Code can start a local Jupyter server from the Poetry environment
+- **2025-11-09 13:30 ET**: Optimized RUNS append flow (skip fully loaded files, new load metrics), enhanced run summaries, and introduced `parquet_stats.log` diagnostics
+- **2025-11-09 07:25 ET**: Added `cr01_comb.py` CR01 pair analytics script (BQL universe vs holdings spreads) - **MOVED to `analytics/cr01_comb.py` on 2025-11-09 15:30 ET**
+  - Exports single CSV file `cr01_pair_analytics.csv` to `analytics/processed_data/` (overwrites on each run, no timestamps)
+  - Computes pairwise spreads (universe minus holdings) with statistical metrics (Last, Avg, vs Avg, Z Score, Percentile)
+- **2025-11-09 13:30 ET**: Updated BQL workbook processing to handle 4-row multi-index header:
+  - Modified `read_bql_workbook` to read with `header=[0,1,2,3]` for multi-index columns
+  - Updated `reshape_bql_to_long` to extract names from level 1 (row 1) and CUSIPs from level 2 (row 2)
+  - Data rows start at row 4 (index 4) after header rows 0-3
+  - Updated config constants (`BQL_NAME_ROW_INDEX`, `BQL_CUSIP_ROW_INDEX`, `BQL_DATA_START_ROW`)
+  - Fixed Date column handling for multi-index DataFrames (find tuple column name, rename to standard)
+  - Updated `.cursorrules` documentation to reflect new header structure
+- **2025-11-09 14:00 ET**: Enhanced logging and pipeline features:
+  - Added `sanitize_log_message()` function for ASCII-safe log output (prevents Unicode encoding errors on Windows)
+  - Updated file handlers to use UTF-8 encoding with `errors='replace'` for Unicode character handling
+  - Added individual parquet file regeneration option (option 4) to `run_pipeline.py`:
+    - Allows regenerating `historical_bond_details.parquet`, `bql.parquet`, or `runs_timeseries.parquet` independently
+    - Useful for quick fixes or testing without running full pipelines
+- **2025-11-09 15:30 ET**: Created analytics folder structure and pair analytics scripts:
+  - Created `analytics/` folder with `processed_data/` subfolder for CSV outputs
+  - Moved `cr01_comb.py` from root to `analytics/comb/cr01_comb.py` with updated paths (script-relative path resolution)
+  - Created `analytics/comb/all_comb.py` - all combinations pair analytics script:
+    - Computes all pairwise spreads from BQL parquet data (all CAD CUSIPs)
+    - Filters to CAD CUSIPs from `historical_bond_details.parquet` (Currency="CAD" on last date)
+    - Filters to CUSIPs present in most recent 75% of dates with complete data
+    - Uses vectorized numpy operations for performance optimization
+    - Outputs top 80 pairs sorted by Z Score to `all_comb.csv`
+    - Column names: `Bond_1`, `Bond_2`, `cusip_1`, `cusip_2` (instead of universe/holdings naming)
+  - Both scripts use script-relative path resolution for portability
+- **2025-11-09 16:00 ET**: Enhanced data processing and statistics:
+  - Added dealer filtering for runs_timeseries.parquet (only BMO, BNS, NBF, RBC, TD dealers stored)
+  - Added numeric conversion for years columns: `Yrs Since Issue`, `Yrs (Worst)`, and `Yrs (Cvn)` are always stored as numeric (`float64`) in parquet files
+  - Conversion happens at multiple points (transform and load) to ensure consistency
+  - Updated enhanced statistics to use `Yrs (Cvn)` instead of `Yrs (Worst)` for binning analysis
+  - Statistics now include proper binning with `<1` bin to capture negative and small values
+- **2025-11-09 17:00 ET**: Created runs adjusted timeseries analytics script:
+  - Created `analytics/runs/runs-adjusted_ts.py` - runs timeseries aggregation script (MERGED into runs_today.py on 2025-01-XX):
+    - Reads `runs_timeseries.parquet` and groups by Date, CUSIP, and Benchmark
+    - Computes 23 aggregated metrics including:
+      - Basic columns: Date, CUSIP, Time (latest), Bid Workout Risk (average), Security
+      - Spread metrics: Tight Bid >3mm, Wide Offer >3mm, Tight Bid, Wide Offer
+      - Dealer and size columns for >3mm metrics
+      - CR01 calculations: CR01 @ Tight Bid, CR01 @ Wide Offer (using Bid Workout Risk avg * Size / 10000)
+      - Cumulative sizes: Cumm. Bid Size, Cumm. Offer Size
+      - Counts: # of Bids >3mm, # of Offers >3mm (unique dealers)
+      - RBC dealer columns: Bid RBC, Ask RBC, Bid Size RBC, Offer Size RBC
+    - All numeric columns properly typed as `float64`
+    - Sorts by Date (earliest to latest)
+    - Exports to `runs_adjusted_ts.csv` in `analytics/processed_data/` (no longer generated)
+    - Displays table preview and `df.info()` for validation
+    - Uses script-relative path resolution for portability
+- **2025-11-09 18:00 ET**: Created runs today analytics script:
+  - Created `analytics/runs/runs_today.py` - daily runs analytics with Day-over-Day changes:
+    - Reads `runs_timeseries.parquet` directly and aggregates required dates only (optimized)
+    - Only includes CUSIPs present on both last date and second-to-last date
+    - Computes aggregated metrics including:
+      - Basic columns: CUSIP, Security, Bid Workout Risk
+      - Spread metrics: Tight Bid >3mm, Wide Offer >3mm, Bid/Offer>3mm, Tight Bid, Wide Offer, Bid/Offer
+      - Dealer columns: Current dealers and T-1 dealers (from second-to-last date)
+      - Size, CR01, cumulative, and count metrics
+      - RBC dealer columns
+      - "# Quotes": Count of unique Dealers per CUSIP on last date (aggregated across all Benchmarks)
+      - 16 Day-over-Day (DoD) change columns (Last Date - Second Last Date)
+      - 16 MTD change columns (Last Date - First Date of Month)
+      - 16 YTD change columns (Last Date - First Date of Year)
+      - 16 Custom Date change columns (Last Date - Closest Date ~1 Year Ago)
+    - Merges external columns from `historical_portfolio.parquet` (last date): QUANTITY, POSITION CR01
+    - Merges external columns from `historical_bond_details.parquet` (most recent available date): G Sprd, Yrs (Cvn), vs BI, vs BCE, MTD Equity, YTD Equity, Retracement, Yrs Since Issue, Z Score, Retracement2, Rating, Custom_Sector
+    - CUSIP normalization: Normalizes CUSIPs for matching (runs CUSIPs may not be normalized, bond/portfolio CUSIPs are normalized)
+    - Portfolio aggregation: Sums QUANTITY and POSITION CR01 when multiple ACCOUNT/PORTFOLIO rows exist per CUSIP
+    - Bond details date handling: Uses most recent available date if exact date match not found
+    - Bid/Offer calculations only populate when both source columns have values
+    - All numeric columns properly typed as `float64`
+    - Sorts by CUSIP
+    - Exports to `runs_today.csv` in `analytics/processed_data/`
+    - Comprehensive logging to `bond_data/logs/runs_today.log`:
+      - Merge statistics (match counts, percentages, unmatched CUSIPs)
+      - Full `df.info()` output for input parquet and final CSV (verbose mode)
+      - Column summaries and sample data
+      - CUSIP normalization details
+    - Uses script-relative path resolution for portability
+    - Configuration section at top for easy column management
+- **2025-01-XX XX:XX ET**: Merged runs-adjusted_ts.py into runs_today.py and optimized date processing:
+  - Merged `analytics/runs/runs-adjusted_ts.py` into `analytics/runs/runs_today.py` (single flow)
+  - Removed intermediate `runs_adjusted_ts.csv` output file (no longer generated)
+  - Optimized to process only required dates (last, second-to-last, MTD ref, YTD ref, Custom Date ref) instead of all dates
+  - Reads directly from `runs_timeseries.parquet` instead of intermediate CSV
+  - Single workflow: aggregation → today analysis → CSV output
+  - Keeps `compute_group_metrics()` and `ensure_ascii()` as helper functions
+  - Improved performance by filtering parquet data before grouping/aggregation
+  - Deleted `runs-adjusted_ts.py` file
+- **2025-01-XX XX:XX ET**: Enhanced runs today analytics with MTD, YTD, and Custom Date changes:
+  - Added Month-to-Date (MTD) change columns for all DoD columns (compares last date with first available date of current month)
+  - Added Year-to-Date (YTD) change columns for all DoD columns (compares last date with first available date of current year)
+  - Added Custom Date change columns for all DoD columns (compares last date with closest available date approximately 1 year ago)
+  - Naming convention: `DoD Chg {column}` → `MTD Chg {column}`, `YTD Chg {column}`, `Custom Date Chg {column}`
+  - All MTD, YTD, and Custom Date columns properly typed as `float64`
+  - Column ordering: DoD columns first, then MTD, then YTD, then Custom Date (grouped by change type)
+  - Handles cases where reference dates don't exist (returns NA values)
+  - Updated module and function docstrings to reflect new change calculations
+- **2025-01-XX XX:XX ET**: Created portfolio combinations pair analytics script:
+  - Created `analytics/comb/port_comb.py` - portfolio pair analytics script:
+    - Similar to `all_comb.py` but filters pairs where `cusip_2` is in portfolio CUSIP list
+    - Computes all pairwise combinations first, then filters to portfolio CUSIPs, then selects top 80 by Z Score
+    - Portfolio CUSIP list defined as constant (59 CUSIPs, normalized to uppercase)
+    - Shows bond names (not just CUSIPs) in warning messages for missing portfolio CUSIPs from BQL data
+    - Uses same filtering logic as `all_comb.py` (CAD CUSIPs, recent dates, complete data)
+    - Outputs to `port_comb.csv` in `analytics/processed_data/`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created portfolio executable combinations pair analytics script:
+  - Created `analytics/comb/port_executable.py` - portfolio executable pair analytics script:
+    - Similar to `port_comb.py` but adds additional filter on `cusip_1`
+    - Filters `cusip_1` to CUSIPs from `runs_today.csv` where `CR01 @ Wide Offer >= 2000`
+    - Filters `cusip_2` to portfolio CUSIPs (same as `port_comb.py`)
+    - Both filters applied (AND condition) after computing all pairs
+    - Raises error if `CR01 @ Wide Offer` column missing or no matching CUSIPs found
+    - Excludes rows with NaN/null `CR01 @ Wide Offer` values
+    - Outputs to `port_executable.csv` in `analytics/processed_data/`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created CAD cheap vs USD pair analytics script:
+  - Created `analytics/comb/cad_cheap_vs_usd.py` - CAD vs USD pair analytics script:
+    - Based on `all_comb.py` but removes CAD-only filter from BQL data
+    - Computes all pairwise combinations first, then filters results
+    - Filters to pairs where `cusip_1` has Currency="CAD" and `cusip_2` has Currency="USD"
+    - Requires matching Ticker values (from last date in historical_bond_details.parquet)
+    - Requires matching Custom_Sector values (from last date)
+    - Requires absolute difference in "Yrs (Cvn)" <= 2 (from last date)
+    - Excludes CUSIPs with missing/null Currency, Ticker, Custom_Sector, or Yrs (Cvn)
+    - Outputs top 80 pairs sorted by Z Score to `cad_cheap_vs_usd.csv`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created CAD rich vs USD pair analytics script:
+  - Created `analytics/comb/cad_rich_vs_usd.py` - USD vs CAD pair analytics script:
+    - Same as `cad_cheap_vs_usd.py` but with swapped Currency roles
+    - Filters to pairs where `cusip_1` has Currency="USD" and `cusip_2` has Currency="CAD"
+    - Requires matching Ticker values (from last date in historical_bond_details.parquet)
+    - Requires matching Custom_Sector values (from last date)
+    - Requires absolute difference in "Yrs (Cvn)" <= 2 (from last date)
+    - Excludes CUSIPs with missing/null Currency, Ticker, Custom_Sector, or Yrs (Cvn)
+    - Outputs top 80 pairs sorted by Z Score to `cad_rich_vs_usd.csv`
+    - Uses script-relative path resolution for portability
+    - Spread calculation: `cusip_1_values - cusip_2_values` (USD - CAD, opposite of cheap version)
+- **2025-01-XX XX:XX ET**: Created term combinations pair analytics script:
+  - Created `analytics/comb/term_comb.py` - term combinations pair analytics script:
+    - Based on `all_comb.py` but adds pre-filtering by "Yrs (Cvn)" difference
+    - Filters pairs where `abs(yrs_cvn_1 - yrs_cvn_2) <= 0.8` before computing spreads
+    - Filters to CAD CUSIPs with valid "Yrs (Cvn)" data on last date
+    - Excludes CUSIPs without "Yrs (Cvn)" data
+    - Outputs top 80 pairs sorted by Z Score to `term_comb.csv`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created ticker combinations pair analytics script:
+  - Created `analytics/comb/ticker_comb.py` - ticker combinations pair analytics script:
+    - Based on `all_comb.py` but adds pre-filtering by matching Ticker values
+    - Filters pairs where `ticker_1 == ticker_2` (exact match, case-sensitive) before computing spreads
+    - Filters to CAD CUSIPs with valid Ticker data on last date
+    - Excludes CUSIPs without Ticker data
+    - Outputs top 80 pairs sorted by Z Score to `ticker_comb.csv`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created custom sector combinations pair analytics script:
+  - Created `analytics/comb/custom_sector.py` - custom sector combinations pair analytics script:
+    - Based on `all_comb.py` but adds pre-filtering by matching Custom_Sector values
+    - Filters pairs where `custom_sector_1 == custom_sector_2` (exact match, case-sensitive) before computing spreads
+    - Filters to CAD CUSIPs with valid Custom_Sector data on last date
+    - Excludes CUSIPs without Custom_Sector data
+    - Outputs top 80 pairs sorted by Z Score to `custom_sector_comb.csv`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Created custom bond combinations pair analytics script:
+  - Created `analytics/comb/custom_bond_comb.py` - custom bond combinations pair analytics script:
+    - Pairs all CAD CUSIPs (cusip_1) with a fixed target bond (cusip_2)
+    - Target bond configurable via `TARGET_BOND_TICKER` (takes precedence) or `TARGET_BOND_SECURITY`
+    - Searches `universe.parquet` for target bond(s) by Ticker (exact match) or Security name
+    - If Ticker specified and multiple bonds match, uses all matching CUSIPs (creates pairs for each)
+    - Falls back to Security name if Ticker not found (with warning)
+    - Displays Security name in Bond_2 column
+    - Filters to CAD CUSIPs present in most recent 75% of dates
+    - Validates target bond(s) have BQL data and are in recent dates
+    - Outputs all pairs sorted by Z Score to `custom_bond_comb.csv`
+    - Uses script-relative path resolution for portability
+    - Configuration section at top: `TARGET_BOND_TICKER`, `TARGET_BOND_SECURITY`, `RECENT_DATE_PERCENT`, `TOP_N_PAIRS`
+- **2025-01-XX XX:XX ET**: Created custom bond vs holdings pair analytics script:
+  - Created `analytics/comb/custom_bond_vs_holdings.py` - custom bond vs holdings pair analytics script:
+    - Pairs target CAD bonds (cusip_1/Bond_1) from `TARGET_BOND_TICKER/SECURITY` with CR01-filtered holdings (cusip_2/Bond_2)
+    - cusip_1: Filters to CAD CUSIPs first, then finds target bond(s) via TARGET_BOND_TICKER/SECURITY in universe.parquet
+    - cusip_2: Loads holdings with CR01 @ Tight Bid > 2000 from runs_today.csv, matched with portfolio (last date)
+    - Both cusip_1 and cusip_2 filtered to recent dates (75% of dates) using BQL data
+    - Spread calculation: cusip_1 - cusip_2
+    - BQL data required only for cusip_1 (target bonds); holdings filtered to recent dates but don't require BQL data themselves
+    - Outputs all pairs sorted by Z Score to `custom_bond_vs_holdings.csv`
+    - Uses script-relative path resolution for portability
+    - Configuration section at top: `TARGET_BOND_TICKER`, `TARGET_BOND_SECURITY`, `RECENT_DATE_PERCENT`, `TOP_N_PAIRS`
+- **2025-01-XX XX:XX ET**: Added codebase search requirement:
+  - Added rule to "Before Making Changes" section: Always search codebase first to see if existing functions/classes can be used before building new logic
+  - Added rule to "Essential Rules" section in Key Takeaways to reinforce this principle
+  - Ensures reuse of existing code and prevents unnecessary duplication
+- **2025-01-XX XX:XX ET**: Replaced SCM with BNS dealer name throughout runs pipeline:
+  - Added SCM to BNS replacement in transform step (before deduplication)
+  - Added SCM to BNS replacement in load step (when reading existing data and before writing)
+  - Updated ALLOWED_DEALERS to include BNS: ['BMO', 'BNS', 'NBF', 'RBC', 'TD']
+  - Updated RUNS_KNOWN_DEALERS to replace SCM with BNS for validation consistency
+  - Updated documentation to reflect BNS in allowed dealers list
+- **2025-01-XX XX:XX ET**: Reorganized analytics folder structure:
+  - Created `analytics/comb/` subfolder for all pair analytics scripts (9 scripts)
+  - Created `analytics/runs/` subfolder for runs analytics scripts (2 scripts)
+  - Updated all path references in analytics scripts:
+    - Parquet paths: `SCRIPT_DIR.parent.parent` (2 levels up to project root)
+    - Output directory: `SCRIPT_DIR.parent / "processed_data"` (1 level up to `analytics/processed_data/`)
+    - Cross-references: `SCRIPT_DIR.parent / "processed_data" / "*.csv"` (for scripts reading other analytics outputs)
+  - All scripts tested and verified to run correctly from new locations
+- **2025-01-XX XX:XX ET**: Added Portfolio Pipeline implementation:
+  - Created `portfolio_pipeline/` module with extract, transform, load, and pipeline modules
+  - Added portfolio configuration to `bond_pipeline/config.py`:
+    - `PORTFOLIO_INPUT_DIR` - Input directory path (AD History)
+    - `PORTFOLIO_FILE_PATTERN` - Filename pattern regex (Aggies MM.DD.YY.xlsx)
+    - `PORTFOLIO_HEADER_ROW` - Header row index (0)
+    - `PORTFOLIO_PARQUET` - Output parquet file path
+    - `PORTFOLIO_PRIMARY_KEY` - Primary key columns ['Date', 'CUSIP', 'ACCOUNT', 'PORTFOLIO']
+  - Added `extract_portfolio_date_from_filename()` function to `bond_pipeline/utils.py`
+  - Portfolio extract module:
+    - Reads Excel files with header row 0 (row 1 in Excel)
+    - Extracts date from filename (Aggies MM.DD.YY.xlsx pattern)
+    - Automatically removes Unnamed columns (Unnamed: 0, Unnamed: 1, etc.)
+  - Portfolio transform module:
+    - CUSIP normalization (same as bond pipeline: uppercase, validate 9 chars)
+    - Row filtering: Drops rows where either SECURITY or CUSIP is blank/NaN/empty
+    - Deduplication: Date+CUSIP+ACCOUNT+PORTFOLIO primary key (keeps last occurrence)
+    - NA cleaning and schema alignment (82 columns, dynamically detected)
+  - Portfolio load module:
+    - Append/override modes with date checking
+    - Date+CUSIP+ACCOUNT+PORTFOLIO primary key enforcement
+  - Portfolio pipeline orchestrator:
+    - CLI interface matching bond/runs pipeline patterns
+    - Enhanced run summaries with statistics
+  - Updated `run_pipeline.py`:
+    - Added option 3: "Portfolio Pipeline only"
+    - Updated option 5: "Individual Parquet Files" (was option 4)
+    - Added option 4 in individual parquet files: `historical_portfolio.parquet`
+  - Updated `bond_pipeline/utils.py`:
+    - Added portfolio statistics section to `log_enhanced_parquet_stats()`:
+      - Date range
+      - Unique CUSIPs per Date (formatted table)
+      - CUSIPs not in universe.parquet (Date, CUSIP, Security) - formatted table
+    - Updated `log_parquet_diagnostics()` to include `historical_portfolio.parquet`
+  - Output: `historical_portfolio.parquet` with Date+CUSIP+ACCOUNT+PORTFOLIO primary key
+  - All 82 columns stored (excluding Unnamed columns)
+  - Rows with blank SECURITY or CUSIP automatically filtered out
+- **2025-01-XX XX:XX ET**: Created dynamic CR01 pair analytics scripts:
+  - Created `analytics/comb/executable cr01 decent bid offer vs holdings.py`:
+    - Dynamically loads CR01 holdings CUSIPs from runs_today.csv (CR01 @ Tight Bid > 2000, Bid/Offer>3mm < 3) matched with portfolio (last date)
+    - Dynamically loads CR01 universe CUSIPs from runs_today.csv (CR01 @ Wide Offer > 2000, Bid/Offer>3mm < 3) matched with portfolio (last date)
+    - Computes all pairwise spreads (universe minus holdings) with statistical metrics
+    - Outputs to `executable cr01 decent bid offer vs holdings.csv`
+    - Uses script-relative path resolution for portability
+  - Created `analytics/comb/executable cr01 vs holdings.py`:
+    - Same as above but removes Bid/Offer>3mm filters (only CR01 thresholds)
+    - Outputs to `executable cr01 vs holdings.csv`
+  - Created `analytics/comb/all combos vs holdings.py`:
+    - Loads all CUSIPs from historical_portfolio.parquet (last date) for both universe and holdings
+    - No CR01 filters - computes all pairwise combinations within portfolio
+    - Outputs to `all combos vs holdings.csv`
+    - Uses script-relative path resolution for portability
+- **2025-01-XX XX:XX ET**: Consolidated pair analytics into single Excel output:
+  - Created `analytics/comb/comb.py` - consolidated script that runs all 11 pair analytics types
+  - Replaced individual CSV file outputs with single `comb.xlsx` Excel file
+  - Each analysis type gets its own sheet with formatted Excel tables (filters, banded rows, auto-fitted columns)
+  - Tab names use shorter versions (max 31 characters) mapped via `EXCEL_TAB_NAMES` configuration
+  - Numeric columns formatted to 1 decimal place
+  - Empty analyses automatically skipped (no empty sheets)
+  - Still generates `comb.txt` (text summary) and `comb_validation.txt` (validation log) for reference
+  - All individual analysis functions updated to return DataFrames instead of writing CSVs
+  - Excel tables use `TableStyleMedium9` style with filters and banded rows enabled
+- **2025-01-XX XX:XX ET**: Added "xxcy_diff" column to CAD/USD pair analytics:
+  - Added `get_cad_equiv_swap_mapping()` helper function to load CAD Equiv Swap values from `historical_bond_details.parquet` (last date)
+  - Updated `run_cad_cheap_vs_usd_analysis()` and `run_cad_rich_vs_usd_analysis()` to include "xxcy_diff" column
+  - Column calculation: `xxcy_diff = CAD Equiv Swap (cusip_1) - CAD Equiv Swap (cusip_2)`
+  - Column positioned immediately after "Last" column in results DataFrame
+  - Values set to `None` (NaN) if either CUSIP lacks CAD Equiv Swap data
+  - Column formatted to 1 decimal place (via `format_numeric_columns()`)
+  - Appears in Excel output (`comb.xlsx`), text summary (`comb.txt`), and console output
+- **2025-11-14 18:30 ET**: Enhanced bond pipeline numeric conversion and runs_today.py merge functionality:
+  - Extended `convert_years_to_numeric()` in `bond_pipeline/transform.py` to convert spread/metric columns to `float64`:
+    - Added: `G Sprd`, `vs BI`, `vs BCE`, `MTD Equity`, `YTD Equity`, `Retracement`, `Z Score`, `Retracement2`
+    - These columns are now stored as numeric in `historical_bond_details.parquet` instead of object/string
+  - Updated `bond_pipeline/load.py` to convert numeric columns in both append and override modes
+  - Added merge functionality to `analytics/runs/runs_today.py`:
+    - Merges QUANTITY and POSITION CR01 from `historical_portfolio.parquet` (last date, aggregated by CUSIP)
+    - Merges 11 columns from `historical_bond_details.parquet` (most recent available date)
+    - CUSIP normalization for matching (runs CUSIPs normalized before merge)
+    - Flexible configuration at top of file for easy column management
+  - Added comprehensive logging to `runs_today.py`:
+    - Creates `bond_data/logs/runs_today.log` with detailed merge statistics
+    - Logs CUSIP normalization details and match statistics
+    - Logs full `df.info()` output for input parquet and final CSV (verbose mode)
+    - Logs column-level match percentages and sample matched/unmatched CUSIPs
+    - Logs final DataFrame summary and sample data rows
+- **2025-11-15 12:30 ET**: Created and enhanced runs_views.py for custom portfolio table views:
+  - Created `analytics/runs/runs_views.py` - custom formatted tables generator from runs_today.csv
+  - Generates both text (`portfolio_runs_view.txt`) and Excel (`portfolio_runs_view.xlsx`) outputs
+  - Generates 16 portfolio tables with custom formatting (see detailed list in full changelog)
+  - Custom formatting applied to all tables (thousand separators, Retracement as percentage, etc.)
+  - Outputs all tables to `portfolio_runs_view.txt` and `portfolio_runs_view.xlsx` in `analytics/processed_data/`
+  - Header includes refresh timestamp and MTD/YTD reference dates from runs_timeseries.parquet
+  - Configuration section at top for column display names and column order
+  - "# Quotes" column appears after "Yrs (Cvn)" in all portfolio and universe tables
+  - Enhanced `format_table()` function to support optional `summary_dict` parameter for displaying summary statistics at top of tables
+  - Added Custom_Sector to runs_today.py merge
+- **2025-11-15 18:00 ET**: Added Excel file generation to runs_views.py
+- **2025-11-15 19:00 ET**: Added "Portfolio Less Liquid Lines" table to runs_views.py
+- **2025-11-15 19:30 ET**: Added negative spread filtering and fixed DoD Benchmark matching:
+  - Added negative spread filtering to `runs_pipeline/load.py` and `analytics/runs/runs_today.py`
+  - Fixed DoD calculation Benchmark matching in `analytics/runs/runs_today.py` (changed from CUSIP-only to (CUSIP, Benchmark) tuple matching)
+  - Created universe RV views in `analytics/runs/runs_views.py`
+- **2025-11-15 20:00 ET**: Fixed Total CR01 calculation in runs_views.py
+- **2025-11-17 19:30 ET**: Added automatic validation and regeneration of runs_today.csv
+- **2025-01-XX XX:XX ET**: Added filter descriptions to portfolio tables in runs_views.py
+- **2025-01-17 20:00 ET**: Consolidated pair analytics scripts into single comb.py file
+- **2025-01-XX XX:XX ET**: Added spread outlier filtering to runs pipeline
+- **2025-01-17 21:00 ET**: Replaced "1yr" with "Custom Date" throughout analytics scripts
+- **2025-01-17 22:00 ET**: Added all_combinations.csv export for All Combinations Pair Analytics
+- **2025-01-XX XX:XX ET**: Added interactive Jupyter notebook for data exploration
+- **2025-11-21 11:05 ET**: Added "# Quotes" column to runs analytics
+- **2025-01-XX XX:XX ET**: Moved Change Log from `.cursorrules` to separate `CHANGELOG.md` file:
+  - Created `CHANGELOG.md` file with all historical change log entries
+  - Removed Change Log section from `.cursorrules`
+  - Updated `.cursorrules` to reference `CHANGELOG.md` for change tracking
+  - Simplified Change Log Maintenance section to note updating `CHANGELOG.md` when appropriate
+
