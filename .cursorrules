@@ -578,7 +578,7 @@ Bond-RV-App/
 │       ├── data_analysis_and_questions.md
 │       └── deep_duplicate_analysis.py
 ├── utils/                 # Utility scripts (currently empty, reserved for future utility scripts)
-├── Untitled-1.ipynb       # Interactive Jupyter notebook with ipywidgets for data exploration (dark mode, sortable/filterable tables with range sliders)
+├── hi eddy.ipynb          # Interactive Jupyter notebook with ipywidgets for data exploration (dark mode, sortable/filterable tables with range sliders, column selector panel)
 ├── .cursorrules           # This file
 ├── .cursorignore          # Files to ignore
 ├── pyproject.toml         # Poetry project configuration
@@ -631,7 +631,7 @@ Bond-RV-App/
 - Documentation: `Documentation/`
 - Config: `pyproject.toml`, `poetry.lock`, `requirements.txt`, `.cursorrules`, `.cursorignore`
 - Scripts: `run_pipeline.py`
-- Notebooks: `Untitled-1.ipynb` (interactive exploration notebook)
+- Notebooks: `hi eddy.ipynb` (interactive exploration notebook)
 
 ### Git Commit Protocol
 - **Update `.cursorrules`** before every git commit
@@ -711,7 +711,7 @@ Bond-RV-App/
 ## Interactive Data Exploration
 
 ### Jupyter Notebook
-- **File**: `Untitled-1.ipynb` - Interactive data exploration notebook
+- **File**: `hi eddy.ipynb` - Interactive data exploration notebook
 - **Purpose**: Interactive table viewer with sorting, filtering, and range sliders for portfolio runs data
 - **Features**:
   - Dark mode interface with custom CSS styling
@@ -723,8 +723,10 @@ Bond-RV-App/
     - Whole numbers with thousand separators (most columns)
     - 1 decimal place: "Yrs (Cvn)", "MTD Equity", "YTD Equity"
     - 2 decimal places: "Retracement"
-  - Column resizing via drag handles
+  - Column selector panel with visibility toggles and reordering (up/down buttons)
   - Clear buttons for sorts, filters, and ranges
+  - Optimized performance: Removed debug print statements, optimized refresh logic
+  - Fixed column selector panel width constraints to eliminate white space
 - **Dependencies**: 
   - `ipywidgets` - Interactive widgets (not in pyproject.toml, install separately if needed)
   - `beautifulsoup4` - HTML parsing for table manipulation (not in pyproject.toml, install separately if needed)

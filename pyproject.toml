@@ -28,6 +28,7 @@ notebook = "^7.4.7"
 jupyter = "^1.1.1"
 matplotlib = ">=3.7.0"
 jupyterlab = "^4.4.10"
+playwright = "^1.56.0"
 
 [tool.poetry.scripts]
 run-pipeline = "run_pipeline:main"

@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **REMINDER**: This Change Log must be updated whenever significant changes are made to the codebase. See "Change Log Maintenance" section in `.cursorrules` for guidelines on what to document. Each entry should include date/time (ET) and a clear description of the change.
 
+- **2025-01-XX XX:XX ET**: Optimized interactive Jupyter notebook performance and fixed column selector white space:
+  - Removed all debug print statements from `hi eddy.ipynb` for improved performance
+  - Fixed white space issue in column selector panel by constraining container width dynamically (0px when hidden, 340px when visible)
+  - Set fixed widths on panel items (300px instead of 100%) to prevent expansion
+  - Constrained header width (300px instead of 100%) for consistent layout
+  - Added overflow='hidden' to container to prevent overflow
+  - Updated `.cursorrules` to reflect notebook filename change from `Untitled-1.ipynb` to `hi eddy.ipynb` and document new features
 - **2025-01**: Initial comprehensive `.cursorrules` file created
 - **2025-01**: Added AI Assistant Core Workflow section
 - **2025-01**: Added git commit protocol and unicode handling
