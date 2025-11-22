@@ -1,6 +1,6 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-01-21 17:15 ET - Added CRITICAL .cursorrules Update Protocol requiring full project structure audit on every update (examine entire project, add/delete/overwrite to match reality, include timestamps, update CHANGELOG)  
+**Last Updated**: 2025-01-22 14:30 ET - Updated runs_views.py: added dealer-specific portfolio DoD tables (5 tables, one per dealer), fixed sorting logic for dealer-specific universe tables (bottom section only includes negative values), updated table counts  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
@@ -716,17 +716,17 @@ Bond-RV-App/
 │   │   └── comb.py           # Consolidated pair analytics script (contains 11 analysis functions: all_comb, term_comb, ticker_comb, custom_sector, custom_bond_comb, custom_bond_vs_holdings, cad_cheap_vs_usd, cad_rich_vs_usd, executable_cr01_vs_holdings, executable_cr01_decent_bid_offer_vs_holdings, all_combos_vs_holdings; outputs single Excel file with multiple sheets, plus comb.txt, comb_validation.txt, and all_combinations.csv with all pairs from all_comb analysis) (updated 2025-01-21 16:30 ET)
 │   ├── runs/             # Runs analytics scripts
 │   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/Custom Date changes, filters negative spreads, matches by (CUSIP, Benchmark) tuples)
-│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, includes "Filters Applied:" sections for all tables, auto-validates and regenerates CSV if stale; column order: DoD TB>3mm and DoD WO>3mm appear after B/O column; Portfolio DoD Offer Chg table sorts by DoD WO>3mm; Universe DoD Moves table (first table) shows all rows sorted by DoD WO>3mm with 50 rows in .txt, all rows in Excel; entry point calls both main() for portfolio views and generate_universe_views() for universe views)
+│   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, includes "Filters Applied:" sections for all tables, auto-validates and regenerates CSV if stale; includes "Dealer Size Increase" column showing dealer corresponding to DoD Size WO>3mm value; Portfolio views: 22 tables (17 base tables + 5 dealer-specific DoD tables: "Portfolio Sorted By DoD Offer Chg With >3MM on Offer: {BMO|BNS|NBF|RBC|TD}") including "Portfolio Sorted By DoD Offer Size Chgs With >3MM on Offer" sorted by DoD Size WO>3mm; Universe views: 21 tables (16 base tables + 5 dealer-specific DoD tables: "Universe Sorted By DoD Moves With Size On Offer >3mm: {BMO|BNS|NBF|RBC|TD}") including "Universe Sorted By DoD Moves" as first table with 50 rows, "Universe Sorted By DoD Size WO>3mm" table; dealer-specific tables calculate dealer-specific DoD changes (Dealer Spread at T - Dealer Spread at T-1) and only include rows where that dealer was Wide Offer dealer on both dates; sorting logic: bottom section only includes negative values (never mixes positive values), shows all available negative values even if fewer than top/bottom N; column order: DoD TB>3mm and DoD WO>3mm appear after B/O column; Portfolio DoD Offer Chg table sorts by DoD WO>3mm; Universe DoD Moves table (first table) shows all rows sorted by DoD WO>3mm with 50 rows in .txt, all rows in Excel; entry point calls both main() for portfolio views and generate_universe_views() for universe views) (updated 2025-01-22 14:30 ET)
 │   └── processed_data/   # Outputs from analytics scripts
 │       ├── comb.xlsx         # Consolidated Excel file with all pair analytics (from comb.py, formatted tables on separate sheets, one sheet per analysis type)
 │       ├── comb.txt          # Text summary of pair analytics results (from comb.py)
 │       ├── comb_validation.txt  # Validation log for pair analytics (from comb.py)
 │       ├── all_combinations.csv  # All pairs from All Combinations analysis (from comb.py, contains all rows not just top 80, sorted by Z Score descending, includes CAD CUSIPs only after recent date filtering)
 │       ├── runs_today.csv    # Daily runs analytics output (from runs_today.py, used by runs_views.py and comb.py)
-│       ├── portfolio_runs_view.txt  # Formatted portfolio tables (from runs_views.py, text output, 16 tables)
-│       ├── portfolio_runs_view.xlsx  # Excel file with 16 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
-│       ├── uni_runs_view.txt  # Formatted universe tables (from runs_views.py, text output, 16 tables including new "Universe Sorted By DoD Moves" as first table with 50 rows)
-│       └── uni_runs_view.xlsx  # Excel file with universe tables (from runs_views.py, formatted Excel tables on separate sheets, 16 tables including new "Universe Sorted By DoD Moves" as first table with all rows)
+│       ├── portfolio_runs_view.txt  # Formatted portfolio tables (from runs_views.py, text output, 22 tables: 17 base tables + 5 dealer-specific DoD tables for BMO/BNS/NBF/RBC/TD)
+│       ├── portfolio_runs_view.xlsx  # Excel file with 22 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets: 17 base + 5 dealer-specific DoD)
+│       ├── uni_runs_view.txt  # Formatted universe tables (from runs_views.py, text output, 21 tables: 16 base tables + 5 dealer-specific DoD tables for BMO/BNS/NBF/RBC/TD)
+│       └── uni_runs_view.xlsx  # Excel file with universe tables (from runs_views.py, formatted Excel tables on separate sheets, 21 tables: 16 base + 5 dealer-specific DoD)
 ├── bond_pipeline/          # Bond pipeline code (8 files: __init__, config, utils, extract, transform, load, pipeline, README.md)
 │   ├── __init__.py
 │   ├── config.py

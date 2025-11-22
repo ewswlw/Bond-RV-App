@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **REMINDER**: This Change Log must be updated whenever significant changes are made to the codebase. See "Change Log Maintenance" section in `.cursorrules` for guidelines on what to document. Each entry should include date/time (ET) and a clear description of the change.
 
+- **2025-01-22 14:30 ET**: Added dealer-specific DoD tables and fixed sorting logic in runs_views.py:
+  - Added 5 dealer-specific portfolio DoD tables: "Portfolio Sorted By DoD Offer Chg With >3MM on Offer: {BMO|BNS|NBF|RBC|TD}" (one per dealer)
+  - Dealer-specific tables calculate dealer-specific DoD changes (Dealer Spread at T - Dealer Spread at T-1) and only include rows where that dealer was Wide Offer dealer on both dates
+  - Fixed sorting logic for dealer-specific universe DoD tables: bottom section now only includes negative values (never mixes positive values), shows all available negative values even if fewer than top/bottom N
+  - Portfolio views now generate 22 tables (was 17: 17 base + 5 dealer-specific), universe views generate 21 tables (was 16: 16 base + 5 dealer-specific)
+  - Updated `.cursorrules` to reflect new table structure and counts
+- **2025-01-22 08:45 ET**: Updated runs_views.py analytics tables and columns:
+  - Added "Dealer Size Increase" column to all tables containing "DoD Size WO>3mm" (shows dealer corresponding to DoD Size WO>3mm value)
+  - Added new portfolio table "Portfolio Sorted By DoD Offer Size Chgs With >3MM on Offer" (sorted by DoD Size WO>3mm descending, only rows with non-zero changes)
+  - Added new universe table "Universe Sorted By DoD Size WO>3mm" (sorted by DoD Chg Size @ Wide Offer >3mm, top/bottom 20 rows)
+  - Removed universe table "Universe Sorted By DoD Moves (Wide Offer)" (no longer needed)
+  - Portfolio views now generate 17 tables (was 16), universe views generate 16 tables (was 17)
+  - Updated `.cursorrules` to reflect current table structure and counts
 - **2025-01-21 17:15 ET**: Added CRITICAL .cursorrules Update Protocol to enforce default behavior:
   - Added mandatory protocol requiring full project structure audit whenever `.cursorrules` is updated
   - Protocol requires: examining entire current project structure, comparing with documentation, adding missing items, deleting outdated items, overwriting incorrect information, including timestamps, updating CHANGELOG.md

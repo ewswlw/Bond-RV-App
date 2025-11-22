@@ -57,6 +57,7 @@ COLUMN_DISPLAY_NAMES = {
     "DoD Chg Wide Offer": "DoD WO",
     "DoD Chg Size @ Tight Bid >3mm": "DoD Size TB>3mm",
     "DoD Chg Size @ Wide Offer >3mm": "DoD Size WO>3mm",
+    "Dealer Size Increase": "Dealer Size Increase",
     "MTD Chg Tight Bid": "MTD TB",
     "YTD Chg Tight Bid": "YTD TB",
     "Custom Date Chg Tight Bid": "Custom Date TB",
@@ -93,6 +94,7 @@ PORTFOLIO_CR01_RISK_COLUMNS = [
     "DoD Chg Wide Offer",
     "DoD Chg Size @ Tight Bid >3mm",
     "DoD Chg Size @ Wide Offer >3mm",
+    "Dealer Size Increase",
     "MTD Chg Tight Bid",
     "YTD Chg Tight Bid",
     "Custom Date Chg Tight Bid",
@@ -245,6 +247,7 @@ UNIVERSE_DOD_MOVES_COLUMNS = [
     "DoD Chg Wide Offer",
     "DoD Chg Size @ Tight Bid >3mm",
     "DoD Chg Size @ Wide Offer >3mm",
+    "Dealer Size Increase",
     "MTD Chg Tight Bid",
     "YTD Chg Tight Bid",
     "Custom Date Chg Tight Bid",
@@ -746,6 +749,173 @@ def create_portfolio_dod_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
     df_filtered = df_filtered[available_columns].copy()
     
     return df_filtered
+
+
+def create_portfolio_dod_size_chg_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create Portfolio Sorted By DoD Offer Size Chgs With >3MM on Offer table.
+    
+    Filters to rows where Tight Bid >3mm has a value (non-blank) and DoD Chg Size @ Wide Offer >3mm is non-zero (positive or negative).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Filter to QUANTITY > 0
+    df_filtered = df[df["QUANTITY"] > 0].copy()
+    
+    # Filter to rows where Tight Bid >3mm has a value (non-blank)
+    tb_col = "Tight Bid >3mm"
+    if tb_col in df_filtered.columns:
+        df_filtered = df_filtered[df_filtered[tb_col].notna()].copy()
+    
+    # Filter to rows where DoD Chg Size @ Wide Offer >3mm is non-zero (positive or negative) and non-blank
+    dod_size_col = "DoD Chg Size @ Wide Offer >3mm"
+    if dod_size_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[dod_size_col].notna() & (df_filtered[dod_size_col] != 0)
+        ].copy()
+    
+    # Sort by DoD Chg Size @ Wide Offer >3mm descending (largest changes first)
+    if dod_size_col in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(dod_size_col, ascending=False, na_position='last')
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in PORTFOLIO_CR01_RISK_COLUMNS if col in df_filtered.columns]
+    df_filtered = df_filtered[available_columns].copy()
+    
+    return df_filtered
+
+
+def create_portfolio_dealer_specific_dod_table(
+    parquet_path: Path,
+    dealer: str,
+    df_portfolio: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Create dealer-specific Portfolio Sorted By DoD Offer Chg With >3MM on Offer table.
+    
+    Reads runs_timeseries.parquet, filters to rows where the specified dealer is the
+    Wide Offer dealer on both the last date and second-to-last date, calculates
+    dealer-specific DoD changes, and creates a table similar to the portfolio DoD table.
+    
+    Args:
+        parquet_path: Path to runs_timeseries.parquet file.
+        dealer: Dealer name (e.g., "BMO", "BNS", "NBF", "RBC", "TD").
+        df_portfolio: Portfolio DataFrame from runs_today.csv (filtered to QUANTITY > 0).
+    
+    Returns:
+        Filtered and sorted DataFrame with dealer-specific DoD changes.
+    """
+    # Read parquet file
+    print(f"  Reading parquet file for {dealer} dealer-specific portfolio DoD table: {parquet_path}")
+    df_raw = pd.read_parquet(parquet_path)
+    
+    # Get unique dates and sort
+    unique_dates = sorted(df_raw["Date"].unique())
+    if len(unique_dates) < 2:
+        print(f"  Warning: Need at least 2 dates to calculate DoD changes. Found {len(unique_dates)} date(s).")
+        return pd.DataFrame(columns=PORTFOLIO_CR01_RISK_COLUMNS)
+    
+    last_date = unique_dates[-1]
+    second_last_date = unique_dates[-2]
+    
+    # Filter to dealer and Wide Offer >3mm conditions
+    dealer_data = df_raw[
+        (df_raw["Dealer"] == dealer) &
+        (df_raw["Ask Size"] > 3_000_000) &
+        (df_raw["Ask Spread"].notna()) &
+        (df_raw["Ask Spread"] >= 0)
+    ].copy()
+    
+    # Group by Date and CUSIP to get max Ask Spread (Wide Offer) for each dealer on each date
+    dealer_wo_by_date = {}
+    for (date, cusip), group in dealer_data.groupby(["Date", "CUSIP"]):
+        max_spread_idx = group["Ask Spread"].idxmax()
+        dealer_wo_by_date[(date, cusip)] = {
+            "Ask Spread": group.loc[max_spread_idx, "Ask Spread"],
+            "Ask Size": group.loc[max_spread_idx, "Ask Size"],
+            "Security": group.loc[max_spread_idx, "Security"]
+        }
+    
+    # df_portfolio already has all columns from runs_today.csv, so no merge needed
+    # Filter to portfolio holdings (QUANTITY > 0) and where this dealer is the Wide Offer dealer on the last date
+    df_result = df_portfolio.copy()
+    
+    dealer_wo_col = "Dealer @ Wide Offer >3mm"
+    if dealer_wo_col not in df_result.columns:
+        print(f"  Warning: Column '{dealer_wo_col}' not found in portfolio DataFrame")
+        return pd.DataFrame(columns=PORTFOLIO_CR01_RISK_COLUMNS)
+    
+    # Filter to rows where this dealer is the Wide Offer dealer on the last date
+    df_result = df_result[
+        df_result[dealer_wo_col].notna() &
+        (df_result[dealer_wo_col] == dealer)
+    ].copy()
+    
+    # Filter to rows where Tight Bid >3mm has a value (non-blank)
+    tb_col = "Tight Bid >3mm"
+    if tb_col in df_result.columns:
+        df_result = df_result[df_result[tb_col].notna()].copy()
+    
+    if len(df_result) == 0:
+        print(f"  No portfolio rows found where {dealer} is the Wide Offer dealer")
+        return pd.DataFrame(columns=PORTFOLIO_CR01_RISK_COLUMNS)
+    
+    # Calculate dealer-specific DoD changes
+    dod_values = []
+    for idx, row in df_result.iterrows():
+        cusip = row["CUSIP"]
+        
+        # Get dealer's Wide Offer >3mm on last date and second-to-last date
+        last_wo = dealer_wo_by_date.get((last_date, cusip))
+        second_last_wo = dealer_wo_by_date.get((second_last_date, cusip))
+        
+        if last_wo and second_last_wo:
+            # Both dates have data - calculate DoD
+            last_spread = last_wo["Ask Spread"]
+            second_last_spread = second_last_wo["Ask Spread"]
+            
+            if pd.notna(last_spread) and pd.notna(second_last_spread):
+                dod_values.append(float(last_spread) - float(second_last_spread))
+            else:
+                dod_values.append(pd.NA)
+        else:
+            # Missing data on one or both dates - set DoD to blank
+            dod_values.append(pd.NA)
+    
+    # Add dealer-specific DoD column and ensure it's numeric
+    df_result["DoD Chg Wide Offer >3mm"] = dod_values
+    df_result["DoD Chg Wide Offer >3mm"] = pd.to_numeric(df_result["DoD Chg Wide Offer >3mm"], errors='coerce')
+    
+    # Filter to rows where DoD Chg Wide Offer >3mm is non-zero (positive or negative) and non-blank
+    dod_col = "DoD Chg Wide Offer >3mm"
+    if dod_col in df_result.columns:
+        df_result = df_result[
+            df_result[dod_col].notna() & (df_result[dod_col] != 0)
+        ].copy()
+    
+    # Sort by DoD Chg Wide Offer >3mm descending (largest changes first)
+    if dod_col in df_result.columns:
+        secondary_sort = "Wide Offer >3mm"
+        if secondary_sort in df_result.columns:
+            # Ensure secondary sort column is numeric
+            df_result[secondary_sort] = pd.to_numeric(df_result[secondary_sort], errors='coerce')
+            df_result = df_result.sort_values(
+                [dod_col, secondary_sort], 
+                ascending=[False, False], 
+                na_position='last'
+            )
+        else:
+            df_result = df_result.sort_values(dod_col, ascending=False, na_position='last')
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in PORTFOLIO_CR01_RISK_COLUMNS if col in df_result.columns]
+    df_result = df_result[available_columns].copy()
+    
+    return df_result
 
 
 def create_portfolio_mtd_bid_chg_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -1284,19 +1454,249 @@ def create_universe_dod_moves_table(
         # Get top N (largest positive values) - first N rows after descending sort
         top_n = df_filtered.head(top_bottom_n).copy()
         
-        # Get bottom N (most negative values) - last N rows after descending sort
-        # Since we sorted descending, tail() gives us the smallest values in ascending order
-        # We need to reverse them to get descending order (most negative first)
-        bottom_n = df_filtered.tail(top_bottom_n).copy()
-        
-        # Reverse the bottom N to get descending order (most negative first)
-        # This ensures -5 comes before -4, -4 before -3, etc.
-        bottom_n = bottom_n.iloc[::-1].reset_index(drop=True)
+        # Get bottom N (most negative values)
+        # Only include negative values - never mix positive values in the bottom section
+        negative_rows = df_filtered[df_filtered[sort_column] < 0].copy()
+        if len(negative_rows) >= top_bottom_n:
+            # We have enough negative values - take the most negative (they're already sorted descending)
+            # The most negative are at the end, so take tail and reverse to get most negative first
+            bottom_n = negative_rows.tail(top_bottom_n).copy()
+            bottom_n = bottom_n.iloc[::-1].reset_index(drop=True)
+        elif len(negative_rows) > 0:
+            # We have some negative values but not enough - show all of them, most negative first
+            bottom_n = negative_rows.iloc[::-1].reset_index(drop=True)
+        else:
+            # No negative values at all - return empty bottom section
+            bottom_n = pd.DataFrame(columns=df_filtered.columns)
         
         # Combine top and bottom (top first, then bottom)
         result_df = pd.concat([top_n, bottom_n], ignore_index=True)
     
     # Select only required columns (in order)
+    available_columns = [col for col in columns if col in result_df.columns]
+    result_df = result_df[available_columns].copy()
+    
+    return result_df
+
+
+def create_dealer_specific_dod_table(
+    parquet_path: Path,
+    dealer: str,
+    excluded_sectors: list[str] = None,
+    sort_column: str = None,
+    top_bottom_n: int = None,
+    columns: list[str] = None
+) -> pd.DataFrame:
+    """
+    Create dealer-specific DoD Moves With Size On Offer >3mm table.
+    
+    Reads runs_timeseries.parquet, filters to rows where the specified dealer is the
+    Wide Offer dealer on both the last date and second-to-last date, calculates
+    dealer-specific DoD changes, and creates a table similar to the universe DoD moves table.
+    
+    Args:
+        parquet_path: Path to runs_timeseries.parquet file.
+        dealer: Dealer name (e.g., "BMO", "BNS", "NBF", "RBC", "TD").
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        sort_column: Column to sort by (defaults to UNIVERSE_DOD_SORT_COLUMN).
+        top_bottom_n: Number of top and bottom rows to show (defaults to UNIVERSE_TOP_BOTTOM_N).
+        columns: List of columns to include (defaults to UNIVERSE_DOD_MOVES_COLUMNS).
+    
+    Returns:
+        Filtered and sorted DataFrame with dealer-specific DoD changes.
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if sort_column is None:
+        sort_column = UNIVERSE_DOD_SORT_COLUMN
+    if top_bottom_n is None:
+        top_bottom_n = UNIVERSE_TOP_BOTTOM_N
+    if columns is None:
+        columns = UNIVERSE_DOD_MOVES_COLUMNS
+    
+    # Read parquet file
+    print(f"  Reading parquet file: {parquet_path}")
+    df_raw = pd.read_parquet(parquet_path)
+    
+    # Get unique dates and sort
+    unique_dates = sorted(df_raw["Date"].unique())
+    if len(unique_dates) < 2:
+        print(f"  Warning: Need at least 2 dates to calculate DoD changes. Found {len(unique_dates)} date(s).")
+        return pd.DataFrame(columns=columns)
+    
+    last_date = unique_dates[-1]
+    second_last_date = unique_dates[-2]
+    
+    print(f"  Last date: {last_date}, Second-to-last date: {second_last_date}")
+    
+    # Filter to last two dates
+    df_filtered = df_raw[df_raw["Date"].isin([last_date, second_last_date])].copy()
+    
+    # Filter to rows where dealer is the Wide Offer dealer (Ask Size > 3000000)
+    # and Ask Spread is not negative
+    df_dealer = df_filtered[
+        (df_filtered["Dealer"] == dealer) &
+        (df_filtered["Ask Size"] > 3000000) &
+        (df_filtered["Ask Spread"].notna()) &
+        (df_filtered["Ask Spread"] >= 0)
+    ].copy()
+    
+    if len(df_dealer) == 0:
+        print(f"  No rows found for dealer {dealer} with Ask Size > 3mm")
+        return pd.DataFrame(columns=columns)
+    
+    # Group by Date + CUSIP to get dealer's Wide Offer >3mm for each date
+    # Use CUSIP only since Benchmark might not be in parquet file
+    dealer_wo_by_date = {}
+    for date in [last_date, second_last_date]:
+        df_date = df_dealer[df_dealer["Date"] == date].copy()
+        if len(df_date) == 0:
+            continue
+        
+        # Group by CUSIP and get the maximum Ask Spread (Wide Offer >3mm)
+        agg_dict = {
+            "Ask Spread": "max",
+            "Ask Size": "first",  # Take first (they should be similar for same dealer)
+        }
+        
+        # Add Security if it exists
+        if "Security" in df_date.columns:
+            agg_dict["Security"] = "first"
+        
+        grouped = df_date.groupby("CUSIP", as_index=False).agg(agg_dict)
+        
+        # Create lookup dictionary: (date, CUSIP) -> Ask Spread
+        for _, row in grouped.iterrows():
+            cusip = row["CUSIP"]
+            dealer_wo_by_date[(date, cusip)] = {
+                "Ask Spread": row["Ask Spread"],
+                "Ask Size": row["Ask Size"],
+            }
+            if "Security" in row.index:
+                dealer_wo_by_date[(date, cusip)]["Security"] = row["Security"]
+    
+    # Now aggregate all data for last date (similar to runs_today.py)
+    # We need to read runs_today.csv to get the aggregated data structure
+    # But we'll calculate dealer-specific DoD changes
+    
+    # Read runs_today.csv to get aggregated structure
+    runs_today_df = pd.read_csv(RUNS_TODAY_CSV_PATH)
+    runs_today_df = ensure_numeric_types(runs_today_df)
+    
+    # Filter to rows where this dealer is the Wide Offer dealer on the last date
+    dealer_wo_col = "Dealer @ Wide Offer >3mm"
+    if dealer_wo_col not in runs_today_df.columns:
+        print(f"  Warning: Column '{dealer_wo_col}' not found in runs_today.csv")
+        return pd.DataFrame(columns=columns)
+    
+    df_result = runs_today_df[
+        runs_today_df[dealer_wo_col].notna() &
+        (runs_today_df[dealer_wo_col] == dealer)
+    ].copy()
+    
+    if len(df_result) == 0:
+        print(f"  No rows found where {dealer} is the Wide Offer dealer")
+        return pd.DataFrame(columns=columns)
+    
+    # Calculate dealer-specific DoD changes
+    dod_values = []
+    for idx, row in df_result.iterrows():
+        cusip = row["CUSIP"]
+        
+        # Get dealer's Wide Offer >3mm on last date and second-to-last date
+        # Use CUSIP only for lookup since parquet data is grouped by CUSIP only
+        last_wo = dealer_wo_by_date.get((last_date, cusip))
+        second_last_wo = dealer_wo_by_date.get((second_last_date, cusip))
+        
+        if last_wo and second_last_wo:
+            # Both dates have data - calculate DoD
+            last_spread = last_wo["Ask Spread"]
+            second_last_spread = second_last_wo["Ask Spread"]
+            
+            if pd.notna(last_spread) and pd.notna(second_last_spread):
+                dod_values.append(float(last_spread) - float(second_last_spread))
+            else:
+                dod_values.append(pd.NA)
+        else:
+            # Missing data on one or both dates - set DoD to blank
+            dod_values.append(pd.NA)
+    
+    # Add dealer-specific DoD column and ensure it's numeric
+    df_result["DoD Chg Wide Offer >3mm"] = dod_values
+    df_result["DoD Chg Wide Offer >3mm"] = pd.to_numeric(df_result["DoD Chg Wide Offer >3mm"], errors='coerce')
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_result.columns:
+        df_result = df_result[
+            df_result[custom_sector_col].isna() | 
+            (~df_result[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows where Wide Offer >3mm has a value on the last date
+    wo_col = "Wide Offer >3mm"
+    if wo_col in df_result.columns:
+        df_result = df_result[df_result[wo_col].notna()].copy()
+    
+    # Filter to rows where dealer-specific DoD exists (implies it had value on both dates)
+    dod_wo_col = "DoD Chg Wide Offer >3mm"
+    if dod_wo_col in df_result.columns:
+        df_result = df_result[df_result[dod_wo_col].notna()].copy()
+    
+    # Ensure sort column is numeric
+    if sort_column in df_result.columns:
+        df_result[sort_column] = pd.to_numeric(df_result[sort_column], errors='coerce')
+        
+        # Filter out rows where sort column is 0 or blank
+        df_result = df_result[
+            df_result[sort_column].notna() & (df_result[sort_column] != 0)
+        ].copy()
+    
+    # Sort by sort column descending, with secondary sort by Wide Offer >3mm descending to break ties
+    if sort_column in df_result.columns:
+        secondary_sort = "Wide Offer >3mm"
+        if secondary_sort in df_result.columns:
+            # Ensure secondary sort column is numeric
+            df_result[secondary_sort] = pd.to_numeric(df_result[secondary_sort], errors='coerce')
+            df_result = df_result.sort_values(
+                [sort_column, secondary_sort], 
+                ascending=[False, False], 
+                na_position='last'
+            )
+        else:
+            df_result = df_result.sort_values(sort_column, ascending=False, na_position='last')
+    
+    # Get top N and bottom N rows
+    total_rows = len(df_result)
+    if total_rows == 0:
+        return pd.DataFrame(columns=columns)
+    
+    if total_rows <= (2 * top_bottom_n):
+        result_df = df_result.copy()
+    else:
+        # Get top N (largest positive values) - first N rows after descending sort
+        top_n = df_result.head(top_bottom_n).copy()
+        
+        # Get bottom N (most negative values)
+        # Only include negative values - never mix positive values in the bottom section
+        negative_rows = df_result[df_result[sort_column] < 0].copy()
+        if len(negative_rows) >= top_bottom_n:
+            # We have enough negative values - take the most negative (they're already sorted descending)
+            # The most negative are at the end, so take tail and reverse to get most negative first
+            bottom_n = negative_rows.tail(top_bottom_n).copy()
+            bottom_n = bottom_n.iloc[::-1].reset_index(drop=True)
+        elif len(negative_rows) > 0:
+            # We have some negative values but not enough - show all of them, most negative first
+            bottom_n = negative_rows.iloc[::-1].reset_index(drop=True)
+        else:
+            # No negative values at all - return empty bottom section
+            bottom_n = pd.DataFrame(columns=df_result.columns)
+        
+        # Combine top and bottom (top first, then bottom)
+        result_df = pd.concat([top_n, bottom_n], ignore_index=True)
+    
+    # Select only required columns
     available_columns = [col for col in columns if col in result_df.columns]
     result_df = result_df[available_columns].copy()
     
@@ -1716,6 +2116,109 @@ def create_carry_bonds_sorted_by_mtd_table(
     # Select only required columns (in order)
     available_columns = [col for col in columns if col in df_filtered.columns]
     result_df = df_filtered[available_columns].copy()
+    
+    return result_df
+
+
+def create_universe_dod_size_moves_table(
+    df: pd.DataFrame,
+    excluded_sectors: list[str] = None,
+    sort_column: str = "DoD Chg Size @ Wide Offer >3mm",
+    top_bottom_n: int = None,
+    columns: list[str] = None
+) -> pd.DataFrame:
+    """
+    Create Universe Sorted By DoD Size WO>3mm table.
+    
+    Filters out excluded Custom_Sector values, filters to rows where Wide Offer >3mm had a value on both dates,
+    excludes rows where DoD Chg Size @ Wide Offer >3mm is 0 or blank,
+    and shows top N and bottom N rows by DoD Chg Size @ Wide Offer >3mm (largest positive and most negative values).
+    
+    Args:
+        df: Input DataFrame from runs_today.csv.
+        excluded_sectors: List of Custom_Sector values to exclude (defaults to UNIVERSE_EXCLUDED_SECTORS).
+        sort_column: Column to sort by (defaults to "DoD Chg Size @ Wide Offer >3mm").
+        top_bottom_n: Number of top and bottom rows to show (defaults to UNIVERSE_TOP_BOTTOM_N).
+        columns: List of columns to include (defaults to UNIVERSE_DOD_MOVES_COLUMNS).
+    
+    Returns:
+        Filtered and sorted DataFrame with selected columns.
+    """
+    # Use defaults from config if not provided
+    if excluded_sectors is None:
+        excluded_sectors = UNIVERSE_EXCLUDED_SECTORS
+    if top_bottom_n is None:
+        top_bottom_n = UNIVERSE_TOP_BOTTOM_N
+    if columns is None:
+        columns = UNIVERSE_DOD_MOVES_COLUMNS
+    
+    # Start with copy of input DataFrame
+    df_filtered = df.copy()
+    
+    # Filter out excluded Custom_Sector values
+    custom_sector_col = "Custom_Sector"
+    if custom_sector_col in df_filtered.columns:
+        df_filtered = df_filtered[
+            df_filtered[custom_sector_col].isna() | 
+            (~df_filtered[custom_sector_col].isin(excluded_sectors))
+        ].copy()
+    
+    # Filter to rows that had "Wide Offer >3mm" on both last date and second-to-last date
+    # This ensures DoD changes are meaningful (comparing apples to apples)
+    wo_col = "Wide Offer >3mm"
+    dod_wo_col = "DoD Chg Wide Offer >3mm"
+    
+    if wo_col in df_filtered.columns:
+        # Filter to rows where Wide Offer >3mm has a value on the last date
+        df_filtered = df_filtered[df_filtered[wo_col].notna()].copy()
+    
+    if dod_wo_col in df_filtered.columns:
+        # Filter to rows where DoD Chg Wide Offer >3mm exists (implies it had value on both dates)
+        df_filtered = df_filtered[df_filtered[dod_wo_col].notna()].copy()
+    
+    # Ensure sort column is numeric (convert to numeric, coerce errors to NaN)
+    if sort_column in df_filtered.columns:
+        df_filtered[sort_column] = pd.to_numeric(df_filtered[sort_column], errors='coerce')
+        
+        # Filter out rows where sort column is 0 or blank (NaN/null)
+        # Use numeric comparison: not NaN and not equal to 0
+        df_filtered = df_filtered[
+            df_filtered[sort_column].notna() & (df_filtered[sort_column] != 0)
+        ].copy()
+    
+    # Sort by sort column descending (largest to smallest)
+    if sort_column in df_filtered.columns:
+        df_filtered = df_filtered.sort_values(sort_column, ascending=False, na_position='last')
+    
+    # Get top N and bottom N rows
+    total_rows = len(df_filtered)
+    if total_rows == 0:
+        # Return empty DataFrame with correct columns
+        available_columns = [col for col in columns if col in df.columns]
+        return pd.DataFrame(columns=available_columns)
+    
+    if total_rows <= (2 * top_bottom_n):
+        # If we have less than or equal to 2*N rows, show all
+        result_df = df_filtered.copy()
+    else:
+        # Get top N (largest positive values) - first N rows after descending sort
+        top_n = df_filtered.head(top_bottom_n).copy()
+        
+        # Get bottom N (most negative values) - last N rows after descending sort
+        # Since we sorted descending, tail() gives us the smallest values in ascending order
+        # We need to reverse them to get descending order (most negative first)
+        bottom_n = df_filtered.tail(top_bottom_n).copy()
+        
+        # Reverse the bottom N to get descending order (most negative first)
+        # This ensures -5 comes before -4, -4 before -3, etc.
+        bottom_n = bottom_n.iloc[::-1].reset_index(drop=True)
+        
+        # Combine top and bottom (top first, then bottom)
+        result_df = pd.concat([top_n, bottom_n], ignore_index=True)
+    
+    # Select only required columns (in order)
+    available_columns = [col for col in columns if col in result_df.columns]
+    result_df = result_df[available_columns].copy()
     
     return result_df
 
@@ -2427,6 +2930,13 @@ def main() -> None:
     # Convert all numeric columns to proper types (ensures filtering works correctly)
     df = ensure_numeric_types(df)
     
+    # Create "Dealer Size Increase" column that maps to "Dealer @ Wide Offer >3mm"
+    # This shows which dealer corresponds to the value in "DoD Size WO>3mm"
+    if "Dealer @ Wide Offer >3mm" in df.columns:
+        df["Dealer Size Increase"] = df["Dealer @ Wide Offer >3mm"].copy()
+    else:
+        df["Dealer Size Increase"] = pd.NA
+    
     print(f"Loaded {len(df):,} rows, {len(df.columns)} columns")
     
     # Step 2: Get reference dates from runs_timeseries.parquet
@@ -2471,6 +2981,29 @@ def main() -> None:
     print("\n[STEP 4] Creating Portfolio Sorted By DoD Offer Chg With >3MM on Offer table...")
     portfolio_dod_bid_df = create_portfolio_dod_bid_chg_table(df)
     print(f"Filtered to {len(portfolio_dod_bid_df):,} rows with QUANTITY > 0, TB >3mm has value, and DoD WO>3mm non-zero")
+    
+    # Step 4.5: Create Portfolio Sorted By DoD Offer Size Chgs table
+    print("\n[STEP 4.5] Creating Portfolio Sorted By DoD Offer Size Chgs With >3MM on Offer table...")
+    portfolio_dod_size_df = create_portfolio_dod_size_chg_table(df)
+    print(f"Filtered to {len(portfolio_dod_size_df):,} rows with QUANTITY > 0, TB >3mm has value, and DoD Size WO>3mm non-zero")
+    
+    # Step 4.6: Create dealer-specific Portfolio Sorted By DoD Offer Chg tables
+    print("\n[STEP 4.6] Creating dealer-specific Portfolio Sorted By DoD Offer Chg With >3MM on Offer tables...")
+    # Get portfolio DataFrame filtered to QUANTITY > 0
+    df_portfolio = df[df["QUANTITY"] > 0].copy()
+    
+    # Create dealer-specific tables for each dealer
+    dealers = ["BMO", "BNS", "NBF", "RBC", "TD"]
+    portfolio_dealer_dod_tables = {}
+    for dealer in dealers:
+        print(f"  Creating {dealer} dealer-specific portfolio DoD table...")
+        dealer_df = create_portfolio_dealer_specific_dod_table(
+            RUNS_PARQUET_PATH,
+            dealer,
+            df_portfolio
+        )
+        portfolio_dealer_dod_tables[dealer] = dealer_df
+        print(f"  {dealer}: {len(dealer_df):,} rows")
     
     # Step 5: Create Portfolio Sorted By MTD Bid Chg table
     print("\n[STEP 5] Creating Portfolio Sorted By MTD Bid Chg With >3MM on Bid table...")
@@ -2653,6 +3186,24 @@ def main() -> None:
         table_str = format_table(
             portfolio_dod_bid_df,
             table_title_dod,
+            COLUMN_DISPLAY_NAMES
+        )
+        f.write(table_str)
+        
+        # Write Portfolio Sorted By DoD Offer Size Chgs table
+        table_title_dod_size = "Portfolio Sorted By DoD Offer Size Chgs With >3MM on Offer"
+        excel_tables[table_title_dod_size] = {'df': portfolio_dod_size_df, 'summary': {}}
+        filter_desc_dod_size = format_filter_description([
+            "QUANTITY > 0",
+            "Tight Bid >3mm has a value (non-blank)",
+            "DoD Chg Size @ Wide Offer >3mm is non-zero (positive or negative) and non-blank",
+            "Sorted by DoD Chg Size @ Wide Offer >3mm descending (largest changes first)"
+        ])
+        f.write(filter_desc_dod_size + "\n")
+        f.write("="*100 + "\n\n")
+        table_str = format_table(
+            portfolio_dod_size_df,
+            table_title_dod_size,
             COLUMN_DISPLAY_NAMES
         )
         f.write(table_str)
@@ -2842,6 +3393,33 @@ def main() -> None:
             )
             f.write(table_str)
         
+        # Write dealer-specific Portfolio Sorted By DoD Offer Chg tables
+        for dealer in sorted(portfolio_dealer_dod_tables.keys()):
+            dealer_df = portfolio_dealer_dod_tables[dealer]
+            if len(dealer_df) == 0:
+                continue  # Skip empty tables
+            
+            table_title_dealer = f"Portfolio Sorted By DoD Offer Chg With >3MM on Offer: {dealer}"
+            excel_tables[table_title_dealer] = {'df': dealer_df, 'summary': {}}
+            filter_desc_dealer = format_filter_description([
+                "QUANTITY > 0",
+                "Tight Bid >3mm has a value (non-blank)",
+                f"Only includes rows where {dealer} was the Wide Offer >3mm dealer on both last date and second-to-last date",
+                f"Dealer-specific DoD Chg Wide Offer >3mm: {dealer} Spread at T - {dealer} Spread at T-1",
+                "Excluded rows where DoD Chg Wide Offer >3mm is 0 or blank",
+                "Sorted by DoD Chg Wide Offer >3mm descending (largest changes first)"
+            ])
+            f.write("\n" + "="*100 + "\n")
+            f.write("\n")
+            f.write(filter_desc_dealer + "\n")
+            f.write("="*100 + "\n\n")
+            table_str = format_table(
+                dealer_df,
+                table_title_dealer,
+                COLUMN_DISPLAY_NAMES
+            )
+            f.write(table_str)
+        
         f.write("\n" + "="*100 + "\n")
         f.write("END OF REPORT\n")
     
@@ -2849,6 +3427,7 @@ def main() -> None:
     print(f"Total rows in Portfolio CR01 Risk table: {len(portfolio_cr01_df):,}")
     print(f"Total rows in Portfolio Less Liquid Lines table: {len(portfolio_less_liquid_df):,}")
     print(f"Total rows in Portfolio DoD Offer Chg table: {len(portfolio_dod_bid_df):,}")
+    print(f"Total rows in Portfolio DoD Offer Size Chgs table: {len(portfolio_dod_size_df):,}")
     print(f"Total rows in Portfolio MTD Bid Chg table: {len(portfolio_mtd_bid_df):,}")
     print(f"Total rows in Portfolio YTD Bid Chg table: {len(portfolio_ytd_bid_df):,}")
     print(f"Total rows in Portfolio Custom Date Bid Chg table: {len(portfolio_custom_date_bid_df):,}")
@@ -2857,6 +3436,9 @@ def main() -> None:
     print(f"Total rows in Size Bids Heavily Offered Lines table: {len(size_bids_heavily_offered_lines_df):,}")
     print(f"Total rows in Size Bids With Minimal Bid/Offer table: {len(size_bids_minimal_bo_df):,}")
     print(f"Total rows in Size Bids With Minimal Bid/Offer No Bail In table: {len(size_bids_minimal_bo_no_bail_in_df):,}")
+    for dealer in sorted(portfolio_dealer_dod_tables.keys()):
+        dealer_df = portfolio_dealer_dod_tables[dealer]
+        print(f"Total rows in Portfolio DoD Offer Chg With >3MM on Offer: {dealer} table: {len(dealer_df):,}")
     
     # Step 15: Write Excel file
     print("\n[STEP 15] Writing Excel file...")
@@ -2927,6 +3509,13 @@ def generate_universe_views() -> None:
     # Convert all numeric columns to proper types (ensures filtering works correctly)
     df = ensure_numeric_types(df)
     
+    # Create "Dealer Size Increase" column that maps to "Dealer @ Wide Offer >3mm"
+    # This shows which dealer corresponds to the value in "DoD Size WO>3mm"
+    if "Dealer @ Wide Offer >3mm" in df.columns:
+        df["Dealer Size Increase"] = df["Dealer @ Wide Offer >3mm"].copy()
+    else:
+        df["Dealer Size Increase"] = pd.NA
+    
     print(f"Loaded {len(df):,} rows, {len(df.columns)} columns")
     
     # Step 2: Get reference dates from runs_timeseries.parquet
@@ -2971,20 +3560,21 @@ def generate_universe_views() -> None:
     print(f"Filtered to {len(universe_dod_df):,} rows")
     print(f"Filters: {filter_description_3mm}")
     
-    # Step 3.5: Create Universe Sorted By DoD Moves table (sorted by DoD WO)
-    print("\n[STEP 3.5] Creating Universe Sorted By DoD Moves table...")
-    universe_dod_wo_df = create_universe_dod_moves_wo_table(df)
+    # Step 3.25: Create Universe Sorted By DoD Size WO>3mm table
+    print("\n[STEP 3.25] Creating Universe Sorted By DoD Size WO>3mm table...")
+    universe_dod_size_df = create_universe_dod_size_moves_table(df)
     
-    # Build filter description for regular WO table
-    filter_description_wo = format_filter_description([
+    # Build filter description for DoD Size WO>3mm table
+    excluded_sectors_str = ", ".join(UNIVERSE_EXCLUDED_SECTORS)
+    filter_description_dod_size = format_filter_description([
         f"Excluded Custom_Sector values: {excluded_sectors_str}",
-        f"Only includes rows where Wide Offer had a value on both last date and second-to-last date",
-        f"Excluded rows where DoD Chg Wide Offer is 0 or blank",
-        f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by DoD Chg Wide Offer"
+        f"Only includes rows where Wide Offer >3mm had a value on both last date and second-to-last date",
+        f"Excluded rows where DoD Chg Size @ Wide Offer >3mm is 0 or blank",
+        f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by DoD Chg Size @ Wide Offer >3mm"
     ])
     
-    print(f"Filtered to {len(universe_dod_wo_df):,} rows")
-    print(f"Filters: {filter_description_wo}")
+    print(f"Filtered to {len(universe_dod_size_df):,} rows")
+    print(f"Filters: {filter_description_dod_size}")
     
     # Step 3.75: Create Universe Sorted By MTD Moves With Size On Offer >3mm table
     print("\n[STEP 3.75] Creating Universe Sorted By MTD Moves With Size On Offer >3mm table...")
@@ -3137,6 +3727,28 @@ def generate_universe_views() -> None:
     print(f"Filtered to {len(carry_bonds_mtd_df):,} rows")
     print(f"Filters: {filter_description_carry_bonds_mtd}")
     
+    # Step 3.97: Create dealer-specific DoD Moves With Size On Offer >3mm tables
+    print("\n[STEP 3.97] Creating dealer-specific DoD Moves With Size On Offer >3mm tables...")
+    dealers = ["BMO", "BNS", "NBF", "RBC", "TD"]
+    dealer_dod_tables = {}
+    
+    for dealer in dealers:
+        print(f"\n  Processing {dealer}...")
+        dealer_df = create_dealer_specific_dod_table(
+            RUNS_PARQUET_PATH,
+            dealer,
+            excluded_sectors=UNIVERSE_EXCLUDED_SECTORS,
+            sort_column=UNIVERSE_DOD_SORT_COLUMN,
+            top_bottom_n=UNIVERSE_TOP_BOTTOM_N,
+            columns=UNIVERSE_DOD_MOVES_COLUMNS
+        )
+        
+        if len(dealer_df) > 0:
+            dealer_dod_tables[dealer] = dealer_df
+            print(f"    {dealer}: {len(dealer_df)} rows")
+        else:
+            print(f"    {dealer}: No rows found")
+    
     # Step 4: Format and write output
     print("\n[STEP 4] Formatting and writing output...")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -3192,18 +3804,18 @@ def generate_universe_views() -> None:
         f.write(table_str_3mm)
         
         f.write("\n" + "="*100 + "\n")
-        f.write(f"\n{filter_description_wo}\n")
+        f.write(f"\n{filter_description_dod_size}\n")
         f.write("="*100 + "\n")
         
-        # Write Universe Sorted By DoD Moves table (sorted by DoD WO)
-        table_title_dod_wo = "Universe Sorted By DoD Moves (Wide Offer)"
-        excel_tables[table_title_dod_wo] = {'df': universe_dod_wo_df, 'summary': {}}
-        table_str_wo = format_table(
-            universe_dod_wo_df,
-            table_title_dod_wo,
+        # Write Universe Sorted By DoD Size WO>3mm table
+        table_title_dod_size = "Universe Sorted By DoD Size WO>3mm"
+        excel_tables[table_title_dod_size] = {'df': universe_dod_size_df, 'summary': {}}
+        table_str_dod_size = format_table(
+            universe_dod_size_df,
+            table_title_dod_size,
             COLUMN_DISPLAY_NAMES
         )
-        f.write(table_str_wo)
+        f.write(table_str_dod_size)
         
         f.write("\n" + "="*100 + "\n")
         f.write(f"\n{filter_description_mtd}\n")
@@ -3353,13 +3965,40 @@ def generate_universe_views() -> None:
         )
         f.write(table_str_carry_bonds_mtd)
         
+        # Step 4.5: Write dealer-specific DoD Moves With Size On Offer >3mm tables
+        for dealer in dealers:
+            if dealer in dealer_dod_tables:
+                dealer_df = dealer_dod_tables[dealer]
+                
+                # Write dealer-specific table to text file
+                f.write("\n" + "="*100 + "\n")
+                excluded_sectors_str = ", ".join(UNIVERSE_EXCLUDED_SECTORS)
+                filter_description_dealer = format_filter_description([
+                    f"Excluded Custom_Sector values: {excluded_sectors_str}",
+                    f"Only includes rows where {dealer} was the Wide Offer >3mm dealer on both last date and second-to-last date",
+                    f"Dealer-specific DoD Chg Wide Offer >3mm: {dealer} Spread at T - {dealer} Spread at T-1",
+                    f"Excluded rows where DoD Chg Wide Offer >3mm is 0 or blank",
+                    f"Showing top {UNIVERSE_TOP_BOTTOM_N} and bottom {UNIVERSE_TOP_BOTTOM_N} by DoD Chg Wide Offer >3mm"
+                ])
+                f.write(f"\n{filter_description_dealer}\n")
+                f.write("="*100 + "\n")
+                
+                table_title_dealer = f"Universe Sorted By DoD Moves With Size On Offer >3mm: {dealer}"
+                excel_tables[table_title_dealer] = {'df': dealer_df, 'summary': {}}
+                table_str_dealer = format_table(
+                    dealer_df,
+                    table_title_dealer,
+                    COLUMN_DISPLAY_NAMES
+                )
+                f.write(table_str_dealer)
+        
         f.write("\n" + "="*100 + "\n")
         f.write("END OF REPORT\n")
     
     print(f"\nOutput written to: {UNI_OUTPUT_FILE}")
     print(f"Total rows in Universe DoD Moves table (simple): {len(universe_dod_simple_df):,}")
     print(f"Total rows in Universe DoD Moves With Size On Offer >3mm table: {len(universe_dod_df):,}")
-    print(f"Total rows in Universe DoD Moves table: {len(universe_dod_wo_df):,}")
+    print(f"Total rows in Universe DoD Size WO>3mm table: {len(universe_dod_size_df):,}")
     print(f"Total rows in Universe MTD Moves With Size On Offer >3mm table: {len(universe_mtd_df):,}")
     print(f"Total rows in Universe YTD Moves With Size On Offer >3mm table: {len(universe_ytd_df):,}")
     print(f"Total rows in Universe Custom Date Moves With Size On Offer >3mm table: {len(universe_custom_date_df):,}")
@@ -3380,6 +4019,11 @@ def generate_universe_views() -> None:
     print(f"Total rows in Tough To Find Offers table: {len(tough_to_find_offers_df):,}")
     print(f"Total rows in Carry Bonds table: {len(carry_bonds_df):,}")
     print(f"Total rows in Carry Bonds Sorted by MTD Moves table: {len(carry_bonds_mtd_df):,}")
+    
+    # Print dealer-specific table counts
+    for dealer in dealers:
+        if dealer in dealer_dod_tables:
+            print(f"Total rows in Universe DoD Moves With Size On Offer >3mm: {dealer} table: {len(dealer_dod_tables[dealer]):,}")
     
     # Step 5: Write Excel file
     print("\n[STEP 5] Writing Excel file...")
