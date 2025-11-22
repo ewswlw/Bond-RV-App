@@ -1,11 +1,24 @@
 # Bond RV App - Cursor AI Rules
 
-**Last Updated**: 2025-11-21 15:30 ET - Updated runs_views.py column ordering and sorting logic (DoD columns after B/O, DoD Offer Chg table uses DoD WO>3mm, new Universe DoD Moves table)  
+**Last Updated**: 2025-01-21 17:15 ET - Added CRITICAL .cursorrules Update Protocol requiring full project structure audit on every update (examine entire project, add/delete/overwrite to match reality, include timestamps, update CHANGELOG)  
 **Purpose**: Guide AI assistant in maintaining and extending bond data processing system
 
 > **IMPORTANT**: Always update `.cursorrules` after every applicable change. Override where necessary, delete or change sections so that this file always reflects the most up-to-date project state based on actual codebase. Include date and time stamps for all major changes.
 > 
+> **CRITICAL: .cursorrules Update Protocol**: Whenever the user asks to update `.cursorrules` (or whenever updating it for any reason), you MUST:
+> 1. **Examine the entire current project structure** - Use `list_dir`, `glob_file_search`, and `read_file` tools to audit actual files and folders
+> 2. **Compare with documented structure** - Verify what's documented matches what actually exists
+> 3. **Add missing items** - Document any files/folders that exist but aren't documented
+> 4. **Delete outdated items** - Remove references to files/folders that no longer exist
+> 5. **Overwrite incorrect information** - Update any sections that don't match current reality
+> 6. **Include date/time stamps** - Add `YYYY-MM-DD HH:MM ET` timestamp to "Last Updated" header and any modified sections
+> 7. **Update CHANGELOG.md** - Document the audit/update in changelog with timestamp
+> 
+> **This is DEFAULT BEHAVIOR** - Always perform a full project structure audit before updating `.cursorrules`, not just incremental updates.
+> 
 > **CHANGELOG REQUIREMENT**: Whenever you make changes to the codebase that are worth documenting (new features, bug fixes, significant refactoring, schema changes, new scripts, etc.), you MUST also update `CHANGELOG.md` with a new entry including the date/time (ET) and a clear description of what changed. This ensures the project history is properly tracked.
+> 
+> **DOCUMENTATION REQUIREMENT**: When updating `.cursorrules`, always evaluate whether documentation files need updates. See "Documentation vs .cursorrules Decision Logic" section below for detailed rules and decision process. Always update `CHANGELOG.md` when updating `.cursorrules` for significant changes.
 
 ---
 
@@ -24,11 +37,183 @@
   - File paths affected
 - **Track all modifications** for user review
 
+### .cursorrules Update Protocol (DEFAULT BEHAVIOR)
+- **When user requests `.cursorrules` update** (or when updating for any reason), ALWAYS:
+  1. **Audit entire project structure** first:
+     - Use `list_dir` to examine actual directory contents
+     - Use `glob_file_search` to find all files matching patterns
+     - Use `read_file` to verify file contents when needed
+     - Compare actual structure with documented structure
+  2. **Update to match reality**:
+     - **Add** missing files/folders that exist but aren't documented
+     - **Delete** references to files/folders that no longer exist
+     - **Overwrite** incorrect information with accurate current state
+     - **Fix** any inconsistencies between documentation and actual codebase
+  3. **Include timestamps**:
+     - Update "Last Updated" header with `YYYY-MM-DD HH:MM ET` format
+     - Add timestamps to modified sections where appropriate
+  4. **Update CHANGELOG.md**:
+     - Document the audit/update with timestamp
+     - Describe what was added/deleted/overwritten
+  5. **Verify accuracy**:
+     - Ensure directory structure section matches actual project
+     - Verify file counts and descriptions are accurate
+     - Check that all paths and references are correct
+- **This is NOT optional** - Every `.cursorrules` update must include a full project audit
+
 ### Change Log Maintenance
 - **Update `CHANGELOG.md` for significant changes**: When making changes worth documenting (new features, bug fixes, significant refactoring, schema changes, new scripts, configuration updates, etc.), add an entry to `CHANGELOG.md` with date/time (ET) and a clear description
 - **Entry format**: `- **YYYY-MM-DD HH:MM ET**: Brief description of change`
 - **What to document**: New features, bug fixes, schema changes, new scripts, configuration changes, significant refactoring, performance optimizations, breaking changes
 - **What NOT to document**: Minor typo fixes, formatting-only changes, temporary debugging code
+
+### Documentation vs .cursorrules Decision Logic
+
+**CRITICAL RULE**: When updating `.cursorrules`, you MUST also evaluate whether documentation files need updates. Always follow this decision process:
+
+#### When to Update `.cursorrules` vs Documentation
+
+**`.cursorrules` is for**:
+- **AI Assistant Instructions**: Rules, workflows, and guidelines for AI agents working on the codebase
+- **Code Patterns**: How code should be structured, formatted, and organized
+- **Technical Specifications**: File structures, module organization, naming conventions
+- **Execution Workflows**: How to run pipelines, tests, analytics
+- **Configuration Details**: Paths, constants, environment setup
+- **Current State**: What the codebase currently does (factual, implementation-focused)
+- **Quick Reference**: Essential information needed during active development
+
+**Documentation (`documentation/` folder) is for**:
+- **Business Logic**: Formulas, calculations, business rules (see `Business_Logic_Reference.md`)
+- **System Architecture**: High-level design, data flow, system overview (see `Data_Architecture.md`)
+- **User Guides**: Step-by-step procedures for end users
+- **Conceptual Explanations**: Why things work the way they do, not just how
+- **Comprehensive Reference**: Detailed explanations suitable for human readers
+- **Historical Context**: Background information and rationale
+
+#### Decision Process When Updating `.cursorrules`
+
+**Step 1: Identify the Change Type**
+- Is this a **code pattern** or **implementation detail**? → `.cursorrules`
+- Is this a **business rule** or **calculation formula**? → Documentation
+- Is this a **workflow instruction** for AI? → `.cursorrules`
+- Is this a **system design** or **architecture**? → Documentation
+
+**Step 2: Determine Audience**
+- **AI Assistant** needs to know this to write/maintain code? → `.cursorrules`
+- **Human Developer** needs to understand the system? → Documentation
+- **Both**? → Update both (see Step 3)
+
+**Step 3: Check for Overlap**
+- If change affects **both** AI instructions AND business logic:
+  1. Update `.cursorrules` with **implementation details** (what/how)
+  2. Update relevant documentation with **business context** (why/what it means)
+  3. Keep `.cursorrules` concise and technical
+  4. Keep documentation comprehensive and explanatory
+
+**Step 4: Specific Mapping Rules**
+
+| Change Type | `.cursorrules` | Documentation | Both |
+|------------|----------------|---------------|------|
+| New pipeline module | ✅ Module structure, class names | ✅ Architecture overview | ✅ |
+| New calculation/formula | ✅ Column names, data types | ✅ Formula explanation | ✅ |
+| New file pattern | ✅ Pattern regex, extraction logic | ❌ | ❌ |
+| New business rule | ✅ Implementation details | ✅ Business logic explanation | ✅ |
+| Code style change | ✅ Formatting rules | ❌ | ❌ |
+| New analytics script | ✅ Script location, inputs/outputs | ✅ Business purpose, formulas | ✅ |
+| Schema change | ✅ Column names, types | ✅ Data architecture doc | ✅ |
+| Workflow change | ✅ CLI commands, execution steps | ✅ User guide (if needed) | ✅ |
+| Configuration change | ✅ Config paths, constants | ❌ | ❌ |
+
+**Step 5: Documentation File Selection**
+
+When updating documentation, choose the appropriate file:
+
+- **`documentation/Business_Logic_Reference.md`**: 
+  - Formulas and calculations
+  - Business rules and logic
+  - Filtering criteria
+  - Aggregation methods
+  - Change metric definitions
+
+- **`documentation/Data_Architecture.md`**:
+  - System architecture changes
+  - Data flow modifications
+  - Pipeline structure changes
+  - Schema changes
+  - New data sources or outputs
+
+- **`documentation/Database_Migration_Guide.md`**:
+  - Database-related changes only
+  - Schema migrations
+  - Query examples
+
+- **`documentation/README.md`**:
+  - Documentation index updates
+  - Navigation changes
+  - New documentation files
+
+**Step 6: Update Sequence**
+
+When updating both `.cursorrules` and documentation:
+
+1. **Update `.cursorrules` first** (implementation details)
+2. **Then update documentation** (business context)
+3. **Update `CHANGELOG.md`** (always, for significant changes)
+4. **Update `.cursorrules` "Last Updated" timestamp** (always)
+
+#### Examples
+
+**Example 1: New Spread Calculation**
+- **`.cursorrules`**: Add to "Data Pipeline Patterns" → "Processing Rules" → "Spread Calculations" with column names and implementation details
+- **`Business_Logic_Reference.md`**: Add to "Spread Calculations" section with formula, definition, and business context
+- **`CHANGELOG.md`**: Add entry describing the new calculation
+
+**Example 2: New Pipeline Module**
+- **`.cursorrules`**: Add to "Code Organization" → "Module Structure" with file paths and class names
+- **`Data_Architecture.md`**: Add to "Data Processing Pipelines" section with architecture overview
+- **`CHANGELOG.md`**: Add entry describing the new module
+
+**Example 3: Code Style Change**
+- **`.cursorrules`**: Update "Code Style & Conventions" section
+- **Documentation**: No update needed (implementation detail only)
+- **`CHANGELOG.md`**: Only if significant (e.g., major formatting overhaul)
+
+**Example 4: New Analytics Script**
+- **`.cursorrules`**: Add to "File Organization Rules" → "Directory Structure" with script location and purpose
+- **`Data_Architecture.md`**: Add to "Analytics and Calculations" section with business purpose
+- **`Business_Logic_Reference.md`**: Add formulas if new calculations introduced
+- **`CHANGELOG.md`**: Add entry describing the new script
+
+#### Always Update Together
+
+**When updating `.cursorrules`**, always:
+1. ✅ Check if `CHANGELOG.md` needs an entry (almost always yes for significant changes)
+2. ✅ Check if `Business_Logic_Reference.md` needs updates (if formulas/rules changed)
+3. ✅ Check if `Data_Architecture.md` needs updates (if architecture/structure changed)
+4. ✅ Update `.cursorrules` "Last Updated" timestamp with date/time (ET)
+
+**When updating documentation**, always:
+1. ✅ Check if `.cursorrules` needs corresponding updates (if implementation details changed)
+2. ✅ Check if `CHANGELOG.md` needs an entry (if significant change)
+3. ✅ Update documentation "Last Updated" timestamp
+
+#### Anti-Patterns to Avoid
+
+❌ **Don't duplicate**: Same information verbatim in both `.cursorrules` and documentation
+- `.cursorrules` should be concise and implementation-focused
+- Documentation should be comprehensive and explanatory
+
+❌ **Don't skip**: Updating documentation when business logic changes
+- If a formula changes, update `Business_Logic_Reference.md`
+- If architecture changes, update `Data_Architecture.md`
+
+❌ **Don't forget**: `CHANGELOG.md` when making significant changes
+- Always update changelog when updating `.cursorrules` for significant changes
+- Changelog entries should reference what changed and why
+
+✅ **Do maintain**: Consistency between `.cursorrules` and documentation
+- If `.cursorrules` says "X does Y", documentation should explain "X does Y because..."
+- Keep both in sync when changes occur
 
 ### Temporary File Cleanup Protocol
 - **ALWAYS clean up temporary files** created during chat sessions
@@ -411,12 +596,15 @@ Each pipeline stage is a class with clear responsibilities:
 ### Log File Organization
 ```
 bond_data/logs/
+├── archive/            # Archived log files (rotated after N runs, git-ignored)
 ├── processing.log      # File extraction and loading operations
 ├── duplicates.log      # All duplicate CUSIPs detected
 ├── validation.log      # CUSIP validation warnings
 ├── summary.log         # Pipeline execution summary (run headers, stats)
 ├── parquet_stats.log   # Snapshot diagnostics for each parquet dataset (df.info/head/tail)
-└── runs_today.log      # Runs today analytics execution log (merge statistics, df.info, matching details)
+├── runs_today.log      # Runs today analytics execution log (merge statistics, df.info, matching details)
+├── test_dupes.log      # Test duplicate logs (git-ignored)
+└── test_valid.log      # Test validation logs (git-ignored)
 ```
 
 ### Logging Levels
@@ -525,7 +713,7 @@ poetry run pytest tests/unit/test_utils.py::TestCUSIPValidation::test_validate_c
 Bond-RV-App/
 ├── analytics/             # Analytics scripts and processed outputs
 │   ├── comb/             # Pair analytics scripts
-│   │   └── comb.py           # Consolidated pair analytics script (contains 11 analysis functions: all_comb, term_comb, ticker_comb, custom_sector, custom_bond_comb, custom_bond_vs_holdings, cad_cheap_vs_usd, cad_rich_vs_usd, executable_cr01_vs_holdings, executable_cr01_decent_bid_offer_vs_holdings, all_combos_vs_holdings; outputs single Excel file with multiple sheets, plus comb.txt, comb_validation.txt, and all_combinations.csv with all pairs from all_comb analysis)
+│   │   └── comb.py           # Consolidated pair analytics script (contains 11 analysis functions: all_comb, term_comb, ticker_comb, custom_sector, custom_bond_comb, custom_bond_vs_holdings, cad_cheap_vs_usd, cad_rich_vs_usd, executable_cr01_vs_holdings, executable_cr01_decent_bid_offer_vs_holdings, all_combos_vs_holdings; outputs single Excel file with multiple sheets, plus comb.txt, comb_validation.txt, and all_combinations.csv with all pairs from all_comb analysis) (updated 2025-01-21 16:30 ET)
 │   ├── runs/             # Runs analytics scripts
 │   │   ├── runs_today.py     # Runs today analytics (reads parquet directly, aggregates required dates, computes DoD/MTD/YTD/Custom Date changes, filters negative spreads, matches by (CUSIP, Benchmark) tuples)
 │   │   └── runs_views.py     # Custom formatted tables from runs_today.csv (portfolio and universe views with custom formatting, generates both .txt and .xlsx outputs, includes "Filters Applied:" sections for all tables, auto-validates and regenerates CSV if stale; column order: DoD TB>3mm and DoD WO>3mm appear after B/O column; Portfolio DoD Offer Chg table sorts by DoD WO>3mm; Universe DoD Moves table (first table) shows all rows sorted by DoD WO>3mm with 50 rows in .txt, all rows in Excel; entry point calls both main() for portfolio views and generate_universe_views() for universe views)
@@ -539,9 +727,27 @@ Bond-RV-App/
 │       ├── portfolio_runs_view.xlsx  # Excel file with 16 portfolio tables (from runs_views.py, formatted Excel tables on separate sheets)
 │       ├── uni_runs_view.txt  # Formatted universe tables (from runs_views.py, text output, 16 tables including new "Universe Sorted By DoD Moves" as first table with 50 rows)
 │       └── uni_runs_view.xlsx  # Excel file with universe tables (from runs_views.py, formatted Excel tables on separate sheets, 16 tables including new "Universe Sorted By DoD Moves" as first table with all rows)
-├── bond_pipeline/          # Bond pipeline code (7 modules: config, utils, extract, transform, load, pipeline, README)
-├── runs_pipeline/          # Runs pipeline code (5 modules: __init__, extract, transform, load, pipeline)
-├── portfolio_pipeline/     # Portfolio pipeline code (5 modules: __init__, extract, transform, load, pipeline)
+├── bond_pipeline/          # Bond pipeline code (8 files: __init__, config, utils, extract, transform, load, pipeline, README.md)
+│   ├── __init__.py
+│   ├── config.py
+│   ├── utils.py
+│   ├── extract.py
+│   ├── transform.py
+│   ├── load.py
+│   ├── pipeline.py
+│   └── README.md           # Bond pipeline module documentation
+├── runs_pipeline/          # Runs pipeline code (5 files: __init__, extract, transform, load, pipeline)
+│   ├── __init__.py
+│   ├── extract.py
+│   ├── transform.py
+│   ├── load.py
+│   └── pipeline.py
+├── portfolio_pipeline/     # Portfolio pipeline code (5 files: __init__, extract, transform, load, pipeline)
+│   ├── __init__.py
+│   ├── extract.py
+│   ├── transform.py
+│   ├── load.py
+│   └── pipeline.py
 ├── bond_data/              # Data directory (local only, git-ignored)
 │   ├── parquet/           # Output parquet files
 │   │   ├── historical_bond_details.parquet
@@ -550,42 +756,57 @@ Bond-RV-App/
 │   │   ├── runs_timeseries.parquet
 │   │   └── historical_portfolio.parquet
 │   └── logs/              # Processing logs
+│       ├── archive/       # Archived log files (git-ignored)
 │       ├── processing.log
 │       ├── duplicates.log
 │       ├── validation.log
 │       ├── summary.log
 │       ├── parquet_stats.log
-│       └── runs_today.log
+│       ├── runs_today.log
+│       ├── test_dupes.log  # Test logs (git-ignored)
+│       └── test_valid.log  # Test logs (git-ignored)
 ├── .venv/                 # Poetry-managed virtual environment (git-ignored)
-├── Documentation/          # Complete documentation
-│   ├── Setup/             # Getting started guides
-│   ├── Workflows/         # Step-by-step procedures
-│   └── Architecture/      # Design documentation
+├── documentation/         # Complete documentation (lowercase folder name) (updated 2025-01-21 16:30 ET)
+│   ├── Business_Logic_Reference.md  # Business logic formulas and calculations
+│   ├── Data_Architecture.md         # System architecture and data flow
+│   ├── Database_Migration_Guide.md  # SQLite migration guide
+│   └── README.md                    # Documentation index
 ├── Raw Data/              # Excel files (input)
 ├── References and Documentation/  # Ignored by Cursor
 ├── tests/                 # Test suite
+│   ├── __init__.py
+│   ├── conftest.py        # Shared fixtures (sample data, mocks)
+│   ├── README.md          # Test suite documentation
 │   ├── unit/              # Unit tests
-│   │   ├── test_utils.py
-│   │   ├── test_utils_runs.py
-│   │   ├── test_extract_runs.py
-│   │   ├── test_transform_runs.py
-│   │   └── test_load_runs.py
+│   │   ├── __init__.py
+│   │   ├── test_utils.py       # ✅ Bond utility & BQL helper tests
+│   │   ├── test_utils_runs.py  # ✅ Runs utility tests
+│   │   ├── test_extract_runs.py # ✅ Runs extract tests
+│   │   ├── test_transform_runs.py # ✅ Runs transform tests
+│   │   ├── test_load_runs.py   # ✅ Runs load tests
+│   │   ├── test_extract.py     # TODO
+│   │   ├── test_transform.py   # TODO
+│   │   └── test_load.py        # TODO
 │   ├── integration/       # Integration tests
-│   │   ├── test_pipeline_runs.py
-│   │   └── test_run_pipeline.py
+│   │   ├── __init__.py
+│   │   ├── test_pipeline_runs.py # ✅ Runs pipeline integration tests
+│   │   └── test_run_pipeline.py  # ✅ Unified pipeline orchestrator tests
 │   └── patterns/          # Pattern analysis and data exploration scripts (not production tests)
 │       ├── analyze_runs_data.py
 │       ├── data_analysis_and_questions.md
 │       └── deep_duplicate_analysis.py
 ├── utils/                 # Utility scripts (currently empty, reserved for future utility scripts)
 ├── hi eddy.ipynb          # Interactive Jupyter notebook with ipywidgets for data exploration (dark mode, sortable/filterable tables with range sliders, column selector panel)
-├── .cursorrules           # This file
-├── .cursorignore          # Files to ignore
+├── .cursorrules           # This file (AI assistant rules and project structure)
+├── .cursorignore          # Files to ignore by Cursor AI
+├── .gitignore             # Files to ignore by Git
+├── CHANGELOG.md           # Project change history (updated with significant changes)
 ├── pyproject.toml         # Poetry project configuration
 ├── poetry.lock            # Locked dependency versions
 ├── requirements.txt       # Legacy dependency snapshot (reference only)
-├── README.md              # Project overview
-└── run_pipeline.py        # Unified pipeline orchestrator (bond, runs, portfolio, individual parquet files)
+├── README.md              # Project overview (references non-existent Documentation/Workflows/ - needs update)
+├── run_pipeline.py        # Unified pipeline orchestrator (bond, runs, portfolio, individual parquet files)
+└── hi eddy.ipynb          # Interactive Jupyter notebook with ipywidgets for data exploration (dark mode, sortable/filterable tables with range sliders, column selector panel)
 ```
 
 ### File Naming Conventions
@@ -628,7 +849,7 @@ Bond-RV-App/
 - Parquet files: `bond_data/parquet/*.parquet` (processed data)
 - Source code: `bond_pipeline/`, `runs_pipeline/`, `portfolio_pipeline/`, `analytics/`
 - Tests: `tests/`
-- Documentation: `Documentation/`
+- Documentation: `documentation/` (lowercase folder name)
 - Config: `pyproject.toml`, `poetry.lock`, `requirements.txt`, `.cursorrules`, `.cursorignore`
 - Scripts: `run_pipeline.py`
 - Notebooks: `hi eddy.ipynb` (interactive exploration notebook)
@@ -967,9 +1188,11 @@ pytest tests/unit/test_utils.py -v
 ---
 
 **File Created**: January 2025  
-**Last Major Update**: 2025-11-21 15:30 ET  
+**Last Major Update**: 2025-01-21 17:00 ET - Comprehensive project structure audit and updates  
 **Project**: Bond RV App - Data Pipeline  
 **Version**: 1.0
+
+**Note**: `README.md` references non-existent `Documentation/Workflows/` folder. Actual documentation is in `documentation/` folder (lowercase). README.md needs update to remove broken links.
 
 ---
 

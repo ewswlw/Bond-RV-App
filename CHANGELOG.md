@@ -11,6 +11,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **REMINDER**: This Change Log must be updated whenever significant changes are made to the codebase. See "Change Log Maintenance" section in `.cursorrules` for guidelines on what to document. Each entry should include date/time (ET) and a clear description of the change.
 
+- **2025-01-21 17:15 ET**: Added CRITICAL .cursorrules Update Protocol to enforce default behavior:
+  - Added mandatory protocol requiring full project structure audit whenever `.cursorrules` is updated
+  - Protocol requires: examining entire current project structure, comparing with documentation, adding missing items, deleting outdated items, overwriting incorrect information, including timestamps, updating CHANGELOG.md
+  - Added explicit section "`.cursorrules` Update Protocol (DEFAULT BEHAVIOR)" in AI Assistant Core Workflow
+  - This ensures `.cursorrules` always reflects actual project state, not just incremental updates
+  - Updated `.cursorrules` "Last Updated" timestamp to 2025-01-21 17:15 ET
+- **2025-01-21 17:00 ET**: Comprehensive project structure audit and documentation updates:
+  - Updated `.cursorrules` directory structure to match actual project (added missing files/folders)
+  - Added `bond_pipeline/README.md` to structure documentation
+  - Added `tests/README.md` and `tests/__init__.py` files to structure
+  - Added `bond_data/logs/archive/` folder to log file organization
+  - Added `CHANGELOG.md` and `.gitignore` to root directory structure
+  - Added test log files (`test_dupes.log`, `test_valid.log`) to log organization
+  - Updated log file organization section to include archive folder and test logs
+  - Added note about `README.md` referencing non-existent `Documentation/Workflows/` folder
+  - Updated `.cursorrules` "Last Updated" timestamp to 2025-01-21 17:00 ET
+- **2025-01-21 16:30 ET**: Updated project structure documentation and fixed folder references:
+  - Fixed all references from `Documentation/` (capitalized) to `documentation/` (lowercase) to match actual folder structure
+  - Updated `.cursorrules` directory structure section to reflect actual `documentation/` folder with correct file listing
+  - Updated all documentation file timestamps to include date/time (ET) format: `2025-01-21 16:30 ET`
+  - Updated `documentation/README.md` to reference correct lowercase folder name
+  - Updated `.cursorrules` "Last Major Update" timestamp to reflect current changes
+  - All documentation files now consistently use `YYYY-MM-DD HH:MM ET` timestamp format
+- **2025-01-21 16:00 ET**: Added comprehensive Documentation vs .cursorrules Decision Logic section to `.cursorrules`:
+  - Created detailed rules and decision process for determining when updates belong in `.cursorrules` vs documentation files
+  - Defined clear boundaries: `.cursorrules` for AI assistant instructions/implementation details, documentation for business logic/system architecture
+  - Added step-by-step decision process (6 steps) for evaluating changes
+  - Created mapping table for common change types
+  - Added documentation file selection guide (which doc file to update for different change types)
+  - Defined update sequence and anti-patterns to avoid
+  - Added requirement to always update `CHANGELOG.md` when updating `.cursorrules` for significant changes
+  - Updated `.cursorrules` header to reference new documentation requirement
 - **2025-01-XX XX:XX ET**: Optimized interactive Jupyter notebook performance and fixed column selector white space:
   - Removed all debug print statements from `hi eddy.ipynb` for improved performance
   - Fixed white space issue in column selector panel by constraining container width dynamically (0px when hidden, 340px when visible)
@@ -387,4 +419,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed Change Log section from `.cursorrules`
   - Updated `.cursorrules` to reference `CHANGELOG.md` for change tracking
   - Simplified Change Log Maintenance section to note updating `CHANGELOG.md` when appropriate
+- **2025-01-21 XX:XX ET**: Created comprehensive data architecture documentation:
+  - Created `Documentation/Data_Architecture.md` - Complete system documentation covering:
+    - Executive summary and system overview
+    - Data flow architecture (detailed pipeline flows)
+    - Data sources and inputs (file patterns, structures, columns)
+    - Data processing pipelines (bond, runs, portfolio)
+    - Data storage specifications (5 parquet files with schemas)
+    - Analytics and calculations (runs_today, runs_views, comb)
+    - Output tables and views (CSV, Excel, TXT formats)
+    - Business logic documentation (all formulas and calculations)
+    - Database schema design (SQLite migration guide)
+    - Developer guide (running pipelines, testing, debugging)
+  - Created `Documentation/Business_Logic_Reference.md` - Quick reference guide for:
+    - Spread calculations (Tight Bid, Wide Offer, Bid/Offer)
+    - CR01 calculations
+    - Change metrics (DoD, MTD, YTD, Custom Date)
+    - Aggregation logic (group aggregations, portfolio aggregations)
+    - Filtering logic (dealer, negative spreads, outliers, size thresholds)
+    - Pair analytics (spread calculation, statistics, filtering)
+    - Deduplication logic (all three pipelines)
+    - CUSIP normalization
+    - Reference date calculation
+  - Created `Documentation/Database_Migration_Guide.md` - Guide for migrating to SQLite:
+    - Database schema definitions
+    - Migration script template
+    - Code modification examples
+    - Query examples
+    - Performance considerations
+    - Backup and recovery procedures
+    - Migration checklist
+  - All documentation includes detailed formulas, business rules, and code examples
+  - Documentation designed for developers and AI agents to understand complete system
 
